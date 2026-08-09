@@ -1,4 +1,4 @@
-import { tmGet, tmGetByValue, tmSet, tmSetByValue } from "./translationMemory.js";
+import { tmMGet, tmMGetByValue, tmSet, tmSetByValue } from "./translationMemory.js";
 import { loadGlossaryLines } from "./glossary.js";
 import {
   applyJsonSlotTranslations,
@@ -2492,12 +2492,37 @@ export async function translateResources(
   const tmWrites: Promise<void>[] = [];
 
   // 1b. Field-digest TM only for plain fields (HTML/JSON/list skip whole-field digest).
+  //     Both plain tiers are prefetched in MGET batches here so step 1c never
+  //     issues a per-field round-trip. The value tier is fetched for every plain
+  //     field (not just digest misses) to keep this a single batched read; 1c
+  //     still prefers the digest hit, so lookup order is unchanged.
   const cacheHits = skipCacheRead
     ? fieldWorks.map(() => null)
-    : await Promise.all(
-        fieldWorks.map(({ f, klass, cacheModel }) =>
-          klass === "plain" ? tmGet(shopName, target, cacheModel, f.digest) : Promise.resolve(null),
-        ),
+    : await tmMGet(
+        shopName,
+        target,
+        fieldWorks.map(({ f, klass, cacheModel }) => ({
+          model: cacheModel,
+          digest: klass === "plain" ? f.digest : null,
+        })),
+      );
+
+  // Value-tier prefetch for the same plain fields, aligned with `fieldWorks`.
+  const valueCacheHits = skipCacheRead
+    ? fieldWorks.map(() => null)
+    : await tmMGetByValue(
+        fieldWorks.map(({ f, klass, cacheModel }) => ({
+          sourceText:
+            klass === "plain"
+              ? isHandleFieldKey(f.key)
+                ? prepareHandleSourceText(f.value)
+                : f.value
+              : "",
+          model: cacheModel,
+          digest: f.digest,
+        })),
+        source,
+        target,
       );
 
   // 1c. Process results: plain digest/value hit → credit; else plan + pool units.
@@ -2540,14 +2565,7 @@ export async function translateResources(
 
     // Plain secondary: value TM (Shopify digest if present, else CRC-32).
     if (!skipCacheRead && klass === "plain") {
-      const valueCacheSource = isHandleFieldKey(f.key) ? prepareHandleSourceText(f.value) : f.value;
-      const cachedByValue = await tmGetByValue(
-        valueCacheSource,
-        source,
-        target,
-        cacheModel,
-        f.digest,
-      );
+      const cachedByValue = valueCacheHits[wi] ?? null;
       if (cachedByValue !== null) {
         logSingleTranslatePath(logSingleTranslate, "cache", {
           kind: "field_value",
@@ -2830,8 +2848,10 @@ export async function translateResources(
 
     // 2a. Value-TM prefilter for every unique leaf in this pool (before JSON pack).
     if (!skipCacheRead) {
-      const leafHits = await Promise.all(
-        allTexts.map((text) => tmGetByValue(text, source, target, cacheModel)),
+      const leafHits = await tmMGetByValue(
+        allTexts.map((text) => ({ sourceText: text, model: cacheModel })),
+        source,
+        target,
       );
       let leafCacheUnits = 0;
       for (let i = 0; i < allTexts.length; i++) {

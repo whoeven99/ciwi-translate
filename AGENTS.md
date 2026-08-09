@@ -362,6 +362,12 @@ then `api.translate-v4.tasks.ts`.
 - Source of truth: `packages/translation-core/src/*`.
 - Filter entry: `packages/translation-core/src/translationFilter/index.ts`.
 - Runtime ports: `packages/translation-core/src/runtime.ts`.
+- TM 读走批量：`translationMemory.ts` `tmMGet` / `tmMGetByValue`（`mgetAligned`
+ 按 index 对齐、500 一批、异常整批当 miss），`llmTranslate.ts` 的 digest / value /
+ leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同步两份
+ `MigratingRedis`**（`app/server/translateV4/redisDualClient.server.ts` 与
+ `worker/src/services/redisDualClient.ts`）：sole mode 下 core 拿到的是原生
+ ioredis，但双写兼容层是手写代理，缺方法会让 TM 静默整批 miss（只烧钱不报错）。
 - App adapter: `app/server/translateV4/translationCoreRuntime.server.ts`.
 - Worker adapter: `worker/src/services/translationCoreRuntime.ts`.
 - EMAIL / packing-slip Liquid HTML: `packages/translation-core/src/liquidHtmlTranslate.ts`
@@ -453,9 +459,20 @@ Pipeline:
 - `worker/src/workers/translateWorker.ts`: translation stage, LLM calls,
 checkpoints, quota, pause/cancel.
 - `worker/src/workers/writebackWorker.ts`: Shopify translation writeback.
+**按 module 分批流式**读译文（`iterateTranslatedItemsForModule`，默认 500/批），
+不再一次性把全店译文读进内存。`skipResourceId` 在**下载前**用 blob 文件名
+（base64url(resourceId)）挡掉 `writtenSet` 里已写回的资源，所以续跑不会重新
+下载已完成部分。写回按 resource 独立、module 间无依赖，所以分批安全；每批边界
+会让 `runShopifyAdaptive` 的在飞请求排空一次。改这里请保持 `writtenSet` 全局
+（resume 语义）与 `writebackTotal` 取自 `job.metrics`（不依赖数组长度）。
 - `worker/src/workers/shopScanWorker.ts`: shop scan（install/scheduled 计量；
 manual AI 画像；glossary 阶段已停用）。
-- `worker/src/workers/emailWorker.ts`: notifications.
+- `worker/src/workers/emailWorker.ts`: notifications. 候选店走 **Redis 标记快路径**
+（`translate:v4:email:pending:{manual|auto}`，Worker 侧 `updateJob` 写入终态时
+由 `noteEmailPendingIfTerminal` 打标），只在 `EMAIL_FALLBACK_SCAN_INTERVAL_MS`
+（默认 5min）到点时才跑跨分区 DISTINCT 兜底。标记清除发生在「该店确认无待发
+任务」时（`jobs.length === 0`），不在发信后清，宁可多留一轮也不漏发。App 侧手动
+暂停/取消不经过 Worker 的 `updateJob`，靠兜底扫描捞回——所以**兜底不能关掉**。
 
 Services:
 
@@ -562,6 +579,12 @@ Admin 体量标签另用 `COSMOS_SHOP_DATABASE_ID`（默认 `shop`）、
 任务 seed 记下 `budget`；发 LLM 前 `committed += 预估`；返回后预估换成实扣
 （`syncShopQuotaBudget` + `callLLMOnce`）。`committed + nextEst > budget` 则不发新请求；
 暂停/耗尽立刻 `setShopQuotaCap(0)`；已在飞仍跑完实扣。
+`TRANSLATE_QUOTA_RECHECK_MS`（默认 30s）：chunk 循环里读剩余额度是**节流 +
+single-flight**（`getRemainingThrottled`），不是每 chunk 打一次 Turso——并发 chunk
+默认 64，逐 chunk 查询会把 Turso 打成瓶颈（502 的流量源之一）。超支准入由上面的
+budget/committed 把住，这里只负责发现**任务外部**的额度变化；`seed` 与 `flushQuota`
+拿到权威 remaining 时会一并推进时间戳。查询失败时沿用 `lastKnownRemaining` 继续
+（不再让 Turso 抖动把 chunk 打挂），并推进时间戳避免重试风暴。
 - Scheduling: `WORKER_STAGES`, `WORKER_POLL_INTERVAL_MS`,
 `TRANSLATE_CHUNK_CONCURRENCY`, `MAX_CONCURRENT_AUTO_TRANSLATE_JOBS`,
 `MAX_CONCURRENT_MANUAL_TRANSLATE_JOBS`, `AUTO_TRANSLATE_*`.
@@ -592,6 +615,8 @@ Code: `worker/src/services/shopScan/scanPace.ts`、
 `TRANSLATION_MAX_CHUNK_BYTES`（默认 2MiB；单资源超限则独占一个 chunk）.
 Code: `worker/src/services/shopifyFetch.ts` `chunkResources`.
 - Auxiliary schedules: `SHOP_SCAN_POLL_INTERVAL_MS`, `EMAIL_WORKER_INTERVAL_MS`,
+`EMAIL_FALLBACK_SCAN_INTERVAL_MS`（默认 5min；邮件 worker 跨分区 DISTINCT 兜底
+间隔，平时走 Redis 标记快路径），
 `AUTO_EMPTY_JOB_CLEANUP_INTERVAL_MS`,
 `BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`, and
 `BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`.
@@ -811,6 +836,22 @@ redirect records.
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
  慢删 `source='auto'`（绝不碰 manual）。管理页
  `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
+
+- **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
+ `api.storefront.$.ts` 的 switcher / currency（`getCurrencyByShopName` +
+ `getCacheData`）/ liquid / picture 读端点经
+ `readThroughStorefrontCache(kind, shop, extra, load)`，TTL 300s，只缓存
+ `success: true`；Redis 任何异常都静默降级直查库，`load()` 自身异常照常上抛。
+ 失效用 per-(kind, shop) 版本号 key `tsf:sf:ver:{kind}:{shop}`，
+ `invalidateStorefrontCache` 对版本 key 做 `INCR` + `EXPIRE`（sole
+ `RENDER_KV` / 原生 ioredis；生产禁止 KEYS/SCAN 批量删）。
+ 已接失效的写入方：`switcherData.upsertSwitcherConfig`、currency
+ `insertCurrency`/`updateCurrency`/`deleteCurrency`/`updateDefaultCurrency`、
+ picture `upsertUserPicture`/`softDeleteUserPicture`（覆盖 upload / saveFromUrl）、
+ liquid manual `createLiquidDo`/`updateLiquidDo`/`deleteLiquidDo`/
+ `toggleLiquidReplacementMethod`。**新增 storefront 读端点或写入方时必须同步接入**。
+ 缓存只用于店面路径，admin 页面仍直查库，避免商户看到自己刚改的旧值。
+ 未接主动失效：Worker 写 liquid `DONE`（跨进程），靠 300s TTL 收敛。
 
 Do not make storefront API unauthenticated. App Proxy requests use HMAC checks.
 
@@ -1180,6 +1221,7 @@ For "合入PR然后发布测试环境", the script will:
 | 任务历史页                       | `app/routes/app.translate-v4-history/route.tsx`       | `app/routes/app.translate-v4/jobFilters.ts`, `components/TaskQueueSection.tsx`, `progress.server.ts`     |
 | Currency switcher bug            | `app/server/currency/currency.server.ts`              | `api.storefront.$.ts`, extension `ciwi-api.js`                                                          |
 | App Proxy 401/404                | `api.storefront.$.ts`                                 | `server/storefront/auth.server.ts`, extension caller                                                    |
+| 店面数据不更新 / Turso 502       | `app/server/storefront/cache.server.ts`               | `app/config/libsqlFetch.server.ts`, `api.storefront.$.ts`, 写入方的 `invalidateStorefrontCache` 调用     |
 | Manage Translation resource page | `app/routes/app.manage_translation_.<type>/route.tsx` | `manageTranslationRoute.server.ts`, `pictureClient.ts`                                                  |
 | Picture translation/storage      | `app/server/picture/picture.server.ts`                | `api.picture.*`, `api.translate-v4.image`, `UserPicture`, App Proxy picture branches                    |
 | Glossary                         | `app/routes/app.glossary/route.tsx`                   | `glossary.server.ts`, Worker `tsfDb.loadGlossaryRowsFromTsf` via `translationCoreRuntime.ts`            |
@@ -1388,6 +1430,13 @@ translation memory cache.
 - App、Worker、运维脚本、Agent 诊断：**只连** `RENDER_KV`。
 - **不要**再使用 `REDIS_URL` / `REDIS_URL_V4`（Azure Cache 已弃用；本地 `.env*` 里若仍残留可忽略或删除）。
 - 不要打印 URL/密码；只打印脱敏 host。
+- **新增 Redis 用法前先查 `RedisLike` 支持哪些命令**（`worker/src/services/redisDualClient.ts`
+  与 `app/server/translateV4/redisDualClient.server.ts`）。`getRedis()` 的返回类型标成
+  `IORedis`，但双写模式下实际是手写代理 `MigratingRedis`：类型检查会放过
+  `sadd`/`smembers`/`srem` 之类未实现的命令，运行时才崩。目前代理只有
+  get/mget/set/del/hset/hget/hgetall/hdel/expire/lpush/rpush/lpop/ltrim/ping/pipeline/multi
+  ——需要集合语义时用 Hash 代替 Set（见 `translate:v4:email:pending:*`），
+  或先把命令补进两份代理。
 - Render 服务内用 **Internal** URL（通常 `redis://…`）；本机 / Agent `.env*` 用 **External**
   `rediss://…`（需 Dashboard 放行 Inbound IP）。
 - 交互 CLI：Dashboard **Valkey CLI Command**，或服务同区 Shell 里
@@ -1432,6 +1481,7 @@ node worker/scripts/probe-hint-queues.mjs
 | `translate:v4:hint:verify`, `translate:v4:hint:analysis` | List: retired stages (compat / probe only; no live producers) |
 | `translate:v4:progress:<jobId>` | Hash: per-stage done/total, init module activity, pausePending (TTL 7d) |
 | `translate:v4:control:<jobId>` | String: `pause` / `cancel` (TTL 1d) |
+| `translate:v4:email:pending:{manual\|auto}` | Hash: shopName → 标记时刻；emailWorker 候选店快路径（TTL 7d，跨分区 DISTINCT 兜底仍保留）。用 Hash 而非 Set：双写 `RedisLike` 没有 `sadd`/`smembers`/`srem` |
 | `translate:v4:auto_scan:last_at` | String: last / next auto-scan schedule marker |
 | `translate:v4:auto_scan:last_success_at` | String: last successful auto-scan completion |
 | `tsf:shop_scan:hints` | List: shop-scan wake hints `{scanId,shopName}` (Cosmos poll is fallback) |
@@ -1607,6 +1657,15 @@ single jobs instead of crashing the page, and inspect
 GraphQL cost buckets or upstream services. Check batching gaps, delayed
 non-core count batches, `itemsCount.server.ts` throttle handling, and whether
 logging uses beacon-style client logging instead of route `fetcher.submit`.
+- Turso `SERVER_ERROR: Server returned HTTP status 502`: 这是 Turso 网关在容量
+ 紧张时拒绝请求，**不是慢查询**（曾在 `switcherConfiguration.findUnique()` 这种
+ 主键单行查询上出现）。Prisma 把它包成 `transient: false` 直接抛出，店面 App
+ Proxy 因此冒 500，错误呈突发聚集而非均匀分布。两处缓解已落地：
+ `app/config/libsqlFetch.server.ts` 对 429/502/503/504 最多重试 2 次（请求体
+ 先缓冲才可重放；**仅**当 body 像只读 SQL——含 SELECT/WITH 且无
+ INSERT/UPDATE/DELETE/事务边界等——才重试，避免写重放），以及 storefront 读
+ 路径的 Redis 缓存（见 Switcher And Storefront App Proxy）。再遇同类问题先看
+ 请求量与缓存命中，不要先去优化 SQL。
 - `pricing` AbortError: Remix fetcher replacement or route changes can produce
 expected aborts. Global client error reporting should ignore AbortError-like
 noise, and exposure logging should prefer `reportClientLog(..., { beacon: true })` over competing fetcher submits.

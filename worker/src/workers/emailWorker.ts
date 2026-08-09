@@ -41,6 +41,8 @@ import {
   updateJob,
 } from "../services/cosmosV4.js";
 import {
+  clearEmailPendingShop,
+  getEmailPendingShops,
   releaseEmailSendLock,
   tryAcquireEmailSendLock,
 } from "../services/redisV4.js";
@@ -358,6 +360,8 @@ async function handleManualJobGroup(shopName: string): Promise<void> {
 
   const jobs = await findManualJobsNeedingEmailForShop(shopName);
   if (jobs.length === 0) {
+    // 已确认无待发任务，清掉快路径标记（active 早退时不清，之后还要发）。
+    await clearEmailPendingShop(shopName, "manual");
     return;
   }
 
@@ -526,6 +530,7 @@ async function handleAutoJobGroup(shopName: string): Promise<void> {
 
   const jobs = await findAutoJobsNeedingEmailForShop(shopName);
   if (jobs.length === 0) {
+    await clearEmailPendingShop(shopName, "auto");
     return;
   }
 
@@ -651,18 +656,40 @@ async function handleAutoJobGroup(shopName: string): Promise<void> {
   }
 }
 
+/**
+ * 跨分区兜底扫描间隔（默认 5 分钟）。
+ * 平时靠 Redis 标记走快路径，兜底扫描负责捞回标记之外的任务。
+ */
+const EMAIL_FALLBACK_SCAN_MS = Math.max(
+  30_000,
+  Number(process.env.EMAIL_FALLBACK_SCAN_INTERVAL_MS) || 5 * 60_000,
+);
+let lastFallbackScanAt = 0;
+
 export async function runEmailWorker(): Promise<void> {
   const startedAt = Date.now();
-  const [manualShops, autoShops] = await Promise.all([
-    findShopsWithPendingManualEmail(),
-    findShopsWithPendingAutoEmail(),
-  ]);
+
+  // 快路径：Redis 标记（Worker 侧状态写入时打）直接给出候选店。
+  // 兜底：每 EMAIL_FALLBACK_SCAN_MS 做一次跨分区扫描，兜住 App 侧手动
+  // 暂停/取消、Redis 重启丢标记、以及任何漏写的情况。
+  const useFallbackScan = Date.now() - lastFallbackScanAt >= EMAIL_FALLBACK_SCAN_MS;
+  const [manualShops, autoShops] = useFallbackScan
+    ? await Promise.all([
+        findShopsWithPendingManualEmail(),
+        findShopsWithPendingAutoEmail(),
+      ])
+    : await Promise.all([
+        getEmailPendingShops("manual"),
+        getEmailPendingShops("auto"),
+      ]);
+  if (useFallbackScan) lastFallbackScanAt = Date.now();
 
   if (manualShops.length === 0 && autoShops.length === 0) {
     return;
   }
 
   logDetail("run-start", {
+    source: useFallbackScan ? "cosmos-fallback" : "redis-hint",
     manualShopCount: manualShops.length,
     autoShopCount: autoShops.length,
     manualShops,

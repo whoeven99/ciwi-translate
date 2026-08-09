@@ -3,6 +3,7 @@ import {
   SWITCHER_UI_DEFAULTS,
   type SwitcherConfigWriteInput,
 } from "~/lib/switcherConstants";
+import { invalidateStorefrontCache } from "./cache.server";
 
 export type WidgetConfigResponse = {
   shopName: string;
@@ -117,5 +118,6 @@ export async function upsertSwitcherConfig(
     update: { ...data, updatedAt: now },
   });
 
+  await invalidateStorefrontCache("switcher", shop);
   return toWidgetConfigResponse(shop, config);
 }

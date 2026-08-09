@@ -12,7 +12,7 @@ import {
 import { pushHint, setProgress } from "../services/redisV4.js";
 import { claimNextJobWithFairScheduling } from "../services/fairStageClaim.js";
 import { blobRead, blobWrite } from "../services/blobV4.js";
-import { loadTranslatedItemsForJob } from "../services/translateBlobIO.js";
+import { iterateTranslatedItemsForModule } from "../services/translateBlobIO.js";
 import { registerTranslations, type TranslationInput } from "../services/shopifyFetch.js";
 import { filterWritebackFields } from "../services/writebackFields.js";
 import {
@@ -185,11 +185,6 @@ type FailedResource = {
   translations: TranslationInput[];
 };
 
-type PendingResource = {
-  resource: TranslatedItem;
-  module: string;
-};
-
 async function persistWritebackCheckpoint(
   jobId: string,
   progressPath: string,
@@ -237,48 +232,18 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
     }
   };
 
-  try {
-    // ── Phase 1: Collect all pending resources ────────────────────────────────
-    await maybeHeartbeat();
-    const pendingResources: PendingResource[] = [];
-    const allItems = await loadTranslatedItemsForJob(blobPrefix, modules, {
-      onModuleLoaded: async () => {
-        if (isShuttingDown()) return;
-        await maybeHeartbeat();
-      },
-    });
-    if (isShuttingDown()) {
-      await persistWritebackCheckpoint(
-        jobId,
-        progressPath,
-        writtenSet,
-        writebackDone,
-        writebackFailed,
-        writebackTotal,
-      );
-      console.log(`[writeback] job=${jobId} yielding for shutdown (after blob load)`);
-      return;
-    }
-    for (const { module, resource } of allItems) {
-      if (!writtenSet.has(resource.resourceId)) {
-        pendingResources.push({ resource, module });
+  let shutdownYield = false;
+
+  /** Custom Liquid → Turso LiquidRule（不经 Shopify），串行写一批。 */
+  const writeLiquidBatch = async (items: TranslatedItem[]): Promise<void> => {
+    for (const resource of items) {
+      if (isShuttingDown()) {
+        shutdownYield = true;
+        return;
       }
-    }
-
-    const shopifyPending = pendingResources.filter((p) => p.module !== CUSTOM_LIQUID_MODULE);
-    const liquidPending = pendingResources.filter((p) => p.module === CUSTOM_LIQUID_MODULE);
-
-    console.log(
-      `[writeback] job=${jobId} pending=${pendingResources.length} shopify=${shopifyPending.length} liquid=${liquidPending.length} concurrency=${getShopifyCap(shopDomain)}(adaptive)`,
-    );
-
-    // ── Phase 2a: Custom Liquid → Turso LiquidRule (no Shopify) ───────────────
-    for (const { resource, module } of liquidPending) {
-      if (isShuttingDown()) break;
       await maybeHeartbeat();
-      const field =
-        filterWritebackFields(resource.translations, module).find((t) => t.key === "liquid") ??
-        filterWritebackFields(resource.translations, module)[0];
+      const fields = filterWritebackFields(resource.translations, CUSTOM_LIQUID_MODULE);
+      const field = fields.find((t) => t.key === "liquid") ?? fields[0];
       const translated = (field?.translatedValue ?? "").trim();
       if (!translated) {
         writtenSet.add(resource.resourceId);
@@ -318,10 +283,14 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
         currentModule: CUSTOM_LIQUID_MODULE,
       });
     }
+  };
 
-    // ── Phase 2b: Adaptive parallel Shopify writeback ─────────────────────────
-    let shutdownYield = false;
-    await runShopifyAdaptive(shopDomain, shopifyPending, async ({ resource, module }) => {
+  /** Shopify 写回一批，并发由 runShopifyAdaptive 按 429/cost 反馈自适应。 */
+  const writeShopifyBatch = async (
+    module: string,
+    items: TranslatedItem[],
+  ): Promise<void> => {
+    await runShopifyAdaptive(shopDomain, items, async (resource) => {
       if (isShuttingDown()) {
         shutdownYield = true;
         return;
@@ -329,13 +298,15 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
 
       await maybeHeartbeat();
 
-      const translations: TranslationInput[] = filterWritebackFields(resource.translations, module)
-        .map((t) => ({
-          locale: target,
-          key: t.key,
-          value: t.translatedValue,
-          translatableContentDigest: t.digest,
-        }));
+      const translations: TranslationInput[] = filterWritebackFields(
+        resource.translations,
+        module,
+      ).map((t) => ({
+        locale: target,
+        key: t.key,
+        value: t.translatedValue,
+        translatableContentDigest: t.digest,
+      }));
 
       // Nothing to write for this resource (all fields unchanged / empty)
       if (!translations.length) {
@@ -379,6 +350,55 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
         currentModule: module,
       });
     });
+  };
+
+  try {
+    // ── Phase 1+2: 按 module 分批流式写回 ──────────────────────────────────────
+    // 不再把全店译文一次读进内存（大店会顶到 OOM）：每批处理完即可释放。
+    // 续跑时 writtenSet 里的资源在**下载前**就被 skipResourceId 挡掉，
+    // 不会把已写回的译文内容重新拉一遍。
+    await maybeHeartbeat();
+    console.log(
+      `[writeback] job=${jobId} start modules=${modules.length} done=${writebackDone}/${writebackTotal} concurrency=${getShopifyCap(shopDomain)}(adaptive)`,
+    );
+
+    let shopifyWritten = 0;
+    let liquidWritten = 0;
+
+    for (const module of modules) {
+      if (isShuttingDown()) {
+        shutdownYield = true;
+        break;
+      }
+      await maybeHeartbeat();
+
+      for await (const batch of iterateTranslatedItemsForModule(blobPrefix, module, {
+        skipResourceId: (id) => writtenSet.has(id),
+      })) {
+        if (isShuttingDown()) {
+          shutdownYield = true;
+          break;
+        }
+        // 批与批之间可能有重复（legacy chunk 与 per-resource blob 重叠已在
+        // generator 内去重，这里只挡本轮刚写过的）。
+        const pending = batch.filter((r) => !writtenSet.has(r.resourceId));
+        if (!pending.length) continue;
+
+        if (module === CUSTOM_LIQUID_MODULE) {
+          liquidWritten += pending.length;
+          await writeLiquidBatch(pending);
+        } else {
+          shopifyWritten += pending.length;
+          await writeShopifyBatch(module, pending);
+        }
+        if (shutdownYield) break;
+      }
+      if (shutdownYield) break;
+    }
+
+    console.log(
+      `[writeback] job=${jobId} processed shopify=${shopifyWritten} liquid=${liquidWritten}`,
+    );
 
     if (shutdownYield || isShuttingDown()) {
       await persistWritebackCheckpoint(

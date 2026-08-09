@@ -31,6 +31,10 @@ const MAX_VALUE_BYTES = 8000;
 /** Product rule threshold (chars): long vs short plain; both use digest ?? CRC-32. */
 export const VALUE_CACHE_THRESHOLD = 200;
 
+// Keys per MGET round-trip. Bounds the response payload for stores whose chunks
+// expand into thousands of unique leaf texts.
+const MGET_BATCH_SIZE = 500;
+
 function ttlSeconds(): number {
   const days = Number(process.env.TRANSLATION_TM_TTL_DAYS?.trim() || DEFAULT_TTL_DAYS);
   return (Number.isFinite(days) && days > 0 ? days : DEFAULT_TTL_DAYS) * 24 * 3600;
@@ -42,6 +46,35 @@ function isReadDisabled(): boolean {
 
 export function tmKey(shopName: string, target: string, model: string, digest: string): string {
   return `${TM_PREFIX}:${shopName}:${target}:${model}:${digest}`;
+}
+
+/**
+ * Read many keys in MGET batches, keeping the result aligned with `keys`.
+ * Null entries in `keys` are skipped (they resolve to null). A failing batch
+ * degrades to null for that batch rather than throwing — TM is best-effort.
+ */
+async function mgetAligned(keys: Array<string | null>): Promise<(string | null)[]> {
+  const out: (string | null)[] = keys.map(() => null);
+  const wanted: Array<{ key: string; at: number }> = [];
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (key) wanted.push({ key, at: i });
+  }
+  if (wanted.length === 0) return out;
+
+  const redis = getRedis();
+  for (let start = 0; start < wanted.length; start += MGET_BATCH_SIZE) {
+    const slice = wanted.slice(start, start + MGET_BATCH_SIZE);
+    try {
+      const values = await redis.mget(slice.map((w) => w.key));
+      for (let i = 0; i < slice.length; i++) {
+        out[slice[i]!.at] = values[i] ?? null;
+      }
+    } catch {
+      // best-effort: leave this batch as misses
+    }
+  }
+  return out;
 }
 
 /** Returns the cached translation for a field digest, or null on miss/disabled/error. */
@@ -57,6 +90,25 @@ export async function tmGet(
   } catch {
     return null;
   }
+}
+
+/**
+ * Batch variant of `tmGet`. Each entry carries its own model because the cache
+ * model is resolved per field (engine order depends on the field tier). Entries
+ * with a falsy digest resolve to null without hitting Redis. Result aligns with
+ * `items` by index.
+ */
+export async function tmMGet(
+  shopName: string,
+  target: string,
+  items: Array<{ model: string; digest?: string | null }>,
+): Promise<(string | null)[]> {
+  if (isReadDisabled()) return items.map(() => null);
+  return mgetAligned(
+    items.map((it) =>
+      it.digest ? tmKey(shopName, target, it.model, it.digest) : null,
+    ),
+  );
 }
 
 /** Stores a translation keyed by field digest. Best-effort; never throws. */
@@ -134,6 +186,26 @@ export async function tmGetByValue(
   } catch {
     return null;
   }
+}
+
+/**
+ * Batch variant of `tmGetByValue`. Each entry carries its own model for the same
+ * reason as `tmMGet`. Result aligns with `items` by index; entries with an empty
+ * `sourceText` resolve to null without hitting Redis.
+ */
+export async function tmMGetByValue(
+  items: Array<{ sourceText: string; model: string; digest?: string }>,
+  source: string,
+  target: string,
+): Promise<(string | null)[]> {
+  if (isReadDisabled()) return items.map(() => null);
+  return mgetAligned(
+    items.map((it) =>
+      it.sourceText
+        ? valueCacheKey(it.sourceText, source, target, it.model, it.digest)
+        : null,
+    ),
+  );
 }
 
 /**

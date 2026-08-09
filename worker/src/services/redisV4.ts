@@ -482,3 +482,56 @@ export async function releaseEmailSendLock(
     // ignore
   }
 }
+
+const EMAIL_PENDING_TTL_SEC = 7 * 24 * 60 * 60;
+
+/**
+ * 待发邮件的店铺标记，emailWorker 据此走快路径，免掉每轮跨分区 DISTINCT。
+ *
+ * 用 Hash（field=shopName, value=标记时刻）而不是 Set：双写客户端的 RedisLike
+ * 已支持 hset/hgetall/hdel，不必为 Set 命令再补一套双写实现。
+ */
+function emailPendingKey(pool: "manual" | "auto"): string {
+  return `translate:v4:email:pending:${pool}`;
+}
+
+/**
+ * 标记该店有待发邮件的任务。
+ * 全程 best-effort：标记漏写只会退化到低频 Cosmos 兜底扫描，不会丢邮件。
+ */
+export async function markEmailPendingShop(
+  shopName: string,
+  pool: "manual" | "auto",
+): Promise<void> {
+  try {
+    const redis = getRedis();
+    const key = emailPendingKey(pool);
+    await redis.hset(key, shopName, String(Date.now()));
+    await redis.expire(key, EMAIL_PENDING_TTL_SEC);
+  } catch {
+    // ignore
+  }
+}
+
+/** 快路径候选店；Redis 不可用时返回空，由兜底扫描接管。 */
+export async function getEmailPendingShops(
+  pool: "manual" | "auto",
+): Promise<string[]> {
+  try {
+    return Object.keys(await getRedis().hgetall(emailPendingKey(pool)));
+  } catch {
+    return [];
+  }
+}
+
+/** 确认该店确实已无待发任务后再清除标记（宁可多留一轮，不可漏发）。 */
+export async function clearEmailPendingShop(
+  shopName: string,
+  pool: "manual" | "auto",
+): Promise<void> {
+  try {
+    await getRedis().hdel(emailPendingKey(pool), shopName);
+  } catch {
+    // ignore
+  }
+}

@@ -398,6 +398,8 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
   const quotaMult = quotaTokenMultiplier(aiModel);
   let pendingQuotaCharge = 0;
   let lastKnownRemaining = 0;
+  /** 上次拿到权威 remaining 的时刻（seed / flush / 对账查询都会刷新）。 */
+  let remainingCheckedAt = 0;
   let quotaFlushSeq = 0;
   /** 是否已对本任务 seed 过 budget（避免 flush 时 resetCommitted）。 */
   let jobBudgetSeeded = false;
@@ -505,6 +507,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
       fallbackRemaining,
     );
     lastKnownRemaining = quotaRemaining;
+    remainingCheckedAt = Date.now();
     if (quotaRemaining <= 0 || quotaCap <= 0) {
       tripAbort("pause", V4_MESSAGE_QUOTA_INSUFFICIENT);
     } else {
@@ -537,6 +540,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
       return;
     }
     lastKnownRemaining = remaining;
+    remainingCheckedAt = Date.now();
     quotaFlushSeq += 1;
     await recordCreditUsage({
       shop: shopName,
@@ -564,6 +568,46 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
       quotaRemaining: String(remaining),
       quotaConcurrencyCap: String(cap),
     });
+  };
+
+  /** 剩余额度对账间隔（默认 30s）。 */
+  const QUOTA_RECHECK_MS = Math.max(
+    1_000,
+    Number(process.env.TRANSLATE_QUOTA_RECHECK_MS) || 30_000,
+  );
+  let remainingCheckInFlight: Promise<number> | null = null;
+
+  /**
+   * 读剩余额度：节流 + single-flight。
+   *
+   * 超支准入由 core 侧 budget/committed 把住（发 LLM 前预估，返回后换实扣），
+   * flush 实扣时也会刷新权威 remaining。这里只负责发现**任务外部**的额度变化
+   * （同店其它任务并发消耗、新购积分包），所以不需要每 chunk 都打 Turso——
+   * 并发 chunk 默认 64，逐 chunk 查询会把 Turso 打成瓶颈。
+   */
+  const getRemainingThrottled = async (): Promise<number> => {
+    if (Date.now() - remainingCheckedAt < QUOTA_RECHECK_MS) return lastKnownRemaining;
+    if (remainingCheckInFlight) return remainingCheckInFlight;
+    remainingCheckInFlight = getTsfRemainingWithRetry(shopName)
+      .then((remaining) => {
+        lastKnownRemaining = remaining;
+        remainingCheckedAt = Date.now();
+        return remaining;
+      })
+      .catch((e) => {
+        // Turso 抖动时沿用上次已知值继续（超支仍由 core 的 budget/committed 挡住），
+        // 并推进时间戳，避免在飞的 chunk 立刻重试把查询打成风暴。
+        remainingCheckedAt = Date.now();
+        console.warn(
+          `[translate] job=${jobId} 额度对账失败，沿用 remaining=${lastKnownRemaining}:`,
+          e instanceof Error ? e.message : e,
+        );
+        return lastKnownRemaining;
+      })
+      .finally(() => {
+        remainingCheckInFlight = null;
+      });
+    return remainingCheckInFlight;
   };
 
   const skipTranslateLoop = translateTotal > 0 && translateDone >= translateTotal;
@@ -626,8 +670,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
         if (abort.tripped) return;
 
         if (enforceQuota) {
-          const liveRemaining = await getTsfRemainingWithRetry(shopName);
-          lastKnownRemaining = liveRemaining;
+          const liveRemaining = await getRemainingThrottled();
           if (
             liveRemaining <= 0 ||
             quotaConcurrencyCap(Math.max(0, liveRemaining - pendingQuotaCharge)) <= 0
