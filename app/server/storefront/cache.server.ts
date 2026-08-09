@@ -99,12 +99,11 @@ export async function invalidateStorefrontCache(
 ): Promise<void> {
   const redis = tryGetRedis();
   if (!redis) return;
+  const key = versionKey(kind, shop);
   try {
-    await redis
-      .pipeline()
-      .incr(versionKey(kind, shop))
-      .expire(versionKey(kind, shop), VERSION_TTL_SECONDS)
-      .exec();
+    // sole RENDER_KV：原生 ioredis 有 incr；不必走 pipeline（双写代理也从未支持 incr）。
+    await redis.incr(key);
+    await redis.expire(key, VERSION_TTL_SECONDS);
   } catch (err) {
     console.warn(`[sf-cache] 失效失败 kind=${kind} shop=${shop}:`, err);
   }

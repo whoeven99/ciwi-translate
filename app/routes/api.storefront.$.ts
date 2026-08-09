@@ -223,10 +223,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
 
     try {
-      const result = await getCurrencyCacheData(
+      const result = await readThroughStorefrontCache(
+        "currency",
         shopName,
-        currencyCode,
-        fromCurrencyCode,
+        ["cache", currencyCode, fromCurrencyCode],
+        () => getCurrencyCacheData(shopName, currencyCode, fromCurrencyCode),
       );
       return json(result, { headers: CORS_HEADERS });
     } catch (err) {

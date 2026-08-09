@@ -838,11 +838,13 @@ redirect records.
  `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
 
 - **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
- `api.storefront.$.ts` 的 switcher / currency / liquid / picture 读端点经
+ `api.storefront.$.ts` 的 switcher / currency（`getCurrencyByShopName` +
+ `getCacheData`）/ liquid / picture 读端点经
  `readThroughStorefrontCache(kind, shop, extra, load)`，TTL 300s，只缓存
  `success: true`；Redis 任何异常都静默降级直查库，`load()` 自身异常照常上抛。
  失效用 per-(kind, shop) 版本号 key `tsf:sf:ver:{kind}:{shop}`，
- `invalidateStorefrontCache` 只做一次 INCR（生产禁止 KEYS/SCAN 批量删）。
+ `invalidateStorefrontCache` 对版本 key 做 `INCR` + `EXPIRE`（sole
+ `RENDER_KV` / 原生 ioredis；生产禁止 KEYS/SCAN 批量删）。
  已接失效的写入方：`switcherData.upsertSwitcherConfig`、currency
  `insertCurrency`/`updateCurrency`/`deleteCurrency`/`updateDefaultCurrency`、
  picture `upsertUserPicture`/`softDeleteUserPicture`（覆盖 upload / saveFromUrl）、
@@ -1659,9 +1661,11 @@ logging uses beacon-style client logging instead of route `fetcher.submit`.
  紧张时拒绝请求，**不是慢查询**（曾在 `switcherConfiguration.findUnique()` 这种
  主键单行查询上出现）。Prisma 把它包成 `transient: false` 直接抛出，店面 App
  Proxy 因此冒 500，错误呈突发聚集而非均匀分布。两处缓解已落地：
- `app/config/libsqlFetch.server.ts` 对 429/502/503/504 重试 2 次（请求体先缓冲
- 才可重放），以及 storefront 读路径的 Redis 缓存（见 Switcher And Storefront
- App Proxy）。再遇同类问题先看请求量与缓存命中，不要先去优化 SQL。
+ `app/config/libsqlFetch.server.ts` 对 429/502/503/504 最多重试 2 次（请求体
+ 先缓冲才可重放；**仅**当 body 像只读 SQL——含 SELECT/WITH 且无
+ INSERT/UPDATE/DELETE/事务边界等——才重试，避免写重放），以及 storefront 读
+ 路径的 Redis 缓存（见 Switcher And Storefront App Proxy）。再遇同类问题先看
+ 请求量与缓存命中，不要先去优化 SQL。
 - `pricing` AbortError: Remix fetcher replacement or route changes can produce
 expected aborts. Global client error reporting should ignore AbortError-like
 noise, and exposure logging should prefer `reportClientLog(..., { beacon: true })` over competing fetcher submits.
