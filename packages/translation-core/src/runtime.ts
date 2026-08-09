@@ -8,6 +8,8 @@ export type TranslationCoreRedisPipeline = {
 
 export type TranslationCoreRedis = {
   get(key: string): Promise<string | null>;
+  /** Batch read. Result aligns with `keys` by index. Safe on single-instance Redis/Valkey only. */
+  mget(keys: string[]): Promise<(string | null)[]>;
   set(key: string, value: string, mode: "EX", seconds: number): Promise<unknown>;
   pipeline(): TranslationCoreRedisPipeline;
 };

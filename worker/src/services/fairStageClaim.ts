@@ -41,6 +41,58 @@ export type FairStageClaimOptions = {
   tryClaimJob: (shopName: string, taskId: string) => Promise<TranslationV4Job | null>;
 };
 
+/**
+ * Cosmos 兜底扫描的空转退避。
+ *
+ * hint 队列为空时 claim 必然落到 `findPendingJobs`，而该查询是跨分区的。按
+ * `WORKER_POLL_INTERVAL_MS` 默认 2s 计，3 个 stage × 2 个池会在完全没有任务时
+ * 持续产生约 3 次跨分区查询/秒。这里对「确实一条候选都没扫到」的池做指数退避；
+ * 一旦扫到候选就立刻复位。
+ *
+ * hint 队列是正常路径，退避只影响 hint 丢失后的兜底发现延迟，因此 manual 的上限
+ * 明显短于 auto——商户在等 manual 任务。
+ */
+const COSMOS_SCAN_BACKOFF_MAX_MS: Record<StagePoolKind, number> = {
+  manual: Math.max(
+    0,
+    Number(process.env.COSMOS_SCAN_BACKOFF_MAX_MANUAL_MS) || 10_000,
+  ),
+  auto: Math.max(
+    0,
+    Number(process.env.COSMOS_SCAN_BACKOFF_MAX_AUTO_MS) || 30_000,
+  ),
+};
+
+const cosmosScanBackoff = new Map<
+  string,
+  { emptyStreak: number; nextAllowedAt: number }
+>();
+
+function backoffKey(stage: StagePoolStage, pool: StagePoolKind): string {
+  return `${stage}:${pool}`;
+}
+
+/** true = 本轮跳过该池的 Cosmos 兜底扫描。 */
+function shouldSkipCosmosScan(stage: StagePoolStage, pool: StagePoolKind): boolean {
+  const state = cosmosScanBackoff.get(backoffKey(stage, pool));
+  if (!state) return false;
+  return Date.now() < state.nextAllowedAt;
+}
+
+function recordCosmosScanEmpty(stage: StagePoolStage, pool: StagePoolKind): void {
+  const max = COSMOS_SCAN_BACKOFF_MAX_MS[pool];
+  if (max <= 0) return;
+  const key = backoffKey(stage, pool);
+  const emptyStreak = (cosmosScanBackoff.get(key)?.emptyStreak ?? 0) + 1;
+  // 2s 基准翻倍：4s → 8s → 16s → 上限
+  const delay = Math.min(max, 2_000 * 2 ** emptyStreak);
+  cosmosScanBackoff.set(key, { emptyStreak, nextAllowedAt: Date.now() + delay });
+}
+
+function resetCosmosScanBackoff(stage: StagePoolStage, pool: StagePoolKind): void {
+  cosmosScanBackoff.delete(backoffKey(stage, pool));
+}
+
 /** manual 优先，再 auto。仅包含当前有空槽的池。 */
 function claimPoolsInPriority(stage: StagePoolStage): StagePoolKind[] {
   const pools: StagePoolKind[] = [];
@@ -142,6 +194,8 @@ async function scanCosmosForPool(
     tryClaimJob,
   } = options;
 
+  if (shouldSkipCosmosScan(options.stage, pool)) return null;
+
   const busyShops = new Set<string>();
   for (let batch = 0; batch < scanMaxBatches; batch++) {
     const offset = batch * scanBatch;
@@ -151,7 +205,13 @@ async function scanCosmosForPool(
       offset,
       pool,
     );
-    if (candidates.length === 0) break;
+    if (candidates.length === 0) {
+      // 第一批就空 = 该池确实没有待处理任务，进入退避。后续批次为空只是分页到尾，
+      // 说明本轮扫到过候选（只是都 busy 或抢锁失败），不该长退避。
+      if (batch === 0) recordCosmosScanEmpty(options.stage, pool);
+      break;
+    }
+    resetCosmosScanBackoff(options.stage, pool);
 
     for (const candidate of candidates) {
       if (busyShops.has(candidate.shopName)) continue;
@@ -180,12 +240,19 @@ export async function claimNextJobWithFairScheduling(
   // 1) 分池 hint：manual 优先
   for (const pool of pools) {
     const job = await drainPoolHints(options, pool);
-    if (job) return job;
+    if (job) {
+      // hint 命中说明该池又有活儿了，兜底扫描恢复灵敏。
+      resetCosmosScanBackoff(options.stage, pool);
+      return job;
+    }
   }
 
   // 2) 遗留混合队列（部署过渡）
   const legacy = await drainLegacyHints(options);
-  if (legacy) return legacy;
+  if (legacy) {
+    resetCosmosScanBackoff(options.stage, stagePoolKindForJob(legacy));
+    return legacy;
+  }
 
   // 3) Cosmos 兜底：同样 manual 优先
   for (const pool of pools) {

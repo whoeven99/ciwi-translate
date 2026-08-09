@@ -1,4 +1,5 @@
 import prisma from "~/db.server";
+import { invalidateStorefrontCache } from "~/server/storefront/cache.server";
 import { liquidSourceDigest } from "./liquidDigest.server";
 
 /** 对齐 Java UserLiquidDO，便于 Admin 页面迁移前后复用同一套渲染逻辑。 */
@@ -108,6 +109,7 @@ export async function createLiquidDo(
       jobId: null,
     },
   });
+  await invalidateStorefrontCache("liquid", shop);
   return toDo(row);
 }
 
@@ -141,6 +143,7 @@ export async function updateLiquidDo(
         : {}),
     },
   });
+  await invalidateStorefrontCache("liquid", shop);
   return toDo(row);
 }
 
@@ -158,6 +161,7 @@ export async function deleteLiquidDo(
   await prisma.liquidRule.deleteMany({
     where: { shop, id: { in: validIds } },
   });
+  await invalidateStorefrontCache("liquid", shop);
   return validIds;
 }
 
@@ -173,6 +177,7 @@ export async function toggleLiquidReplacementMethod(
     where: { id },
     data: { replacementMethod: next },
   });
+  await invalidateStorefrontCache("liquid", shop);
   return next;
 }
 

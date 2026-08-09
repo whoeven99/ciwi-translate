@@ -120,16 +120,23 @@ export function SupportChatWidget() {
 
   useEffect(() => {
     let cancelled = false;
+    // 这个组件挂在 app.tsx 上，对所有嵌入页生效。后台标签页没人看，轮询直接跳过；
+    // 回到前台时补一次，避免用户看到过期的未读数。
     const tick = () => {
-      if (cancelled) return;
+      if (cancelled || document.hidden) return;
       void refresh(open);
     };
+    const onVisibilityChange = () => {
+      if (!document.hidden) tick();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     if (open) {
       tick();
       const interval = window.setInterval(tick, OPEN_POLL_MS);
       return () => {
         cancelled = true;
+        document.removeEventListener("visibilitychange", onVisibilityChange);
         window.clearInterval(interval);
       };
     }
@@ -143,6 +150,7 @@ export function SupportChatWidget() {
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.clearTimeout(timeout);
       if (interval !== undefined) window.clearInterval(interval);
     };

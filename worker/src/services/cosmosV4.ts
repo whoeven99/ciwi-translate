@@ -1,5 +1,5 @@
 import { CosmosClient, type Container } from "@azure/cosmos";
-import { getProgress, pushHint } from "./redisV4.js";
+import { getProgress, markEmailPendingShop, pushHint } from "./redisV4.js";
 
 export type TranslationV4Status =
   | "CREATED"
@@ -539,6 +539,7 @@ export async function updateJob(
         .replace<TranslationV4Job>(updated, {
           accessCondition: { type: "IfMatch", condition: etag! },
         });
+      await noteEmailPendingIfTerminal(updated, updates.status);
       return;
     } catch (e) {
       if (isCosmosPreconditionFailed(e) && attempt < maxAttempts - 1) {
@@ -846,8 +847,28 @@ export async function releaseJobsClaimedBySuffix(claimSuffix: string): Promise<n
 }
 
 /** 完成通知邮件涵盖的终态（含用户取消的 CANCELLED）。 */
+const EMAIL_NOTIFY_STATUSES = ["COMPLETED", "PAUSED", "CANCELLED"] as const;
+
 function emailNotifyStatusFilter(): string {
-  return "(c.status = 'COMPLETED' OR c.status = 'PAUSED' OR c.status = 'CANCELLED')";
+  return `(${EMAIL_NOTIFY_STATUSES.map((s) => `c.status = '${s}'`).join(" OR ")})`;
+}
+
+/**
+ * 任务刚进入待发邮件终态时打 Redis 标记，让 emailWorker 走快路径、
+ * 免掉每轮两次跨分区 DISTINCT。
+ *
+ * 这里只覆盖 Worker 侧的状态写入；App 侧手动暂停/取消不经过本函数，
+ * 由 emailWorker 的低频 Cosmos 兜底扫描兜住，所以标记漏写不会丢邮件。
+ */
+async function noteEmailPendingIfTerminal(
+  job: TranslationV4Job,
+  nextStatus: TranslationV4Status | undefined,
+): Promise<void> {
+  if (!nextStatus) return;
+  if (!(EMAIL_NOTIFY_STATUSES as readonly string[]).includes(nextStatus)) return;
+  if (job.emailSent === true) return;
+  const pool = job.taskSource === TSF_AUTO_TASK_SOURCE ? "auto" : "manual";
+  await markEmailPendingShop(job.shopName, pool);
 }
 
 /**

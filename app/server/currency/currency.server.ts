@@ -6,6 +6,7 @@ import {
   type TranslateV4ErrorKey,
 } from "~/utils/translateV4Errors";
 import { type BaseResponse } from "~/server/storefront/response.server";
+import { invalidateStorefrontCache } from "~/server/storefront/cache.server";
 
 type CurrencyLocaleInfo = {
   currencyName?: string;
@@ -235,6 +236,7 @@ export async function insertCurrency(
     },
   });
 
+  await invalidateStorefrontCache("currency", input.shop);
   return ok(toCurrencyPayload(row));
 }
 
@@ -257,6 +259,8 @@ export async function updateCurrency(
   if (result.count <= 0) {
     return fail(TRANSLATE_V4_ERROR_KEYS.CURRENCY_NOT_FOUND, input);
   }
+
+  await invalidateStorefrontCache("currency", input.shop);
   return ok({
     ...input,
     id,
@@ -281,6 +285,8 @@ export async function deleteCurrency(
   if (result.count <= 0) {
     return fail(TRANSLATE_V4_ERROR_KEYS.CURRENCY_NOT_FOUND, undefined);
   }
+
+  await invalidateStorefrontCache("currency", shop);
   return ok(currencyId);
 }
 
@@ -348,6 +354,7 @@ export async function updateDefaultCurrency(
     });
   });
 
+  await invalidateStorefrontCache("currency", input.shop);
   return ok(toCurrencyPayload(row));
 }
 

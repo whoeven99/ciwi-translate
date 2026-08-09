@@ -113,65 +113,91 @@ export async function listTranslatedResourceIds(
 }
 
 /**
- * Load translated resources for one module.
+ * Stream translated resources for one module, in batches.
+ *
+ * 写回不能把全店译文一次读进内存（大店会把 Worker 顶到 OOM），所以按批产出，
+ * 调用方处理完一批即可释放。
+ *
+ * `skipResourceId` 在**下载之前**生效：per-resource blob 的文件名就是
+ * base64url(resourceId)，续跑时已写回的资源连内容都不必下载。
+ *
  * Per-resource blobs win over legacy chunk arrays when both exist.
+ */
+export async function* iterateTranslatedItemsForModule(
+  blobPrefix: string,
+  module: string,
+  opts?: {
+    batchSize?: number;
+    skipResourceId?: (resourceId: string) => boolean;
+  },
+): AsyncGenerator<TranslatedResourceItem[]> {
+  const batchSize = Math.max(1, opts?.batchSize ?? 500);
+  const skip = opts?.skipResourceId;
+  /** per-resource blob 覆盖到的 id；legacy chunk 里的同 id 旧值要让位。 */
+  const seenIds = new Set<string>();
+
+  const resourcePrefix = `${blobPrefix}/translate/${module}/${RESOURCES_DIR}/`;
+  const resPaths: string[] = [];
+  for (const path of await blobListPaths(resourcePrefix)) {
+    if (!path.endsWith(".json")) continue;
+    const id = decodeResourceIdFromBlobPath(path);
+    // 先登记再过滤：被跳过的资源同样要挡住 legacy chunk 的旧值。
+    if (id) seenIds.add(id);
+    if (id && skip?.(id)) continue;
+    resPaths.push(path);
+  }
+
+  for (let i = 0; i < resPaths.length; i += batchSize) {
+    const items = await mapConcurrent(
+      resPaths.slice(i, i + batchSize),
+      BLOB_READ_CONCURRENCY,
+      (path) => blobRead<TranslatedResourceItem>(path),
+    );
+    const batch = items.filter(
+      (item): item is TranslatedResourceItem => !!item?.resourceId,
+    );
+    if (batch.length) yield batch;
+  }
+
+  // 旧版整块 chunk（数量少）：一个文件含多个资源，按累计资源数切批。
+  const chunkPaths = (
+    await blobListPaths(`${blobPrefix}/translate/${module}/`)
+  ).filter(isLegacyChunkPath);
+  let carry: TranslatedResourceItem[] = [];
+  for (let i = 0; i < chunkPaths.length; i += BLOB_READ_CONCURRENCY) {
+    const chunks = await mapConcurrent(
+      chunkPaths.slice(i, i + BLOB_READ_CONCURRENCY),
+      BLOB_READ_CONCURRENCY,
+      (path) => blobRead<TranslatedResourceItem[]>(path),
+    );
+    for (const chunk of chunks) {
+      if (!chunk) continue;
+      for (const item of chunk) {
+        if (!item?.resourceId || seenIds.has(item.resourceId)) continue;
+        seenIds.add(item.resourceId);
+        if (skip?.(item.resourceId)) continue;
+        carry.push(item);
+      }
+    }
+    while (carry.length >= batchSize) {
+      yield carry.slice(0, batchSize);
+      carry = carry.slice(batchSize);
+    }
+  }
+  if (carry.length) yield carry;
+}
+
+/**
+ * Load every translated resource for one module at once.
+ * 仅用于结果规模可控的场景；写回请走 `iterateTranslatedItemsForModule`。
  */
 export async function loadTranslatedItemsForModule(
   blobPrefix: string,
   module: string,
 ): Promise<TranslatedResourceItem[]> {
-  const byId = new Map<string, TranslatedResourceItem>();
-
-  // 并发读每资源 blob（数量大，是写回启动慢的主因）。
-  const resourcePrefix = `${blobPrefix}/translate/${module}/${RESOURCES_DIR}/`;
-  const resPaths = (await blobListPaths(resourcePrefix)).filter((p) => p.endsWith(".json"));
-  const resItems = await mapConcurrent(resPaths, BLOB_READ_CONCURRENCY, (path) =>
-    blobRead<TranslatedResourceItem>(path),
-  );
-  for (const item of resItems) if (item?.resourceId) byId.set(item.resourceId, item);
-
-  // 旧版整块 chunk（数量少），同样并发读。
-  const modulePrefix = `${blobPrefix}/translate/${module}/`;
-  const chunkPaths = (await blobListPaths(modulePrefix)).filter(isLegacyChunkPath);
-  const chunks = await mapConcurrent(chunkPaths, BLOB_READ_CONCURRENCY, (path) =>
-    blobRead<TranslatedResourceItem[]>(path),
-  );
-  for (const chunk of chunks) {
-    if (!chunk) continue;
-    for (const item of chunk) {
-      if (item?.resourceId && !byId.has(item.resourceId)) {
-        byId.set(item.resourceId, item);
-      }
-    }
-  }
-
-  return [...byId.values()];
-}
-
-/** Count durable translated resources across all job modules. */
-export async function countTranslatedResources(
-  blobPrefix: string,
-  modules: string[],
-): Promise<number> {
-  let total = 0;
-  for (const module of modules) {
-    total += (await loadTranslatedItemsForModule(blobPrefix, module)).length;
-  }
-  return total;
-}
-
-export async function loadTranslatedItemsForJob(
-  blobPrefix: string,
-  modules: string[],
-  opts?: { onModuleLoaded?: (module: string, index: number) => Promise<void> },
-): Promise<Array<{ module: string; resource: TranslatedResourceItem }>> {
-  const out: Array<{ module: string; resource: TranslatedResourceItem }> = [];
-  for (let i = 0; i < modules.length; i++) {
-    const module = modules[i]!;
-    if (opts?.onModuleLoaded) await opts.onModuleLoaded(module, i);
-    for (const resource of await loadTranslatedItemsForModule(blobPrefix, module)) {
-      out.push({ module, resource });
-    }
+  const out: TranslatedResourceItem[] = [];
+  for await (const batch of iterateTranslatedItemsForModule(blobPrefix, module)) {
+    out.push(...batch);
   }
   return out;
 }
