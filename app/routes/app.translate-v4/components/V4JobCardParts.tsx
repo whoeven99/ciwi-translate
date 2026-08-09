@@ -7,6 +7,31 @@ import {
 } from "../jobStageUtils";
 import { V4_STAGE_KEYS } from "../v4I18n";
 
+/** 首帧骨架条：任务列表与覆盖率改由客户端补齐，占位期间不闪 0 值或空态文案。 */
+export function V4Skeleton({
+  width,
+  height,
+  radius = 6,
+}: {
+  width: number | string;
+  height: number;
+  radius?: number;
+}) {
+  return (
+    <span
+      aria-hidden
+      className="v4-skeleton"
+      style={{
+        display: "inline-block",
+        width,
+        height,
+        borderRadius: radius,
+        verticalAlign: "middle",
+      }}
+    />
+  );
+}
+
 export function ProgressRing({ percent, size = "md" }: { percent: number; size?: "md" | "sm" }) {
   const dash = `${percent} 100`;
   const done = percent >= 100;

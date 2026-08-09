@@ -1,5 +1,10 @@
 import { getTranslateV4RedisClient, v4ControlKey, v4ProgressKey, type V4ControlAction } from "./redis.server";
-import { getV4Job, listV4Jobs, updateV4Job } from "./cosmos.server";
+import {
+  getV4Job,
+  listV4JobSummaryDocs,
+  updateV4Job,
+  type V4JobSummaryDoc,
+} from "./cosmos.server";
 import { escalateStuckPauseIfNeeded } from "./pauseReconcile.server";
 import {
   escalateStuckTranslatingToWritebackIfNeeded,
@@ -105,7 +110,7 @@ function parseInitCompletedModules(
 
 /** 合并 Cosmos 持久化 metrics 与 worker 实时写入 Redis 的进度。 */
 export function mergeV4JobMetrics(
-  job: TranslationV4Job,
+  job: V4JobSummaryDoc,
   redisProgress: Record<string, string>,
   controlAction: V4ControlAction | null = null,
 ): TranslationV4MergedMetrics {
@@ -443,7 +448,7 @@ export type TranslationJobProgressSummary = {
 };
 
 function toProgressSummary(
-  job: TranslationV4Job,
+  job: V4JobSummaryDoc,
   metrics: TranslationV4MergedMetrics,
 ): TranslationJobProgressSummary {
   /**
@@ -568,7 +573,7 @@ async function readRedisProgress(
 
 /** 列表页批量读取活跃任务的 Redis 进度 + 控制键（含写回/校验阶段，保证写回进度实时）。 */
 async function batchReadRedisForJobs(
-  jobs: TranslationV4Job[],
+  jobs: V4JobSummaryDoc[],
 ): Promise<Map<string, { progress: Record<string, string>; control: V4ControlAction | null }>> {
   const activeIds = jobs.filter((j) => ACTIVE_V4_STATUSES.includes(j.status)).map((j) => j.id);
   const out = new Map<
@@ -658,7 +663,7 @@ export async function listV4JobSummaries(
 ): Promise<TranslationJobProgressSummary[]> {
   const limit = Math.min(Math.max(options?.limit ?? 30, 1), 50);
   const escalateStuck = options?.escalateStuck ?? true;
-  const jobs = await listV4Jobs(shopName, limit);
+  const jobs = await listV4JobSummaryDocs(shopName, limit);
   const filtered = options?.taskSource
     ? jobs.filter((j) => (j.taskSource ?? null) === options.taskSource)
     : jobs;

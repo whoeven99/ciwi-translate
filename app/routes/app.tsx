@@ -574,7 +574,7 @@ export default function App() {
           }}
         >
           <NavMenu>
-            <Link to="/app/translate-v4" rel="home">
+            <Link to="/app" rel="home">
               {t("v4.title")}
             </Link>
             {isClient && (

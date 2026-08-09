@@ -1,4 +1,4 @@
-import { updateV4Job } from "./cosmos.server";
+import { updateV4Job, type V4JobSummaryDoc } from "./cosmos.server";
 import {
   clearV4Control,
   getTranslateV4RedisClient,
@@ -23,7 +23,7 @@ import {
  */
 export async function escalateStuckTranslatingToWritebackIfNeeded(
   shopName: string,
-  job: TranslationV4Job,
+  job: V4JobSummaryDoc,
   metrics: TranslationV4MergedMetrics,
 ): Promise<TranslationV4Job | null> {
   if (job.status !== "TRANSLATING" && job.status !== "TRANSLATE_QUEUED") {

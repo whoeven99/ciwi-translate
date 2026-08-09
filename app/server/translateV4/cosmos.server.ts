@@ -165,6 +165,70 @@ export async function listV4Jobs(
   }
 }
 
+/**
+ * 任务列表/进度汇总用得到的字段子集。列表页每次都要拉最多 50 条文档，
+ * `SELECT *` 会连 `profileBlock`（店铺画像 prompt）、`blobPrefix` 等一起搬回来，
+ * 白白拖慢首页文档的 TTFB。
+ */
+export type V4JobSummaryDoc = Pick<
+  TranslationV4Job,
+  | "id"
+  | "status"
+  | "source"
+  | "target"
+  | "modules"
+  | "aiModel"
+  | "taskSource"
+  | "metrics"
+  | "stageTimings"
+  | "errorMessage"
+  | "errorStage"
+  | "pauseAfterWriteback"
+  | "createdAt"
+  | "updatedAt"
+>;
+
+const V4_JOB_SUMMARY_SELECT = [
+  "c.id",
+  "c.status",
+  "c.source",
+  "c.target",
+  "c.modules",
+  "c.aiModel",
+  "c.taskSource",
+  "c.metrics",
+  "c.stageTimings",
+  "c.errorMessage",
+  "c.errorStage",
+  "c.pauseAfterWriteback",
+  "c.createdAt",
+  "c.updatedAt",
+].join(", ");
+
+/** 与 {@link listV4Jobs} 同序同过滤，但只取汇总字段。写路径仍走 `updateV4Job` 全量读改写。 */
+export async function listV4JobSummaryDocs(
+  shopName: string,
+  limit = 50,
+): Promise<V4JobSummaryDoc[]> {
+  try {
+    const { resources } = await getContainer()
+      .items.query<V4JobSummaryDoc>(
+        {
+          query: `SELECT ${V4_JOB_SUMMARY_SELECT} FROM c WHERE c.shopName = @shopName ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit`,
+          parameters: [
+            { name: "@shopName", value: shopName },
+            { name: "@limit", value: limit },
+          ],
+        },
+        { partitionKey: shopName },
+      )
+      .fetchAll();
+    return resources;
+  } catch {
+    return [];
+  }
+}
+
 export type UpdateV4JobInput = Partial<
   Pick<
     TranslationV4Job,

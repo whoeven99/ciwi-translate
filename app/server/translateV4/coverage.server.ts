@@ -10,7 +10,7 @@ import {
   sumItemsCountByLabelsFromCache,
 } from "./itemsCount.server";
 import type { AdminGraphqlClient } from "./itemsCount.server";
-import { listV4Jobs } from "./cosmos.server";
+import { listV4JobSummaryDocs } from "./cosmos.server";
 import { sameTranslationLocale } from "./locale";
 import { listTargetLocales, type TargetLocaleRow } from "./targetLocale.server";
 import { ACTIVE_V4_STATUSES } from "./types";
@@ -70,7 +70,7 @@ async function enrichCoverageWithRuntimeSignals(
   try {
     const [rows, jobs, lastAutoUpdateAt] = await Promise.all([
       targetRows ? Promise.resolve(targetRows) : listTargetLocales(shop),
-      listV4Jobs(shop, 100),
+      listV4JobSummaryDocs(shop, 100),
       readAutoScanLastAt(),
     ]);
     const activeJobs = jobs.filter((job) => ACTIVE_V4_STATUSES.includes(job.status));
@@ -107,7 +107,7 @@ async function enrichCoverageWithMinimalRuntimeSignals(
   try {
     const [rows, jobs] = await Promise.all([
       targetRows ? Promise.resolve(targetRows) : listTargetLocales(shop),
-      listV4Jobs(shop, 30),
+      listV4JobSummaryDocs(shop, 30),
     ]);
     const activeJobs = jobs.filter((job) => ACTIVE_V4_STATUSES.includes(job.status));
     const locales = summary.locales.map((row) => {
