@@ -1,4 +1,4 @@
-import { updateV4Job } from "./cosmos.server";
+import { updateV4Job, type V4JobSummaryDoc } from "./cosmos.server";
 import {
   clearV4Control,
   clearV4PausePending,
@@ -18,7 +18,7 @@ const STUCK_PAUSE_ESCALATE_MS = 120_000;
  */
 export async function escalateStuckPauseIfNeeded(
   shopName: string,
-  job: TranslationV4Job,
+  job: V4JobSummaryDoc,
   metrics: TranslationV4MergedMetrics,
 ): Promise<TranslationV4Job | null> {
   const jobMetrics = job.metrics ?? EMPTY_V4_METRICS;

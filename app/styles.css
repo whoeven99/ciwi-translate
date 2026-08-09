@@ -341,6 +341,26 @@ body {
   animation-delay: 0.18s;
 }
 
+/* 首帧骨架条：任务列表 / 覆盖率由客户端补齐，占位期间用低对比呼吸块 */
+@keyframes v4-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+.v4-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(27, 39, 71, 0.07),
+    rgba(27, 39, 71, 0.12),
+    rgba(27, 39, 71, 0.07)
+  );
+  animation: v4-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
 /* 卡片悬浮上浮 + 阴影加重 */
 .v4-lift {
   transition:
@@ -396,6 +416,7 @@ body {
   .v4-enter,
   .v4-row-enter,
   .v4-livedot,
+  .v4-skeleton,
   .v4-task-card-spotlight {
     animation: none !important;
   }
