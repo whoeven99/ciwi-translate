@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  isGoogleUsageModel,
   translateResources,
   type EngineUsage,
   type TranslateItem,
@@ -18,12 +19,18 @@ function fieldDigest(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 32);
 }
 
-function sumUsageTokens(usage: EngineUsage): number {
-  let total = 0;
-  for (const row of Object.values(usage)) {
-    total += row.tokens ?? 0;
+function sumUsageByEngine(usage: EngineUsage): {
+  llmTokens: number;
+  googleCredits: number;
+} {
+  let llmTokens = 0;
+  let googleCredits = 0;
+  for (const [model, row] of Object.entries(usage)) {
+    const n = row.tokens ?? 0;
+    if (isGoogleUsageModel(model)) googleCredits += n;
+    else llmTokens += n;
   }
-  return total;
+  return { llmTokens, googleCredits };
 }
 
 export type TranslateSingleFieldArgs = {
@@ -46,7 +53,11 @@ export type TranslateSingleFieldResult = {
   translatedText: string;
   /** LLM API 原始 token 合计（未乘 QUOTA_TOKEN_MULTIPLIER）。 */
   usedTokens: number;
+  /** Google 已换算的商户积分（chars×GOOGLE_CREDITS_PER_CHAR，不再乘模型系数）。 */
+  googleCredits: number;
   status: "translated" | "fallback";
+  /** 额度软停：非异常，调用方应停止继续花费。 */
+  quotaStopped?: boolean;
 };
 
 /**
@@ -58,7 +69,7 @@ export async function translateSingleField(
 ): Promise<TranslateSingleFieldResult> {
   const text = args.text ?? "";
   if (!text.trim()) {
-    return { translatedText: text, usedTokens: 0, status: "translated" };
+    return { translatedText: text, usedTokens: 0, googleCredits: 0, status: "translated" };
   }
 
   const source = (args.source ?? "en").trim() || "en";
@@ -85,7 +96,7 @@ export async function translateSingleField(
     shopifyType: args.shopifyType,
   };
 
-  const { resources, usage } = await translateResources(
+  const { resources, usage, quotaStopped } = await translateResources(
     [{ resourceId: "__single__", fields: [item] }],
     source,
     target,
@@ -107,7 +118,7 @@ export async function translateSingleField(
   const result = resources[0]?.results[0];
   const translatedText = result?.translatedValue ?? text;
   const status = result?.status ?? "fallback";
-  const usedTokens = sumUsageTokens(usage);
+  const { llmTokens: usedTokens, googleCredits } = sumUsageByEngine(usage);
 
   // 管理页单条：质量校验/拼装后的最终译文（完整不截断）。
   console.log("[single] result", {
@@ -123,11 +134,15 @@ export async function translateSingleField(
     hasProfileBlock: Boolean(args.profileBlock?.trim()),
     prompt: args.customPrompt ?? "",
     usedTokens,
+    googleCredits,
+    quotaStopped: Boolean(quotaStopped),
   });
 
   return {
     translatedText,
     usedTokens,
+    googleCredits,
     status,
+    quotaStopped: quotaStopped || undefined,
   };
 }
