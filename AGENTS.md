@@ -527,7 +527,9 @@ job retention cleanup).
   incomplete `211401` (`total_credits_used` / `required_credits`); auto:
   success `140352` / partial `159297`. Manual create persists
   `estimatedCredits` (chars×1.6, no coverage scale) for required_credits
-  two-handed math vs `usedTokens`.
+  two-handed math vs `usedTokens`. 同一次创建点击写共享 `batchId`
+  （`createTranslateV4Tasks` → Cosmos）；有 `batchId` 时该批终态即发一封、
+  不等其它批次；无 `batchId` 旧任务仍整店待发汇总。
 - `worker/src/services/translationReport.ts` and
 `worker/src/scripts/exportTranslationReport.ts`: offline quality report builder
 for translated blob entries.
