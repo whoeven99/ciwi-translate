@@ -58,6 +58,25 @@ export class AdaptiveSemaphore {
     this._inflight++;
   }
 
+  /**
+   * Soft acquire for shop credit gates: returns false when cap is 0 instead of
+   * throwing (callers settle in-flight work and return a normal stop signal).
+   */
+  async tryAcquire(): Promise<boolean> {
+    if (this._max <= 0) return false;
+    if (this._inflight < this._max) {
+      this._inflight++;
+      return true;
+    }
+    await new Promise<void>((r) => this._waiters.push(r));
+    if (this._max <= 0) return false;
+    if (this._inflight >= this._max) {
+      return this.tryAcquire();
+    }
+    this._inflight++;
+    return true;
+  }
+
   release(): void {
     this._inflight = Math.max(0, this._inflight - 1);
     this._flush();

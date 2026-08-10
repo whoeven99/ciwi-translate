@@ -104,6 +104,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     let translatedText = "";
     let usedTokens = 0;
+    let googleCredits = 0;
     try {
       const result = await translateSingleText({
         shop,
@@ -117,6 +118,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
       translatedText = result.translatedText;
       usedTokens = result.usedTokens;
+      googleCredits = result.googleCredits;
     } catch (err) {
       console.error("[single] translate stage failed", requestSummary, err);
       throw err;
@@ -134,6 +136,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           textLength: text.length,
         },
         aiModel,
+        googleCredits,
       );
     } catch (err) {
       console.error(

@@ -579,8 +579,12 @@ Admin 体量标签另用 `COSMOS_SHOP_DATABASE_ID`（默认 `shop`）、
 `TRANSLATE_QUOTA_FLUSH_CHARGE`, `QUOTA_PER_CALL_COST`（默认 15k；`remaining < perCall` →
 并发 cap=0）, `QUOTA_MAX_CONCURRENCY`, `TRANSLATE_QUOTA_ESTIMATE_SAFETY`（默认 1.2）。
 任务 seed 记下 `budget`；发 LLM 前 `committed += 预估`；返回后预估换成实扣
-（`syncShopQuotaBudget` + `callLLMOnce`）。`committed + nextEst > budget` 则不发新请求；
-暂停/耗尽立刻 `setShopQuotaCap(0)`；已在飞仍跑完实扣。
+（`syncShopQuotaBudget` + `callLLMOnce`）。`committed + nextEst > budget` 则**软停**
+（`quotaStopped` 正常返回，不抛 `QuotaExhaustedError`、不打 `[route] llm engine error`、
+**不 fallback Google**）；`setShopQuotaCap(0)` 后等在飞 LLM 结清，Worker
+`flushQuota` 实扣后再 `PAUSED`。Google 质量兜底单独计费：
+`credits = ceil(chars × GOOGLE_CREDITS_PER_CHAR)`（默认 1.6，不再乘模型系数），
+记入 `engineUsage["google-translate"]` 与任务 `usedTokens`。
 `TRANSLATE_QUOTA_RECHECK_MS`（默认 30s）：chunk 循环里读剩余额度是**节流 +
 single-flight**（`getRemainingThrottled`），不是每 chunk 打一次 Turso——并发 chunk
 默认 64，逐 chunk 查询会把 Turso 打成瓶颈（502 的流量源之一）。超支准入由上面的

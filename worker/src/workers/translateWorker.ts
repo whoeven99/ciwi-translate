@@ -719,16 +719,23 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
         const checkpointedThisRun = new Set<string>();
 
         try {
-          const onProgress = async (deltaUnits: number, deltaTokens: number) => {
+          const onProgress = async (
+            deltaUnits: number,
+            deltaTokens: number,
+            googleCreditsDelta = 0,
+          ) => {
             let shouldFlushQuota = false;
             await runExclusive(async () => {
               translateUnitDone += deltaUnits;
-              liveTokens += Math.ceil(deltaTokens * tokenMultiplier);
+              const llmCredits = Math.ceil(deltaTokens * tokenMultiplier);
+              const googleCredits = Math.max(0, Math.floor(googleCreditsDelta));
+              liveTokens += llmCredits + googleCredits;
               clampUnitDone();
               // 累积额度欠账；攒够一次 perCall 量级再扣（见 flushQuota）。
               // LLM 准入的 committed 已在 callLLMOnce 内用实扣替换预估。
-              if (enforceQuota && deltaTokens > 0) {
-                pendingQuotaCharge += Math.ceil(deltaTokens * quotaMult);
+              // Google credits 已是最终积分（chars×k），不再乘模型系数。
+              if (enforceQuota && (deltaTokens > 0 || googleCredits > 0)) {
+                pendingQuotaCharge += Math.ceil(deltaTokens * quotaMult) + googleCredits;
                 if (pendingQuotaCharge >= QUOTA_FLUSH_CHARGE) shouldFlushQuota = true;
               }
             });
@@ -802,7 +809,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
             });
           };
 
-          const { usage } = await translateResources(
+          const { usage, quotaStopped } = await translateResources(
             pendingResources.map((r) => ({ resourceId: r.resourceId, fields: r.fields, module })),
             source,
             target,
@@ -817,10 +824,21 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
             },
           );
           mergeEngineUsage(engineUsage, usage);
+          if (quotaStopped) {
+            // Soft stop: in-flight LLM already settled inside translateResources.
+            // Trip abort so sibling chunks stop admitting new work; flushQuota below
+            // charges actual usage before the pause path persists status.
+            tripAbort("pause", V4_MESSAGE_QUOTA_INSUFFICIENT);
+            console.log(
+              `[translate] job=${jobId} chunk ${chunkIdx}/${chunkTotal} ` +
+                `quota soft-stop (no Google fallback; awaiting flush)`,
+            );
+          }
         } catch (e) {
+          // Legacy safety: older core builds may still throw QuotaExhaustedError.
           if (isQuotaExhaustedError(e)) {
             tripAbort("pause", V4_MESSAGE_QUOTA_INSUFFICIENT);
-            console.warn(
+            console.log(
               `[translate] job=${jobId} chunk ${chunkIdx}/${chunkTotal} stopped: quota exhausted`,
               e instanceof Error ? e.message : e,
             );
