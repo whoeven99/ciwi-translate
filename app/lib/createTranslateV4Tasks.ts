@@ -163,6 +163,8 @@ export async function createTranslateV4Tasks(
   }
 
   const url = params.apiUrl ?? "/api/translate-v4/tasks";
+  /** 同一次创建点击共用；emailWorker 按此聚合发信。 */
+  const batchId = crypto.randomUUID();
   const baseBody = {
     source,
     modules: params.modules,
@@ -170,6 +172,7 @@ export async function createTranslateV4Tasks(
     isCover: params.isCover,
     isHandle: params.isHandle,
     includeLiquid: Boolean(params.includeLiquid),
+    batchId,
   };
 
   const settled = await Promise.allSettled(

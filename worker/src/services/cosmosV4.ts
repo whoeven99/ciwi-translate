@@ -85,6 +85,11 @@ export type TranslationV4Job = {
   includeLiquid?: boolean;
   /** 任务来源标识（如 "Ciwi-Translator-Task"，"TsFrontend"，"TsFrontend-Auto"）。旧任务可能缺省。 */
   taskSource?: string | null;
+  /**
+   * 同一次「创建任务」点击共用的批次 id。
+   * 手动完成邮件按 batchId 聚合；缺省则走整店待发汇总（兼容旧任务）。
+   */
+  batchId?: string | null;
   status: TranslationV4Status;
   claimedBy: string | null;
   claimedAt: string | null;
@@ -989,7 +994,7 @@ export async function findManualJobsNeedingEmailForShop(
 }
 
 /**
- * 近期手动任务（用于邮件批次聚合：等同批创建的任务全部终态后再发一封）。
+ * 近期手动任务（用于无 batchId 旧任务的时间窗邮件聚合）。
  */
 export async function findRecentManualJobsForShop(
   shopName: string,
@@ -1001,7 +1006,7 @@ export async function findRecentManualJobsForShop(
       .items.query<TranslationV4Job>(
         {
           query: `
-            SELECT c.id, c.shopName, c.status, c.taskSource, c.target, c.emailSent,
+            SELECT c.id, c.shopName, c.status, c.taskSource, c.batchId, c.target, c.emailSent,
                    c.createdAt, c.updatedAt, c.metrics
             FROM c
             WHERE ${manualEmailTaskSourceFilter()}
@@ -1039,6 +1044,41 @@ export async function hasActiveManualJobsForShop(shopName: string): Promise<bool
           parameters: [
             { name: "@shopName", value: shopName },
             { name: "@autoSource", value: TSF_AUTO_TASK_SOURCE },
+            { name: "@statuses", value: activeStatuses },
+          ],
+        },
+        { partitionKey: shopName },
+      )
+      .fetchAll();
+    return (resources[0] ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** 检查某手动邮件批次内是否仍有进行中任务（该批全部终态后再发该批邮件）。 */
+export async function hasActiveManualJobsForBatch(
+  shopName: string,
+  batchId: string,
+): Promise<boolean> {
+  const id = batchId.trim();
+  if (!id) return false;
+  const activeStatuses: TranslationV4Status[] = ACTIVE_V4_STATUSES;
+  try {
+    const { resources } = await getContainer()
+      .items.query<number>(
+        {
+          query: `
+            SELECT VALUE COUNT(1) FROM c
+            WHERE c.shopName = @shopName
+              AND ${manualEmailTaskSourceFilter()}
+              AND c.batchId = @batchId
+              AND ARRAY_CONTAINS(@statuses, c.status)
+          `,
+          parameters: [
+            { name: "@shopName", value: shopName },
+            { name: "@autoSource", value: TSF_AUTO_TASK_SOURCE },
+            { name: "@batchId", value: id },
             { name: "@statuses", value: activeStatuses },
           ],
         },
