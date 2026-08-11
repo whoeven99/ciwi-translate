@@ -2674,10 +2674,6 @@ const AUTO_LIQUID_MIN_LEN = 2;
 const AUTO_LIQUID_BATCH = 60; // 单次最多上报条数
 const AUTO_LIQUID_REPORTED_CAP = 1500; // 客户端已报指纹上限
 
-// 门A：整页「非目标语」条数占比上限；低于它才认为页面已大体译完，采集残留。
-const AUTO_LIQUID_SOURCE_RATIO_MAX = 0.2;
-// 占比判定需要的最小样本条数，样本太少不做门控（信号不足直接跳过采集）。
-const AUTO_LIQUID_MIN_SAMPLE_ITEMS = 5;
 // 性能护栏：单次最多遍历节点数与时间预算，超出即放弃本页采集（可失败，不拖慢页面）。
 const AUTO_LIQUID_MAX_NODES = 6000;
 const AUTO_LIQUID_TIME_BUDGET_MS = 12;
@@ -2830,8 +2826,7 @@ function isAutoLiquidCandidate(text) {
 
 /**
  * 抓取当前页面上未翻译文本并上报后端（默认开；主题预览 / 主语言页由调用方跳过）。
- * 门A：整页「非目标语」条数占比低于阈值（页面已大体译完）才采集残留。
- * 门C：只上报仍像源语言的条目。客户端去重 + 指纹缓存；重活在后端；翻译另走任务。
+ * 门C：只上报仍像源语言的条目。客户端去重 + 指纹缓存；重活在后端；翻译业务过滤在入库侧。
  * 性能：idle 调度 + 节点/时间预算 + 可中断；可采失败，不拖慢页面。
  * @param {{ primaryLanguage?: string }} [options]
  */
@@ -2871,8 +2866,7 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
       language,
       targetHasScript: !!targetScript,
       mode: targetScript ? "script" : "latin_heuristic",
-      note: "占比只看目标语脚本/启发式，不依赖 primaryLanguage",
-      ratioMax: AUTO_LIQUID_SOURCE_RATIO_MAX,
+      note: "只上报像源语的文本；无覆盖率占比门控",
     });
 
     const reportedKey = autoLiquidReportedKey(shopValue, language);
@@ -2910,16 +2904,6 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
 
     const seen = new Set();
     const candidates = []; // 仍像源语言、未上报过的候选
-    /** @type {{ text: string, chars: number }[]} */
-    const targetItems = [];
-    /** @type {{ text: string, chars: number }[]} */
-    const notTargetItems = []; // source：不算目标语
-    /** @type {{ text: string, chars: number }[]} */
-    const unknownItems = [];
-    let totalChars = 0; // 分母：候选文本总字符
-    let sourceChars = 0; // 分子：仍像源语言的字符
-    let targetChars = 0;
-    let unknownChars = 0;
     let sourceCount = 0;
     let targetCount = 0;
     let unknownCount = 0;
@@ -2947,70 +2931,31 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
       seen.add(t);
 
       const cls = classifyAutoLiquidText(t, language);
-      totalChars += t.length;
-      const row = { text: t, chars: t.length };
       if (cls === "source") {
-        sourceChars += t.length;
         sourceCount += 1;
-        notTargetItems.push(row);
         if (!reported.has(t) && candidates.length < AUTO_LIQUID_BATCH) {
           candidates.push(t);
         }
       } else if (cls === "target") {
-        targetChars += t.length;
         targetCount += 1;
-        targetItems.push(row);
       } else {
-        unknownChars += t.length;
         unknownCount += 1;
-        unknownItems.push(row);
       }
     }
 
     const elapsedMs = Math.round(now() - startedAt);
-    // 门A 按去重后的条数：非目标语条数 / 总条数
-    const totalCount = sourceCount + targetCount + unknownCount;
-    const ratio = totalCount > 0 ? sourceCount / totalCount : 0;
-    const targetRatio = totalCount > 0 ? targetCount / totalCount : 0;
     autoLiquidLog("scan", {
       nodes,
       uniqueTexts: seen.size,
       elapsedMs,
       aborted,
       abortReason: abortReason || null,
-      totalCount,
       sourceCount,
       targetCount,
       unknownCount,
-      // chars 仅观测，不参与门控
-      totalChars,
-      sourceChars,
-      targetChars,
-      unknownChars,
-      ratio,
-      targetRatio,
-      ratioMax: AUTO_LIQUID_SOURCE_RATIO_MAX,
-      ratioPass: ratio < AUTO_LIQUID_SOURCE_RATIO_MAX,
       candidateCount: candidates.length,
-      formula: "ratio = notTargetCount(sourceCount) / totalCount",
-    });
-    // TEMP：完整清单，便于对照哪些被算作目标语 / 非目标语
-    autoLiquidLog("ratio_detail", {
-      language,
-      totalCount,
-      sourceCount,
-      targetCount,
-      unknownCount,
-      ratio,
-      targetRatio,
-      ratioMax: AUTO_LIQUID_SOURCE_RATIO_MAX,
-      formula: "ratio = sourceCount / totalCount（按条，不按 chars）",
-      targetLanguageTexts: targetItems,
-      notTargetLanguageTexts: notTargetItems,
-      unknownTexts: unknownItems,
     });
 
-    // 中断 / 样本不足：信号不可靠，本次不采（不设停采旗标，下次仍可尝试）。
     if (aborted) {
       autoLiquidLog("skip", {
         reason: "aborted",
@@ -3022,33 +2967,9 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
       });
       return;
     }
-    if (totalCount < AUTO_LIQUID_MIN_SAMPLE_ITEMS) {
-      autoLiquidLog("skip", {
-        reason: "sample_low",
-        totalCount,
-        minSampleItems: AUTO_LIQUID_MIN_SAMPLE_ITEMS,
-      });
-      return;
-    }
-
-    // 门A：非目标语条数占比过高 = 页面还没大体译完 → 不采（本会话停采该语，省请求）。
-    if (ratio >= AUTO_LIQUID_SOURCE_RATIO_MAX) {
-      try {
-        sessionStorage.setItem(sessionFlag, "1");
-      } catch {}
-      autoLiquidLog("skip", {
-        reason: "ratio_high",
-        ratio,
-        ratioMax: AUTO_LIQUID_SOURCE_RATIO_MAX,
-        sourceCount,
-        totalCount,
-        sessionFlag,
-      });
-      return;
-    }
 
     if (!candidates.length) {
-      autoLiquidLog("skip", { reason: "no_candidates", ratio, sourceCount });
+      autoLiquidLog("skip", { reason: "no_candidates", sourceCount });
       return;
     }
 
@@ -3059,7 +2980,6 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
     autoLiquidLog("post", {
       language,
       primaryLanguage,
-      ratio,
       count: candidates.length,
       texts: candidates.slice(0, 15).map((t) => t.slice(0, 80)),
     });

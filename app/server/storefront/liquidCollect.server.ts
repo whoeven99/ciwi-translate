@@ -1,3 +1,4 @@
+import { translationRuleJudgment } from "@ciwi/translation-core/translation-filter";
 import prisma from "~/db.server";
 import { getOfflineSessionAccessToken } from "~/server/shop/offlineSessionToken.server";
 import { resolveShopPrimaryLocale } from "~/server/translateV4/shopLocales.server";
@@ -271,19 +272,35 @@ export async function collectAutoLiquidStrings(args: {
     return { scheduled: 0, skipped: true, reason: "primary_locale" };
   }
 
-  // 2) 归一 + 去重 + 粗筛 + 单次上限
+  // 2) 归一 + 去重 + 粗筛 + translation-core 值过滤（与 init 共用）+ 单次上限
   const seen = new Set<string>();
   const candidates: string[] = [];
+  let filterRejected = 0;
   for (const raw of rawTexts) {
     const t = normalize(raw);
     if (!t || seen.has(t)) continue;
     seen.add(t);
-    if (!looksTranslatable(t)) continue;
+    if (!looksTranslatable(t)) {
+      filterRejected += 1;
+      continue;
+    }
+    // key 用 liquid：走通用值启发式，避免误触 key==="value" 的 JSON 特例
+    if (!translationRuleJudgment("liquid", t)) {
+      filterRejected += 1;
+      continue;
+    }
     candidates.push(t);
     if (candidates.length >= MAX_PER_REQUEST * 2) break;
   }
   if (!candidates.length) {
-    debugLog("skip", { shop, target, reason: "no_candidate", inCount, primary });
+    debugLog("skip", {
+      shop,
+      target,
+      reason: "no_candidate",
+      inCount,
+      primary,
+      filterRejected,
+    });
     return { scheduled: 0, skipped: true, reason: "no_candidate" };
   }
   debugLog("candidates", {
@@ -292,6 +309,7 @@ export async function collectAutoLiquidStrings(args: {
     inCount,
     primary,
     candidateCount: candidates.length,
+    filterRejected,
   });
 
   const redis = safeRedis();

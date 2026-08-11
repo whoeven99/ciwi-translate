@@ -24,7 +24,6 @@ export const AI_MODEL_OPTIONS = [
   { value: "gpt-4.1-nano", label: "GPT-4.1 nano" },
   { value: "gpt-4.1-mini", label: "GPT-4.1 mini" },
   { value: "gpt-5.6-luna", label: "GPT-5.6 luna" },
-  { value: "gpt-5.6-sol", label: "GPT-5.6 sol" },
   { value: "gpt-5.6-terra", label: "GPT-5.6 terra" },
 ];
 
