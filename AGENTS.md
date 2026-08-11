@@ -237,6 +237,9 @@ real `route.tsx` or route module is added.
 - `/api/picture/*`: `app/routes/api.picture.{product,shop,upload,upsert,delete,save-from-url}.ts`.
 - `/api/translate-v4/tasks`: `app/routes/api.translate-v4.tasks.ts`.
 - `/api/translate-v4/estimate`: `app/routes/api.translate-v4.estimate.ts`.
+- `/api/translate-v4/estimate-detailed`: `app/routes/api.translate-v4.estimate-detailed.ts`
+  （确认弹窗「精准预估」：单 locale×module 扫 Shopify + TM miss，客户端分片串行；
+  `detailedCreditEstimate.server.ts`）。
 - `/api/translate-v4/task-action`: `app/routes/api.translate-v4.task-action.ts`.
 - `/api/translate-v4/task-progress`: `app/routes/api.translate-v4.task-progress.ts`.
 - `/api/translate-v4/coverage`: `app/routes/api.translate-v4.coverage.ts`.
@@ -281,6 +284,9 @@ default `k=1.6` / `TRANSLATE_ESTIMATE_CREDITS_PER_CHAR`),
 `CreateTaskCard` / `route.tsx`). Uses shop scan `moduleStats.chars` +
 coverage untranslated ratio; `includeLiquid` 时再加上 `sumPendingLiquidChars`
 （`liquidRule.server.ts`，PENDING 自定义 Liquid 字符数）。不是 worker 实扣公式。
+精准预估（可选、可等待）：`CreateTaskConfirmModal` →
+`useDetailedCreateTaskEstimate` → `/api/translate-v4/estimate-detailed`，
+按语言×v4 module 分片拉字段、拆叶子、`tmMGetByValue` 去命中后按 miss 字符×k。
 - Pause/resume/cancel/delete: `app/routes/api.translate-v4.task-action.ts`.
 - Progress summaries: `app/server/translateV4/progress.server.ts`.
 - Init activity UI (module `x/N` bar + i18n activity log): Redis fields
