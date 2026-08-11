@@ -819,12 +819,14 @@ redirect records.
  1. **采集（默认开，无商户开关）**：storefront `CollectUntranslatedText` → App
  Proxy `POST liquid/collect` → `liquidCollect.server.ts` 只写入
  `LiquidRule(status=PENDING, source=auto, afterTranslation="")`，**不在 Web
- 进程跑 LLM**。门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
+ 进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
+ `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
+ 过滤）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
  shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
  名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
  Redis 日聚合 `tsf:auto_liquid:deny:req|texts|shops:{utcYmd}`（8d TTL）。
  服务端细日志：`AUTO_LIQUID_DEBUG=true`；店面：`localStorage.ciwi_debug_auto_liquid=1`。
- 主语言（Redis 缓存 1h）、粗筛、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 100）、
+ 主语言（Redis 缓存 1h）、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 100）、
  总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 50000）。店面 Switcher **全店采集上报**；
  采集只写 PENDING，**不查额度**；真正扣费在后续 v4「自定义 Liquid」翻译阶段。
  `SwitcherConfiguration.autoLiquidCollect` 列保留且默认 `true`，保存时强制
