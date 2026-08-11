@@ -1041,6 +1041,7 @@ export default function AppTranslateV4() {
         isCover={isCover}
         isHandle={isHandle}
         includeLiquid={includeLiquid}
+        sourceLocale={source}
         estimate={taskEstimate}
         scenario={createConfirmScenario}
         previousTotalChars={
@@ -1049,11 +1050,12 @@ export default function AppTranslateV4() {
         onClose={() => setCreateConfirmOpen(false)}
         onConfirmCreate={handleCreateConfirm}
         onBeforeBilling={persistCreateTaskDraft}
-        onBuyCredits={() => {
+        onBuyCredits={(detailedCredits) => {
           setCreateConfirmOpen(false);
           openCreditsPurchaseModal(
             buildCreateTaskCreditsPurchaseContext({
-              estimatedCredits: taskEstimate?.estimatedCredits ?? null,
+              estimatedCredits:
+                detailedCredits ?? taskEstimate?.estimatedCredits ?? null,
               currentRemainingCredits: normalizedQuota?.remaining ?? null,
               targetsCount: targets.length,
               modulesCount: moduleKeys.length,
