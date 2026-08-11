@@ -1,5 +1,10 @@
 /** Translation output quality checks — shared by worker batch and TSF single translate. */
 
+/** Set `TRANSLATE_QUALITY_GATE=false` to skip echo / wrong-script / hallucination / sentinel gates. */
+export function isTranslateQualityGateEnabled(): boolean {
+  return process.env.TRANSLATE_QUALITY_GATE !== "false";
+}
+
 const LATIN_WORD_RE = /[a-zA-Z]{2,}/;
 const CJK_RE = /[一-鿿㐀-䶿]/u;
 
@@ -63,6 +68,7 @@ export function looksLikeUntranslated(
   translated: string,
   target: string,
 ): boolean {
+  if (!isTranslateQualityGateEnabled()) return false;
   const tl = targetLangCode(target);
   if (tl === "en") return false;
 
@@ -90,6 +96,7 @@ export function looksLikeWrongScriptLeak(
   translated: string,
   target: string,
 ): boolean {
+  if (!isTranslateQualityGateEnabled()) return false;
   const tl = targetLangCode(target);
   if (["zh", "ja", "ko"].includes(tl)) return false;
   return hasCjk(translated) && !hasCjk(source);
@@ -97,12 +104,14 @@ export function looksLikeWrongScriptLeak(
 
 /** LLM invented content for an empty source leaf (e.g. empty description → "S3"). */
 export function looksLikeEmptySourceHallucination(source: string, translated: string): boolean {
+  if (!isTranslateQualityGateEnabled()) return false;
   if (source.trim() !== "") return false;
   return translated.trim() !== "";
 }
 
 /** Model echoed the prompt's "number" wording instead of preserving ⟦N⟧ sentinels. */
 export function hasPromptSentinelLeakage(text: string): boolean {
+  if (!isTranslateQualityGateEnabled()) return false;
   return /\[number\]/i.test(text);
 }
 

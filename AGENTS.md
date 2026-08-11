@@ -182,8 +182,9 @@ sweeps moved plan names, modal copy, and worker notice text into locale keys.
 - `app/routes/auth.$.tsx`, `app/routes/auth.login/route.tsx`: Shopify auth.
 - `app/routes/webhooks.tsx`: Shopify webhook topic handling. Billing and uninstall
 logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
-`cleanupBillingOnUninstall` (best-effort Shopify cancel + local
-`cancelSubscription`) before Account soft-delete and Session delete.
+`cleanupBillingOnUninstall` (local `cancelSubscription`; SHOP_REDACT only
+best-effort Shopify cancel when token present) before Account soft-delete and
+Session delete.
 `APP_UNINSTALLED` snapshots subscription/quota/size via
 `uninstallSnapshot.server.ts` before cleanup, then sends that text to Feishu.
 Billing webhooks ACK first and process in the background
@@ -378,6 +379,10 @@ literals like `else` and `Default Title` never enter the LLM text pool;
 - Structural BR leaves (`⟦BR⟧` from `htmlTranslate`, ascii `[BR]`):
   `isPassthroughLeafText` in `translateQuality.ts` skips the LLM/Google pool and
   reassembles identity in `llmTranslate.ts` (not counted as echo/`fallback`).
+- Output quality gates (`looksLikeUntranslated`, wrong-script, empty-source
+  hallucination, prompt sentinel) live in `translateQuality.ts` and gate
+  fallback/retry in `llmTranslate.ts`. Disable all with
+  `TRANSLATE_QUALITY_GATE=false` (placeholder/HTML integrity checks unchanged).
 - Short plain fields (`<80` chars, not handle / meta_description): chunk-level
   JSON pack in `llmTranslate.ts` — field/value TM first, then dedupe by text,
   then size-capped JSON batches (`TRANSLATE_SHORT_JSON_MAX_CHARS` /
@@ -688,9 +693,10 @@ Code:
 (`APP_SUBSCRIPTIONS_UPDATE` CANCELLED/EXPIRED → `cancelSubscription`; idempotent
 if uninstall already cleared the row).
 - `app/server/billing/subscription/cleanupOnUninstall.server.ts`: uninstall /
-redact billing cleanup (Shopify `appSubscriptionCancel` best-effort + local
-cancel). Reinstall path in `ensureAccount.server.ts` also clears leftover
-`AppSubscription` when restoring a soft-deleted Account.
+redact billing cleanup (local cancel always; Shopify `appSubscriptionCancel`
+best-effort only on SHOP_REDACT when token present; APP_UNINSTALLED skips
+outbound cancel). Reinstall path in `ensureAccount.server.ts` also clears
+leftover `AppSubscription` when restoring a soft-deleted Account.
 - `app/server/billing/uninstallSnapshot.server.ts`: pre-cleanup snapshot for
 uninstall Feishu (plan, interval, quota, size tier via
 `shopScan/shopSizeProfile.server.ts`).
