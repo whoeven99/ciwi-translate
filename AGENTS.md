@@ -378,6 +378,10 @@ literals like `else` and `Default Title` never enter the LLM text pool;
 - Structural BR leaves (`⟦BR⟧` from `htmlTranslate`, ascii `[BR]`):
   `isPassthroughLeafText` in `translateQuality.ts` skips the LLM/Google pool and
   reassembles identity in `llmTranslate.ts` (not counted as echo/`fallback`).
+- Output quality gates (`looksLikeUntranslated`, wrong-script, empty-source
+  hallucination, prompt sentinel) live in `translateQuality.ts` and gate
+  fallback/retry in `llmTranslate.ts`. Disable all with
+  `TRANSLATE_QUALITY_GATE=false` (placeholder/HTML integrity checks unchanged).
 - Short plain fields (`<80` chars, not handle / meta_description): chunk-level
   JSON pack in `llmTranslate.ts` — field/value TM first, then dedupe by text,
   then size-capped JSON batches (`TRANSLATE_SHORT_JSON_MAX_CHARS` /
