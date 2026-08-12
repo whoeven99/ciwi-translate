@@ -143,7 +143,8 @@ function utcYmd(): string {
 }
 
 function autoLiquidDebugEnabled(): boolean {
-  return envBool("AUTO_LIQUID_DEBUG", false);
+  // 默认开细日志；出事可设 AUTO_LIQUID_DEBUG=false
+  return envBool("AUTO_LIQUID_DEBUG", true);
 }
 
 /** 灰度外（配置了 allowlist 且店不在名单）请求量：Redis 日聚合 + 单行 Render 日志。 */

@@ -831,7 +831,10 @@ redirect records.
  shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
  名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
  Redis 日聚合 `tsf:auto_liquid:deny:req|texts|shops:{utcYmd}`（8d TTL）。
- 服务端细日志：`AUTO_LIQUID_DEBUG=true`；店面：`localStorage.ciwi_debug_auto_liquid=1`。
+  服务端细日志默认开（`AUTO_LIQUID_DEBUG` 默认 true，可设 false）；店面
+  `[ciwi-auto-liquid]` / `[ciwi-liquid-translate]` 默认开，关：
+  `localStorage.ciwi_debug_auto_liquid=0` /
+  `localStorage.ciwi_debug_liquid_translate=0`。
  主语言（Redis 缓存 1h）、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 100）、
  总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 50000）。店面 Switcher **全店采集上报**；
  采集只写 PENDING，**不查额度**；真正扣费在后续 v4「自定义 Liquid」翻译阶段。

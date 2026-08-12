@@ -1372,14 +1372,17 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
 
   const looksLikeHtml = (text) => /<\/?[a-z][\s\S]*>/i.test(text || "");
 
+  // 默认开；localStorage.ciwi_debug_liquid_translate=0 或 ?ciwiDebugLiquid=0 可关。
   const debugLiquidTranslate = (() => {
     try {
-      return (
-        localStorage.getItem("ciwi_debug_liquid_translate") === "1" ||
-        new URLSearchParams(window.location.search).has("ciwiDebugLiquid")
-      );
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("ciwiDebugLiquid") === "0") return false;
+      if (params.has("ciwiDebugLiquid")) return true;
+      const flag = localStorage.getItem("ciwi_debug_liquid_translate");
+      if (flag === "0" || flag === "false") return false;
+      return true;
     } catch {
-      return false;
+      return true;
     }
   })();
 
@@ -2678,12 +2681,15 @@ const AUTO_LIQUID_REPORTED_CAP = 1500; // 客户端已报指纹上限
 const AUTO_LIQUID_MAX_NODES = 6000;
 const AUTO_LIQUID_TIME_BUDGET_MS = 12;
 
-/** 店面 debug：localStorage.setItem('ciwi_debug_auto_liquid','1') 后输出采集日志。 */
+/** 店面采集日志默认开；localStorage.ciwi_debug_auto_liquid=0 可关。 */
 function autoLiquidLog(...args) {
   try {
-    if (typeof localStorage !== "undefined" && localStorage.getItem("ciwi_debug_auto_liquid") === "1") {
-      console.log("[ciwi-auto-liquid]", ...args);
-    }
+    const flag =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("ciwi_debug_auto_liquid")
+        : null;
+    if (flag === "0" || flag === "false") return;
+    console.log("[ciwi-auto-liquid]", ...args);
   } catch {
     // ignore
   }
