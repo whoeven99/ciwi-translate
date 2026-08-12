@@ -13,8 +13,8 @@ import { liquidSourceDigest } from "~/server/translateV4/liquidDigest.server";
 
 const MAX_TEXT_LEN = 200;
 const MIN_TEXT_LEN = 2;
-/** 单次请求最多新插入多少条 PENDING。 */
-const MAX_PER_REQUEST = 25;
+/** 单次请求最多新插入多少条 PENDING（与店面 AUTO_LIQUID_POST_CHUNK 对齐）。 */
+const MAX_PER_REQUEST = 100;
 /**
  * 每店每日新增 PENDING 上限（跨实例，Redis 计数）。
  * 默认 0 = 不限日帽；需要背压时设 AUTO_LIQUID_DAILY_CAP=100 等。
