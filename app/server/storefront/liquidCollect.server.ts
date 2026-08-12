@@ -15,8 +15,12 @@ const MAX_TEXT_LEN = 200;
 const MIN_TEXT_LEN = 2;
 /** 单次请求最多新插入多少条 PENDING。 */
 const MAX_PER_REQUEST = 25;
-/** 每店每日新增 PENDING 上限（跨实例，Redis 计数）。 */
-const DAILY_CAP = Number(process.env.AUTO_LIQUID_DAILY_CAP || 100);
+/**
+ * 每店每日新增 PENDING 上限（跨实例，Redis 计数）。
+ * 默认 0 = 不限日帽；需要背压时设 AUTO_LIQUID_DAILY_CAP=100 等。
+ * 总量仍受 AUTO_LIQUID_TOTAL_CAP 约束。
+ */
+const DAILY_CAP = Number(process.env.AUTO_LIQUID_DAILY_CAP || 0);
 const DAILY_CAP_TTL_SEC = 60 * 60 * 25;
 /** 每店 auto 行总量上限（含 PENDING/DONE）；到顶停止新增。 */
 const TOTAL_CAP = Number(process.env.AUTO_LIQUID_TOTAL_CAP || 50_000);
@@ -189,6 +193,7 @@ function primaryLocaleCacheKey(shop: string): string {
 /** 预留本次可插入名额（Redis 原子 INCRBY + TTL），返回实际获批的条数。 */
 async function reserveDailyBudget(shop: string, want: number): Promise<number> {
   if (want <= 0) return 0;
+  if (!(DAILY_CAP > 0)) return want;
   try {
     const redis = getTranslateV4RedisClient();
     const key = todayKey(shop);
