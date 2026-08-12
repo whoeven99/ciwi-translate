@@ -844,7 +844,9 @@ redirect records.
  主语言（Redis 缓存 1h）、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 0=
  不限；需背压时设正数如 100）、总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 50000）。
  店面扫描：`ciwi-ui.js` TreeWalker **分片 idle**（单片约 8ms yield），不因
- 时间预算整页放弃；触 `max_nodes` 仍上报已扫候选。店面 Switcher **全店采集上报**；
+ 时间预算整页放弃；触 `max_nodes` 仍上报已扫候选。语言门：只采「像
+ `primaryLanguage`（Switcher 配置接口附带，Shopify 主 locale，非商户手填）
+ 且不像当前目标语」；无 primary 则本轮不采。店面 Switcher **全店采集上报**；
  采集只写 PENDING，**不查额度**；真正扣费在后续 v4「自定义 Liquid」翻译阶段。
  `SwitcherConfiguration.autoLiquidCollect` 列保留且默认 `true`，保存时强制
  `true`，Switcher UI 开关已移除。

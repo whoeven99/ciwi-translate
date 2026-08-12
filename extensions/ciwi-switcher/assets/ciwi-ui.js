@@ -2780,23 +2780,77 @@ function latinLooksLikeLocale(locale, text) {
   return false;
 }
 
+/** 字母是否以 Basic Latin (A–Z) 为主（弱英文信号；有变音则否）。 */
+function isMostlyBasicLatinLetters(text) {
+  const letters = String(text || "").match(/\p{L}/gu) || [];
+  if (letters.length < 2) return false;
+  let basic = 0;
+  for (const ch of letters) {
+    if (/[A-Za-z]/.test(ch)) basic += 1;
+  }
+  return basic / letters.length >= 0.9;
+}
+
+/** 是否像「非主语言」的其它拉丁语（用于挡德/法等误采）。 */
+function latinLooksLikeOtherLocale(primaryLocale, text) {
+  const primaryBase = autoLiquidLocaleBase(primaryLocale) || "en";
+  const bases = new Set([
+    ...Object.keys(LATIN_DIACRITIC_RE),
+    ...Object.keys(LATIN_WORD_HINT_RE),
+  ]);
+  for (const base of bases) {
+    if (base === primaryBase) continue;
+    if (latinLooksLikeLocale(base, text)) return true;
+  }
+  return false;
+}
+
 /**
- * 相对目标语言判定文本：source | target | unknown
- * 不依赖 primaryLanguage：
- * - 非拉丁：含目标脚本 → target，否则 source
- * - 拉丁：变音/词像目标语 → target，否则 source（当未译残留）
+ * 是否像店铺主语言（采集只收这类「未译源语」）。
+ * - 脚本语言：含主语言脚本
+ * - 拉丁主语言：变音/词表命中；英文另允许「高 ASCII 字母占比且不像其它拉丁语」
  */
-function classifyAutoLiquidText(text, targetLocale) {
+function looksLikePrimaryLocale(primaryLocale, text) {
+  if (!primaryLocale || !text) return false;
+  const primaryRe = localeScriptRegex(primaryLocale);
+  if (primaryRe) return primaryRe.test(text);
+
+  if (latinLooksLikeLocale(primaryLocale, text)) return true;
+
+  const base = autoLiquidLocaleBase(primaryLocale);
+  // en（及未识别 base 当 en）：弱 ASCII 启发式，但其它拉丁语强信号优先否决
+  if (!base || base === "en") {
+    if (latinLooksLikeOtherLocale(primaryLocale || "en", text)) return false;
+    return isMostlyBasicLatinLetters(text);
+  }
+  return false;
+}
+
+/**
+ * 相对目标语 + 主语言判定：source | target | unknown
+ * 只采「像主语言」且「不像目标语」；无 primary 时不猜（unknown，避免德文当英文）。
+ */
+function classifyAutoLiquidText(text, targetLocale, primaryLocale) {
   const targetRe = localeScriptRegex(targetLocale);
 
-  // 目标语有独立脚本（zh/ja/ko…）：含目标脚本 → 已译；否则当未译残留
+  // 已像目标语 → 跳过
   if (targetRe) {
-    return targetRe.test(text) ? "target" : "source";
+    if (targetRe.test(text)) return "target";
+  } else if (latinLooksLikeLocale(targetLocale, text)) {
+    return "target";
   }
 
-  // 拉丁目标：变音/词命中 → 已像目标语；否则当未译残留
-  if (latinLooksLikeLocale(targetLocale, text)) return "target";
-  return "source";
+  if (!primaryLocale) return "unknown";
+
+  // 像其它拉丁语（相对主语言）→ 不采
+  if (
+    !localeScriptRegex(primaryLocale) &&
+    latinLooksLikeOtherLocale(primaryLocale, text)
+  ) {
+    return "unknown";
+  }
+
+  return looksLikePrimaryLocale(primaryLocale, text) ? "source" : "unknown";
 }
 
 function autoLiquidReportedKey(shopValue, language) {
@@ -2847,6 +2901,11 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
       'input[name="language_code"]',
     )?.value;
     const primaryLanguage = options?.primaryLanguage || "";
+    autoLiquidLog("primary_language", {
+      primaryLanguage: primaryLanguage || null,
+      currentLanguage: language || null,
+      source: "options.primaryLanguage ← switcher config (Shopify primary locale)",
+    });
     autoLiquidLog("start", {
       shop: shopValue,
       language,
@@ -2878,12 +2937,22 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
     }
     autoLiquidCollectInFlight.add(flightKey);
 
+    if (!primaryLanguage) {
+      autoLiquidLog("skip", {
+        reason: "missing_primary_language",
+        hint: "switcher config 未带 primaryLanguage（服务端从 Shopify 主 locale 解析）；本轮不采以免误收其它语",
+      });
+      autoLiquidCollectInFlight.delete(flightKey);
+      return;
+    }
+
     const targetScript = localeScriptRegex(language);
     autoLiquidLog("classify_mode", {
       language,
+      primaryLanguage,
       targetHasScript: !!targetScript,
-      mode: targetScript ? "script" : "latin_heuristic",
-      note: "只上报像源语的文本；无覆盖率占比门控",
+      mode: targetScript ? "script+primary" : "latin+primary",
+      note: "只采像主语言且不像目标语的文本",
     });
 
     const reportedKey = autoLiquidReportedKey(shopValue, language);
@@ -3047,7 +3116,7 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
           }
           seen.add(t);
 
-          const cls = classifyAutoLiquidText(t, language);
+          const cls = classifyAutoLiquidText(t, language, primaryLanguage);
           if (cls === "source") {
             sourceCount += 1;
             if (!reported.has(t) && candidates.length < AUTO_LIQUID_BATCH) {
