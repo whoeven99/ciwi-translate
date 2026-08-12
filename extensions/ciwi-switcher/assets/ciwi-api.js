@@ -1,18 +1,12 @@
 // api.js
 /**
- * 店面 Widget / Liquid / PageFly / 货币 / 图片 统一走 App Proxy
- *（#ciwiAppProxyBase → TSF /api/storefront/*）。
+ * 店面 Widget / Liquid / PageFly / 货币 / 图片 统一走 App Proxy → TSF /api/storefront/*。
  * IP 定位仍走 Shopify / ipapi，不经额度接口。
  */
+const STOREFRONT_APP_PROXY_BASE = "/apps/ciwi";
+
 function resolveStorefrontApiBase() {
-  const appProxyBase = document.getElementById("ciwiAppProxyBase")?.value?.trim();
-  if (!appProxyBase) {
-    console.error(
-      "[ciwi] ciwiAppProxyBase missing; storefront reads require App Proxy (v4)",
-    );
-    return null;
-  }
-  return appProxyBase;
+  return STOREFRONT_APP_PROXY_BASE;
 }
 
 const STOREFRONT_FETCH_RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -127,6 +121,29 @@ export async function ParseLiquidDataByShopNameAndLanguage({
     return data;
   } catch (err) {
     console.error("Error ParseLiquidDataByShopNameAndLanguage:", err);
+  }
+}
+
+/**
+ * 上报店面自动抓取到的未翻译文本。后端过滤 / 去重 / 背压后写入
+ * LiquidRule(status=PENDING, source="auto")；翻译走 v4 自定义 Liquid 任务。
+ * fire-and-forget：失败静默，不影响店面渲染。
+ */
+export async function CollectLiquidStrings({ shopName, languageCode, texts }) {
+  try {
+    if (!Array.isArray(texts) || texts.length === 0) return;
+    const baseUrl = resolveStorefrontApiBase();
+    if (!baseUrl) return;
+    const url = `${baseUrl}/liquid/collect?shopName=${shopName}&languageCode=${languageCode}`;
+    const { data } = await fetchJson(url, {
+      method: "POST",
+      body: JSON.stringify({ texts }),
+      // 采集是尽力而为，减少重试避免额外负载
+      retryAttempts: 1,
+    });
+    return data;
+  } catch (err) {
+    console.error("[ciwi-auto-liquid] Error CollectLiquidStrings:", err);
   }
 }
 

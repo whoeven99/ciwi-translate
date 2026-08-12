@@ -179,25 +179,39 @@ const Index = () => {
       title: t("Text"),
       dataIndex: "sourceText",
       key: "sourceText",
-      width: "25%",
+      width: "22%",
     },
     {
       title: t("Translation text"),
       dataIndex: "targetText",
       key: "targetText",
-      width: "25%",
+      width: "22%",
     },
     {
       title: t("Apply for"),
       dataIndex: "languageCode",
       key: "languageCode",
-      width: "20%",
+      width: "12%",
+    },
+    {
+      title: t("Status"),
+      dataIndex: "status",
+      key: "status",
+      width: "10%",
+      render: (status: string) => status || "DONE",
+    },
+    {
+      title: t("Source"),
+      dataIndex: "source",
+      key: "source",
+      width: "10%",
+      render: (source: string) => source || "manual",
     },
     {
       title: t("Replacement method"),
       dataIndex: "languageCode",
-      key: "languageCode",
-      width: "20%",
+      key: "replacementMethod",
+      width: "14%",
       render: (_: any, record: any) => {
         return (
           <Select
@@ -301,6 +315,7 @@ const Index = () => {
           targetText,
           replacementMethod,
           languageCode,
+          status: "DONE",
         };
         return updated;
       } else {
@@ -311,6 +326,8 @@ const Index = () => {
           targetText,
           replacementMethod,
           languageCode,
+          source: "manual",
+          status: "DONE",
         };
         return [newItem, ...prev];
       }

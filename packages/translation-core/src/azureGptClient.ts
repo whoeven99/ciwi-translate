@@ -30,7 +30,6 @@ const GPT_SAMPLING_BY_MODEL: Record<string, GptChatSampling> = {
   "gpt-4.1-mini": { temperature: 0.1, frequencyPenalty: 0, presencePenalty: 0 },
   // gpt-5.6：Azure 仅支持默认 temperature(=1)；penalty 一并省略以免 400。
   "gpt-5.6-luna": {},
-  "gpt-5.6-sol": {},
   "gpt-5.6-terra": {},
 };
 

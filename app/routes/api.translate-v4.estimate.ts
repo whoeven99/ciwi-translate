@@ -17,6 +17,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     modules?: unknown;
     targets?: unknown;
     isCover?: unknown;
+    includeLiquid?: unknown;
     untranslatedRatioByLocale?: unknown;
   };
 
@@ -27,6 +28,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     ? body.targets.filter((t): t is string => typeof t === "string")
     : [];
   const isCover = Boolean(body.isCover);
+  const includeLiquid = Boolean(body.includeLiquid);
 
   let untranslatedRatioByLocale: Record<string, number | null> | undefined;
   if (
@@ -52,6 +54,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       v2ModuleKeys: modules,
       targets,
       isCover,
+      includeLiquid,
       untranslatedRatioByLocale,
     });
     return json({ ok: true, estimate });

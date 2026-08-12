@@ -47,6 +47,7 @@ export function useCreateTaskEstimate(args: {
   modules: string[];
   targets: string[];
   isCover: boolean;
+  includeLiquid?: boolean;
   untranslatedRatioByLocale: Record<string, number | null>;
   remainingCredits: number | null;
 }): CreateTaskEstimateView {
@@ -54,6 +55,7 @@ export function useCreateTaskEstimate(args: {
     modules,
     targets,
     isCover,
+    includeLiquid = false,
     untranslatedRatioByLocale,
     remainingCredits,
   } = args;
@@ -61,7 +63,7 @@ export function useCreateTaskEstimate(args: {
     useState<CreateTaskEstimateView>(EMPTY_ESTIMATE);
 
   useEffect(() => {
-    if (targets.length === 0 || modules.length === 0) {
+    if (targets.length === 0 || (modules.length === 0 && !includeLiquid)) {
       setEstimate((prev) => ({
         ...prev,
         estimatedCredits: null,
@@ -85,6 +87,7 @@ export function useCreateTaskEstimate(args: {
               modules,
               targets,
               isCover,
+              includeLiquid,
               untranslatedRatioByLocale,
             }),
           });
@@ -128,7 +131,14 @@ export function useCreateTaskEstimate(args: {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [targets, modules, isCover, untranslatedRatioByLocale, remainingCredits]);
+  }, [
+    targets,
+    modules,
+    isCover,
+    includeLiquid,
+    untranslatedRatioByLocale,
+    remainingCredits,
+  ]);
 
   return estimate;
 }

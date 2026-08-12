@@ -130,8 +130,18 @@ export type TranslationV4Job = {
   limitPerType: number;
   isCover: boolean;
   isHandle: boolean;
+  /**
+   * 是否包含自定义 Liquid / 第三方文案（Turso LiquidRule PENDING→DONE）。
+   * 不进 Shopify module 枚举；Worker 内部用虚拟 module CUSTOM_LIQUID。
+   */
+  includeLiquid?: boolean;
   /** 任务来源标识（TsFrontend）。worker 据此区分入口。 */
   taskSource?: string | null;
+  /**
+   * 同一次「创建任务」点击共用的批次 id（客户端生成）。
+   * 手动完成邮件按 batchId 聚合；缺省则走整店待发汇总（兼容旧任务）。
+   */
+  batchId?: string | null;
   status: TranslationV4Status;
   claimedBy: string | null;
   claimedAt: string | null;

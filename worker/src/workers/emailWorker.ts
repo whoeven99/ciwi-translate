@@ -4,8 +4,9 @@
  * 每次运行：
  *  1. 找出 COMPLETED / PAUSED、未发邮件的任务。
  *     收件人邮箱在发信时通过 Shopify GraphQL 实时查询（不用 Session 快照）。
- *  2. 手动任务（taskSource ≠ TsFrontend-Auto）：等同店内所有进行中手动任务结束后，
- *     查询该店全部待发 manual 任务并汇总发信（对齐自动翻译合并策略）。
+ *  2. 手动任务（taskSource ≠ TsFrontend-Auto）：
+ *     - 有 batchId：该批次内任务全部终态后，按批汇总发一封（不等其它批次）。
+ *     - 无 batchId（旧任务）：等同店内所有进行中手动任务结束后，待发任务汇总一封。
  *  3. 自动任务（taskSource = TsFrontend-Auto）：等同店内所有进行中自动任务结束后，
  *     查询该店全部待发 auto 任务并汇总发一封（对齐 Spring TranslateTask.sendEmail）。
  *     usedTokens=0 的语言仍出现在手动成功邮件表格中；自动成功邮件仍跳过 usedTokens=0。
@@ -15,6 +16,8 @@
  *  4. 发送成功后将 emailSent=true 写回 Cosmos，防止重发。
  *  5. 手动任务默认仅对 2026-08-03（北京时间）及之后创建的任务发信；
  *     可用 MANUAL_EMAIL_MIN_CREATED_AT 调整或关闭（false / 0 / 空）。
+ *  6. 已卸载（Turso 无 offline Session）→ 不发信，仍标 emailSent，并飞书通知运营
+ *     （FEISHU_WEBHOOK_URL_SUPPORT；缺配置则跳过通知）。
  *
  * 任务类型对应模板：
  *   manual + 积分不足 PAUSED → 211401 未完成（Credits used / Additional required）
@@ -23,6 +26,7 @@
  *   auto   + COMPLETED → 140352 自动翻译成功（同店多语言合并）
  *   auto   + PAUSED → 159297 翻译部分完成（额度不足）
  *   auto   + CANCELLED → 不发信，仅 emailSent=true
+ *   无 offline token（卸载等）→ 不发信，标 emailSent，并飞书通知
  */
 
 import type { TranslationV4Job } from "../services/cosmosV4.js";
@@ -34,15 +38,21 @@ import {
   findShopsWithPendingAutoEmail,
   findShopsWithPendingManualEmail,
   hasActiveAutoJobsForShop,
+  hasActiveManualJobsForBatch,
   hasActiveManualJobsForShop,
   updateJob,
 } from "../services/cosmosV4.js";
 import {
+  clearEmailPendingShop,
+  getEmailPendingShops,
   releaseEmailSendLock,
   tryAcquireEmailSendLock,
 } from "../services/redisV4.js";
 import { computePausedJobProgressPercent } from "../services/metricsUtils.js";
+import { sendFeishuTextMessage } from "../services/feishuNotify.js";
 import { fetchShopContact } from "../services/shopEmail.js";
+import { getOfflineAccessTokenFromTsf } from "../services/tsfDb.js";
+import { isQuotaInsufficientMessage } from "../services/userFacingMessages.js";
 import {
   sendManualTranslationSuccessEmail,
   sendManualTranslationIncompleteEmail,
@@ -55,13 +65,16 @@ import {
 
 const LOG = "[emailWorker]";
 
-/** 近期同店手动任务视为一批的窗口（默认 15 分钟）。 */
+/**
+ * 无 batchId 旧任务的时间窗聚合（默认 15 分钟）。
+ * 有 batchId 的任务不走此窗口，按 batchId 独立发信。
+ */
 const MANUAL_EMAIL_COHORT_MS = (() => {
   const n = Number(process.env.MANUAL_EMAIL_COHORT_MS);
   return Number.isFinite(n) && n > 0 ? n : 15 * 60_000;
 })();
 
-/** 批次内最后一个任务终态后，再等待一段时间聚合发信（默认 90 秒）。 */
+/** 无 batchId 旧任务：末个终态后再等一会再发（默认 90 秒）。 */
 const MANUAL_EMAIL_SETTLE_MS = (() => {
   const n = Number(process.env.MANUAL_EMAIL_SETTLE_MS);
   return Number.isFinite(n) && n >= 0 ? n : 90_000;
@@ -71,30 +84,54 @@ function isActiveV4Status(status: TranslationV4Job["status"]): boolean {
   return ACTIVE_V4_STATUSES.includes(status);
 }
 
-async function shouldDeferManualEmailBatch(
+/** 待发手动任务拆成「有 batchId」与「旧任务无 batchId」。 */
+export function partitionManualJobsForEmail(jobs: TranslationV4Job[]): {
+  byBatchId: Map<string, TranslationV4Job[]>;
+  legacy: TranslationV4Job[];
+} {
+  const byBatchId = new Map<string, TranslationV4Job[]>();
+  const legacy: TranslationV4Job[] = [];
+  for (const job of jobs) {
+    const id = typeof job.batchId === "string" ? job.batchId.trim() : "";
+    if (!id) {
+      legacy.push(job);
+      continue;
+    }
+    const list = byBatchId.get(id);
+    if (list) list.push(job);
+    else byBatchId.set(id, [job]);
+  }
+  return { byBatchId, legacy };
+}
+
+/** 仅用于无 batchId 旧任务：时间窗内仍有进行中 / settle 未满则推迟。 */
+async function shouldDeferLegacyManualEmail(
   shopName: string,
   pendingJobs: TranslationV4Job[],
 ): Promise<{ defer: boolean; reason?: string; detail?: Record<string, unknown> }> {
   const cohort = await findRecentManualJobsForShop(shopName, MANUAL_EMAIL_COHORT_MS);
-  const activeInCohort = cohort.filter((job) => isActiveV4Status(job.status));
+  const legacyCohort = cohort.filter(
+    (job) => !(typeof job.batchId === "string" && job.batchId.trim()),
+  );
+  const activeInCohort = legacyCohort.filter((job) => isActiveV4Status(job.status));
   if (activeInCohort.length > 0) {
     return {
       defer: true,
       reason: "cohort_has_active_jobs",
       detail: {
-        cohortSize: cohort.length,
+        cohortSize: legacyCohort.length,
         activeCount: activeInCohort.length,
         activeTargets: activeInCohort.map((j) => j.target),
       },
     };
   }
 
-  if (cohort.length <= 1 && pendingJobs.length <= 1) {
+  if (legacyCohort.length <= 1 && pendingJobs.length <= 1) {
     return { defer: false };
   }
 
   if (MANUAL_EMAIL_SETTLE_MS > 0) {
-    const terminalJobs = cohort.filter((job) => !isActiveV4Status(job.status));
+    const terminalJobs = legacyCohort.filter((job) => !isActiveV4Status(job.status));
     const lastTerminalAt = Math.max(
       ...terminalJobs.map((job) => new Date(job.updatedAt).getTime()),
       0,
@@ -105,7 +142,7 @@ async function shouldDeferManualEmailBatch(
         defer: true,
         reason: "batch_settle_wait",
         detail: {
-          cohortSize: cohort.length,
+          cohortSize: legacyCohort.length,
           pendingCount: pendingJobs.length,
           settleMs: MANUAL_EMAIL_SETTLE_MS,
           remainingMs: MANUAL_EMAIL_SETTLE_MS - elapsed,
@@ -126,6 +163,7 @@ function describeJob(job: TranslationV4Job): Record<string, unknown> {
     id: job.id,
     shop: job.shopName,
     taskSource: job.taskSource ?? null,
+    batchId: job.batchId ?? null,
     status: job.status,
     target: job.target,
     emailSent: job.emailSent ?? false,
@@ -178,16 +216,13 @@ function toJobSummary(job: TranslationV4Job): TranslationJobSummary {
 
 /**
  * 手动任务是否因积分不足暂停。
- * translateWorker 对额度耗尽写入「额度不足，已自动暂停」；人工暂停多为 null。
+ * translateWorker 写入稳定码 `QUOTA_INSUFFICIENT`（兼认旧中英文文案）；
+ * 人工暂停多为 null / `manually paused`。
  */
 export function isManualQuotaInsufficientPause(
   errorMessage: string | null | undefined,
 ): boolean {
-  const msg = (errorMessage ?? "").trim();
-  if (!msg) return false;
-  return /额度不足|insufficient\s+credits|credits?\s+(?:are\s+)?insufficient|out\s+of\s+credits/i.test(
-    msg,
-  );
+  return isQuotaInsufficientMessage(errorMessage);
 }
 
 /**
@@ -247,6 +282,68 @@ export type RecipientContact = {
   userName: string;
 };
 
+function buildNoOfflineTokenFeishuMessage(
+  shopName: string,
+  jobs: TranslationV4Job[],
+  kind: "manual" | "auto",
+): string {
+  const targets = jobs.map((j) => j.target).join(", ");
+  const jobIds = jobs.map((j) => j.id).join(", ");
+  return [
+    "[TSF Worker] 跳过翻译完成邮件（无 offline Session，疑似已卸载）",
+    `shop: ${shopName}`,
+    `kind: ${kind}`,
+    `jobCount: ${jobs.length}`,
+    `targets: ${targets || "-"}`,
+    `jobIds: ${jobIds || "-"}`,
+    "action: emailSent=true（不发信）",
+  ].join("\n");
+}
+
+/** best-effort 飞书通知；失败不影响 emailSent 标记。 */
+async function notifyFeishuNoOfflineToken(
+  shopName: string,
+  jobs: TranslationV4Job[],
+  kind: "manual" | "auto",
+): Promise<void> {
+  const result = await sendFeishuTextMessage(
+    buildNoOfflineTokenFeishuMessage(shopName, jobs, kind),
+  );
+  logDetail(`handle-${kind}-feishu`, {
+    shop: shopName,
+    ok: result.ok,
+    skipped: "skipped" in result ? result.skipped : false,
+    reason: "reason" in result ? result.reason : null,
+  });
+  if (!result.ok && !("skipped" in result && result.skipped)) {
+    console.warn(`${LOG} feishu notify failed shop=${shopName}`, result);
+  }
+}
+
+/**
+ * 无 offline Session（常见于已卸载）时无法查 Shopify 邮箱，也不应再发通知。
+ * 返回 true 表示已跳过并标 emailSent，调用方应直接 return。
+ */
+async function skipEmailIfNoOfflineToken(
+  shopName: string,
+  jobs: TranslationV4Job[],
+  kind: "manual" | "auto",
+): Promise<boolean> {
+  const token = await getOfflineAccessTokenFromTsf(shopName);
+  if (token) return false;
+
+  logDetail(`handle-${kind}-skipped`, {
+    reason: "no_offline_token",
+    shop: shopName,
+    jobIds: jobs.map((j) => j.id),
+    targets: jobs.map((j) => j.target),
+    action: "mark_email_sent",
+  });
+  await markEmailSentBatch(jobs);
+  await notifyFeishuNoOfflineToken(shopName, jobs, kind);
+  return true;
+}
+
 /** 发信前从 Shopify GraphQL 拉取收件人与称呼。 */
 async function resolveRecipientContact(
   job: TranslationV4Job,
@@ -280,31 +377,204 @@ async function markEmailSent(job: TranslationV4Job): Promise<void> {
   }
 }
 
-/** 处理同一店铺的手动翻译邮件：整店任务都终态后汇总发一封。 */
-async function handleManualJobGroup(shopName: string): Promise<void> {
-  const hasActive = await hasActiveManualJobsForShop(shopName);
-  if (hasActive) {
-    logDetail("handle-manual-skipped", {
-      reason: "active_manual_jobs_still_running",
-      shop: shopName,
-    });
+/**
+ * 对一组已就绪的手动任务发信（同一 batchId，或无 batchId 的整店旧汇总）。
+ * 调用方负责就绪判断与发信锁。
+ */
+async function sendManualEmailsForJobs(
+  shopName: string,
+  jobs: TranslationV4Job[],
+  groupKey: string,
+): Promise<void> {
+  if (jobs.length === 0) return;
+
+  logDetail("handle-manual-start", {
+    shop: shopName,
+    groupKey,
+    jobCount: jobs.length,
+    jobs: jobs.map(describeJob),
+  });
+
+  if (await skipEmailIfNoOfflineToken(shopName, jobs, "manual")) {
     return;
   }
 
+  const recipient = await resolveRecipientContact(jobs[0]);
+  if (!recipient) {
+    logDetail("handle-manual-skipped", {
+      reason: "no_shop_email",
+      shop: shopName,
+      groupKey,
+      jobIds: jobs.map((j) => j.id),
+    });
+    return;
+  }
+  const { email: to, userName } = recipient;
+  const quotaPausedJobs = jobs.filter(
+    (j) =>
+      j.status === "PAUSED" &&
+      isManualQuotaInsufficientPause(j.errorMessage),
+  );
+  const successJobs = jobs.filter(
+    (j) =>
+      !(
+        j.status === "PAUSED" &&
+        isManualQuotaInsufficientPause(j.errorMessage)
+      ),
+  );
+  const completedJobs = successJobs.filter((j) => j.status === "COMPLETED");
+  const pausedJobs = successJobs.filter((j) => j.status === "PAUSED");
+  const cancelledJobs = successJobs.filter((j) => j.status === "CANCELLED");
+
+  logDetail("handle-manual-split", {
+    shop: shopName,
+    groupKey,
+    to: maskEmail(to),
+    quotaPausedCount: quotaPausedJobs.length,
+    successCount: successJobs.length,
+    completedCount: completedJobs.length,
+    pausedCount: pausedJobs.length,
+    cancelledCount: cancelledJobs.length,
+    quotaPausedTargets: quotaPausedJobs.map((j) => j.target),
+    successTargets: successJobs.map((j) => j.target),
+  });
+
+  if (quotaPausedJobs.length > 0) {
+    const quotaSummaries = quotaPausedJobs.map(toJobSummary);
+    const requiredCredits = quotaPausedJobs.reduce((sum, job, i) => {
+      const summary = quotaSummaries[i];
+      return (
+        sum +
+        estimateRequiredCreditsForIncompleteEmail({
+          usedTokens: summary.usedTokens,
+          completionPercent: summary.completionPercent ?? 0,
+          estimatedCredits: job.estimatedCredits,
+        })
+      );
+    }, 0);
+    const sent = await sendManualTranslationIncompleteEmail(
+      shopName,
+      to,
+      userName,
+      quotaSummaries,
+      requiredCredits,
+    );
+    logDetail("handle-manual-incomplete-send-result", {
+      shop: shopName,
+      groupKey,
+      to: maskEmail(to),
+      sent,
+      jobIds: quotaPausedJobs.map((j) => j.id),
+      targets: quotaSummaries.map((j) => j.target),
+      requiredCredits,
+      estimatedCredits: quotaPausedJobs.map((j) => j.estimatedCredits ?? null),
+    });
+    if (sent) {
+      await markEmailSentBatch(quotaPausedJobs);
+      logDetail("handle-manual-incomplete-done", {
+        shop: shopName,
+        groupKey,
+        langs: quotaSummaries.map((j) => j.target),
+        markedJobIds: quotaPausedJobs.map((j) => j.id),
+      });
+    }
+  }
+
+  if (successJobs.length > 0) {
+    const allCancelled = successJobs.every((j) => j.status === "CANCELLED");
+    if (allCancelled) {
+      logDetail("handle-manual-success-skipped", {
+        reason: "all_cancelled",
+        shop: shopName,
+        groupKey,
+        jobIds: successJobs.map((j) => j.id),
+        targets: successJobs.map((j) => j.target),
+      });
+      await markEmailSentBatch(successJobs);
+    } else {
+      const jobsToEmail: TranslationJobSummary[] = successJobs.map(toJobSummary);
+      const sent = await sendManualTranslationSuccessEmail(
+        shopName,
+        to,
+        userName,
+        jobsToEmail,
+      );
+      logDetail("handle-manual-send-result", {
+        shop: shopName,
+        groupKey,
+        to: maskEmail(to),
+        sent,
+        jobIds: successJobs.map((j) => j.id),
+        targets: jobsToEmail.map((j) => j.target),
+      });
+      if (sent) {
+        await markEmailSentBatch(successJobs);
+        logDetail("handle-manual-done", {
+          shop: shopName,
+          groupKey,
+          langs: jobsToEmail.map((j) => j.target),
+          markedJobIds: successJobs.map((j) => j.id),
+        });
+      }
+    }
+  }
+}
+
+/**
+ * 处理同一店铺的手动翻译邮件：
+ * - 有 batchId：该批终态即可发，不等其它批次；
+ * - 无 batchId：整店手动任务都终态后再汇总（兼容旧任务）。
+ */
+async function handleManualJobGroup(shopName: string): Promise<void> {
   const jobs = await findManualJobsNeedingEmailForShop(shopName);
   if (jobs.length === 0) {
+    await clearEmailPendingShop(shopName, "manual");
     return;
   }
 
-  const defer = await shouldDeferManualEmailBatch(shopName, jobs);
-  if (defer.defer) {
-    logDetail("handle-manual-skipped", {
-      reason: defer.reason,
-      shop: shopName,
-      jobIds: jobs.map((j) => j.id),
-      targets: jobs.map((j) => j.target),
-      ...defer.detail,
-    });
+  const { byBatchId, legacy } = partitionManualJobsForEmail(jobs);
+  const readyBatchGroups: { batchId: string; jobs: TranslationV4Job[] }[] = [];
+  for (const [batchId, batchJobs] of byBatchId) {
+    const hasActiveInBatch = await hasActiveManualJobsForBatch(shopName, batchId);
+    if (hasActiveInBatch) {
+      logDetail("handle-manual-skipped", {
+        reason: "batch_has_active_jobs",
+        shop: shopName,
+        batchId,
+        jobIds: batchJobs.map((j) => j.id),
+        targets: batchJobs.map((j) => j.target),
+      });
+      continue;
+    }
+    readyBatchGroups.push({ batchId, jobs: batchJobs });
+  }
+
+  let legacyReady: TranslationV4Job[] | null = null;
+  if (legacy.length > 0) {
+    const hasActive = await hasActiveManualJobsForShop(shopName);
+    if (hasActive) {
+      logDetail("handle-manual-skipped", {
+        reason: "active_manual_jobs_still_running",
+        shop: shopName,
+        legacyJobIds: legacy.map((j) => j.id),
+      });
+    } else {
+      const defer = await shouldDeferLegacyManualEmail(shopName, legacy);
+      if (defer.defer) {
+        logDetail("handle-manual-skipped", {
+          reason: defer.reason,
+          shop: shopName,
+          jobIds: legacy.map((j) => j.id),
+          targets: legacy.map((j) => j.target),
+          ...defer.detail,
+        });
+      } else {
+        legacyReady = legacy;
+      }
+    }
+  }
+
+  if (readyBatchGroups.length === 0 && !legacyReady) {
     return;
   }
 
@@ -313,130 +583,27 @@ async function handleManualJobGroup(shopName: string): Promise<void> {
     logDetail("handle-manual-skipped", {
       reason: "email_send_lock_busy",
       shop: shopName,
-      jobIds: jobs.map((j) => j.id),
+      readyBatchCount: readyBatchGroups.length,
+      legacyCount: legacyReady?.length ?? 0,
     });
     return;
   }
 
   try {
-    logDetail("handle-manual-start", {
-      shop: shopName,
-      jobCount: jobs.length,
-      jobs: jobs.map(describeJob),
-    });
-
-    const recipient = await resolveRecipientContact(jobs[0]);
-    if (!recipient) {
-      logDetail("handle-manual-skipped", {
-        reason: "no_shop_email",
-        shop: shopName,
-        jobIds: jobs.map((j) => j.id),
-      });
-      return;
-    }
-    const { email: to, userName } = recipient;
-    const quotaPausedJobs = jobs.filter(
-      (j) =>
-        j.status === "PAUSED" &&
-        isManualQuotaInsufficientPause(j.errorMessage),
-    );
-    const successJobs = jobs.filter(
-      (j) =>
-        !(
-          j.status === "PAUSED" &&
-          isManualQuotaInsufficientPause(j.errorMessage)
-        ),
-    );
-    const completedJobs = successJobs.filter((j) => j.status === "COMPLETED");
-    const pausedJobs = successJobs.filter((j) => j.status === "PAUSED");
-    const cancelledJobs = successJobs.filter((j) => j.status === "CANCELLED");
-
-    logDetail("handle-manual-split", {
-      shop: shopName,
-      to: maskEmail(to),
-      quotaPausedCount: quotaPausedJobs.length,
-      successCount: successJobs.length,
-      completedCount: completedJobs.length,
-      pausedCount: pausedJobs.length,
-      cancelledCount: cancelledJobs.length,
-      quotaPausedTargets: quotaPausedJobs.map((j) => j.target),
-      successTargets: successJobs.map((j) => j.target),
-    });
-
-    if (quotaPausedJobs.length > 0) {
-      const quotaSummaries = quotaPausedJobs.map(toJobSummary);
-      const requiredCredits = quotaPausedJobs.reduce((sum, job, i) => {
-        const summary = quotaSummaries[i];
-        return (
-          sum +
-          estimateRequiredCreditsForIncompleteEmail({
-            usedTokens: summary.usedTokens,
-            completionPercent: summary.completionPercent ?? 0,
-            estimatedCredits: job.estimatedCredits,
-          })
-        );
-      }, 0);
-      const sent = await sendManualTranslationIncompleteEmail(
+    for (const group of readyBatchGroups) {
+      await sendManualEmailsForJobs(
         shopName,
-        to,
-        userName,
-        quotaSummaries,
-        requiredCredits,
+        group.jobs,
+        `batch:${group.batchId}`,
       );
-      logDetail("handle-manual-incomplete-send-result", {
-        shop: shopName,
-        to: maskEmail(to),
-        sent,
-        jobIds: quotaPausedJobs.map((j) => j.id),
-        targets: quotaSummaries.map((j) => j.target),
-        requiredCredits,
-        estimatedCredits: quotaPausedJobs.map((j) => j.estimatedCredits ?? null),
-      });
-      if (sent) {
-        await markEmailSentBatch(quotaPausedJobs);
-        logDetail("handle-manual-incomplete-done", {
-          shop: shopName,
-          langs: quotaSummaries.map((j) => j.target),
-          markedJobIds: quotaPausedJobs.map((j) => j.id),
-        });
-      }
+    }
+    if (legacyReady) {
+      await sendManualEmailsForJobs(shopName, legacyReady, "legacy");
     }
 
-    if (successJobs.length > 0) {
-      const allCancelled = successJobs.every((j) => j.status === "CANCELLED");
-      if (allCancelled) {
-        // 全取消：不发「完成」邮件，仍标已发送，避免重试噪声。
-        logDetail("handle-manual-success-skipped", {
-          reason: "all_cancelled",
-          shop: shopName,
-          jobIds: successJobs.map((j) => j.id),
-          targets: successJobs.map((j) => j.target),
-        });
-        await markEmailSentBatch(successJobs);
-      } else {
-        const jobsToEmail: TranslationJobSummary[] = successJobs.map(toJobSummary);
-        const sent = await sendManualTranslationSuccessEmail(
-          shopName,
-          to,
-          userName,
-          jobsToEmail,
-        );
-        logDetail("handle-manual-send-result", {
-          shop: shopName,
-          to: maskEmail(to),
-          sent,
-          jobIds: successJobs.map((j) => j.id),
-          targets: jobsToEmail.map((j) => j.target),
-        });
-        if (sent) {
-          await markEmailSentBatch(successJobs);
-          logDetail("handle-manual-done", {
-            shop: shopName,
-            langs: jobsToEmail.map((j) => j.target),
-            markedJobIds: successJobs.map((j) => j.id),
-          });
-        }
-      }
+    const remaining = await findManualJobsNeedingEmailForShop(shopName);
+    if (remaining.length === 0) {
+      await clearEmailPendingShop(shopName, "manual");
     }
   } finally {
     await releaseEmailSendLock(shopName, "manual");
@@ -457,6 +624,7 @@ async function handleAutoJobGroup(shopName: string): Promise<void> {
 
   const jobs = await findAutoJobsNeedingEmailForShop(shopName);
   if (jobs.length === 0) {
+    await clearEmailPendingShop(shopName, "auto");
     return;
   }
 
@@ -476,6 +644,10 @@ async function handleAutoJobGroup(shopName: string): Promise<void> {
     jobCount: jobs.length,
     jobs: jobs.map(describeJob),
   });
+
+  if (await skipEmailIfNoOfflineToken(shopName, jobs, "auto")) {
+    return;
+  }
 
   const recipient = await resolveRecipientContact(jobs[0]);
   if (!recipient) {
@@ -578,18 +750,40 @@ async function handleAutoJobGroup(shopName: string): Promise<void> {
   }
 }
 
+/**
+ * 跨分区兜底扫描间隔（默认 5 分钟）。
+ * 平时靠 Redis 标记走快路径，兜底扫描负责捞回标记之外的任务。
+ */
+const EMAIL_FALLBACK_SCAN_MS = Math.max(
+  30_000,
+  Number(process.env.EMAIL_FALLBACK_SCAN_INTERVAL_MS) || 5 * 60_000,
+);
+let lastFallbackScanAt = 0;
+
 export async function runEmailWorker(): Promise<void> {
   const startedAt = Date.now();
-  const [manualShops, autoShops] = await Promise.all([
-    findShopsWithPendingManualEmail(),
-    findShopsWithPendingAutoEmail(),
-  ]);
+
+  // 快路径：Redis 标记（Worker 侧状态写入时打）直接给出候选店。
+  // 兜底：每 EMAIL_FALLBACK_SCAN_MS 做一次跨分区扫描，兜住 App 侧手动
+  // 暂停/取消、Redis 重启丢标记、以及任何漏写的情况。
+  const useFallbackScan = Date.now() - lastFallbackScanAt >= EMAIL_FALLBACK_SCAN_MS;
+  const [manualShops, autoShops] = useFallbackScan
+    ? await Promise.all([
+        findShopsWithPendingManualEmail(),
+        findShopsWithPendingAutoEmail(),
+      ])
+    : await Promise.all([
+        getEmailPendingShops("manual"),
+        getEmailPendingShops("auto"),
+      ]);
+  if (useFallbackScan) lastFallbackScanAt = Date.now();
 
   if (manualShops.length === 0 && autoShops.length === 0) {
     return;
   }
 
   logDetail("run-start", {
+    source: useFallbackScan ? "cosmos-fallback" : "redis-hint",
     manualShopCount: manualShops.length,
     autoShopCount: autoShops.length,
     manualShops,

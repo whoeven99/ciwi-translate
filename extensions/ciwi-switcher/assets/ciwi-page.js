@@ -1,6 +1,9 @@
 /** Shared TTL for storefront translation/image payloads (matches switcher config). */
 export const CIWI_TRANSLATION_TTL_MS = 1000 * 60 * 60;
 
+/** 负缓存 TTL：无 LiquidRule 等空结果用更短窗口，便于商户稍后写入后较快生效。 */
+export const CIWI_EMPTY_TRANSLATION_TTL_MS = 1000 * 60 * 10;
+
 export function buildTranslationCacheKey(prefix, parts) {
   return `ciwi_${prefix}:${parts.filter(Boolean).join(":")}`;
 }

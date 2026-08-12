@@ -17,16 +17,37 @@ function estimateTaskRemainingCredits(
     Number(job.metrics.initTotal) || 0,
   );
   const translatedResources = Math.max(Number(job.metrics.translateDone) || 0, 0);
+  const translatedUnits = Math.max(Number(job.metrics.translateUnitDone) || 0, 0);
+  const totalUnits = Math.max(Number(job.metrics.translateUnitTotal) || 0, 0);
   const usedCredits = Math.max(Math.round(job.usedTokens || 0), 0);
+  const progressPercent = Math.max(Number(job.progressPercent) || 0, 0);
 
   if (totalResources <= 0) return null;
   if (translatedResources >= totalResources) return 0;
-  if (translatedResources <= 0 || usedCredits <= 0) return null;
+  if (usedCredits <= 0) return null;
 
-  const estimatedTotalCredits = Math.ceil(
-    (usedCredits * totalResources) / translatedResources,
-  );
-  return clampNonNegativeInteger(estimatedTotalCredits - usedCredits);
+  if (translatedResources > 0) {
+    const estimatedTotalCredits = Math.ceil(
+      (usedCredits * totalResources) / translatedResources,
+    );
+    return clampNonNegativeInteger(estimatedTotalCredits - usedCredits);
+  }
+
+  if (translatedUnits > 0 && totalUnits > 0) {
+    const estimatedTotalCredits = Math.ceil(
+      (usedCredits * totalUnits) / translatedUnits,
+    );
+    return clampNonNegativeInteger(estimatedTotalCredits - usedCredits);
+  }
+
+  if (progressPercent > 0) {
+    const estimatedTotalCredits = Math.ceil(
+      usedCredits / Math.min(progressPercent / 100, 1),
+    );
+    return clampNonNegativeInteger(estimatedTotalCredits - usedCredits);
+  }
+
+  return null;
 }
 
 export function buildTranslateV4TaskCreditsPurchaseContext(

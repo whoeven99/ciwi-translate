@@ -20,7 +20,6 @@ describe("resolveGptChatSampling", () => {
   });
 
   it("omits sampling fields for gpt-5.6 models", () => {
-    assert.deepEqual(resolveGptChatSampling("gpt-5.6-sol"), {});
     assert.deepEqual(resolveGptChatSampling("gpt-5.6-luna"), {});
     assert.deepEqual(resolveGptChatSampling("gpt-5.6-terra"), {});
   });
@@ -48,7 +47,7 @@ describe("buildGptChatRequestBody", () => {
   });
 
   it("omits temperature and penalties for 5.6", () => {
-    const body = buildGptChatRequestBody("gpt-5.6-sol", messages);
+    const body = buildGptChatRequestBody("gpt-5.6-luna", messages);
     assert.equal("temperature" in body, false);
     assert.equal("frequency_penalty" in body, false);
     assert.equal("presence_penalty" in body, false);

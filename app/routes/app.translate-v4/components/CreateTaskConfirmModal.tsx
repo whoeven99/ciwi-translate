@@ -11,6 +11,7 @@ import {
 import { localeRegionCode, localeShortName } from "../localeDisplay";
 import { getV4AiModelLabel, getV4ModuleLabel } from "../v4I18n";
 import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
+import { useDetailedCreateTaskEstimate } from "../useDetailedCreateTaskEstimate";
 import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
 
@@ -29,12 +30,15 @@ type Props = {
   aiModel: string;
   isCover: boolean;
   isHandle: boolean;
+  includeLiquid: boolean;
+  /** 源语言（TM key）；缺省由服务端 primary 兜底 */
+  sourceLocale?: string;
   estimate: CreateTaskEstimateView | null;
   scenario: CreateTaskConfirmScenario;
   previousTotalChars?: number;
   onClose: () => void;
   onConfirmCreate: () => void;
-  onBuyCredits: () => void;
+  onBuyCredits: (estimatedCredits?: number | null) => void;
   /** Persist create-task selections before Shopify billing redirect. */
   onBeforeBilling?: () => void;
 };
@@ -53,8 +57,10 @@ export function CreateTaskConfirmModal({
   aiModel,
   isCover,
   isHandle,
+  includeLiquid,
+  sourceLocale,
   estimate,
-  scenario,
+  scenario: parentScenario,
   previousTotalChars,
   onClose,
   onConfirmCreate,
@@ -67,15 +73,22 @@ export function CreateTaskConfirmModal({
     success?: boolean;
     response?: { confirmationUrl?: string };
   }>();
+  const detailed = useDetailedCreateTaskEstimate();
+
+  const detailedRunning = detailed.progress.status === "running";
+  const { reset: resetDetailed } = detailed;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      resetDetailed();
+      return;
+    }
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !creating) {
+      if (event.key === "Escape" && !creating && !detailedRunning) {
         onClose();
       }
     };
@@ -85,7 +98,22 @@ export function CreateTaskConfirmModal({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open, creating, onClose]);
+  }, [open, creating, onClose, resetDetailed, detailedRunning]);
+
+  useEffect(() => {
+    if (!open) return;
+    resetDetailed();
+  }, [
+    open,
+    targets,
+    modules,
+    isCover,
+    isHandle,
+    includeLiquid,
+    aiModel,
+    sourceLocale,
+    resetDetailed,
+  ]);
 
   useEffect(() => {
     if (!planFetcher.data?.success) return;
@@ -122,12 +150,28 @@ export function CreateTaskConfirmModal({
     ? getV4AiModelLabel(aiModel, t)
     : aiModel;
 
-  const estimatedCredits = estimate?.estimatedCredits ?? null;
-  const remainingCredits = estimate?.remainingCredits ?? null;
+  const detailedDone = detailed.progress.status === "done";
+  const estimatedCredits = detailedDone
+    ? detailed.progress.estimatedCredits
+    : (estimate?.estimatedCredits ?? null);
+  const remainingCredits = detailedDone
+    ? (detailed.progress.remainingCredits ?? estimate?.remainingCredits ?? null)
+    : (estimate?.remainingCredits ?? null);
   const shortfallCredits =
     estimatedCredits != null && remainingCredits != null
       ? Math.max(estimatedCredits - remainingCredits, 0)
       : 0;
+  const needsMoreCredits =
+    estimatedCredits != null &&
+    remainingCredits != null &&
+    estimatedCredits > remainingCredits;
+  const scenario: CreateTaskConfirmScenario = detailedDone
+    ? needsMoreCredits
+      ? parentScenario === "ready"
+        ? "insufficient_paid"
+        : parentScenario
+      : "ready"
+    : parentScenario;
   const progressPercent =
     estimatedCredits != null && estimatedCredits > 0 && remainingCredits != null
       ? Math.max(0, Math.min(100, (remainingCredits / estimatedCredits) * 100))
@@ -163,6 +207,10 @@ export function CreateTaskConfirmModal({
       label: t("v4.createTask.translateHandle"),
       value: isHandle ? t("Yes") : t("No"),
     },
+    {
+      label: t("v4.createTask.includeLiquid"),
+      value: includeLiquid ? t("Yes") : t("No"),
+    },
   ];
 
   const estimatedCreditsLabel =
@@ -175,13 +223,19 @@ export function CreateTaskConfirmModal({
   const estimateSummaryItems = [
     {
       label: t("v4.createTask.confirmCreditsRequired"),
-      value: estimate?.loading
-        ? t("v4.createTask.estimateLoading")
-        : estimatedCreditsLabel,
+      value: detailedRunning
+        ? t("v4.createTask.detailedEstimateRunning", {
+            current: detailed.progress.doneCount,
+            total: detailed.progress.totalCount,
+            label: detailed.progress.currentLabel,
+          })
+        : estimate?.loading && !detailedDone
+          ? t("v4.createTask.estimateLoading")
+          : estimatedCreditsLabel,
     },
     {
       label: t("v4.createTask.confirmCreditsAvailable"),
-      value: estimate?.loading
+      value: estimate?.loading && !detailedDone && !detailedRunning
         ? t("v4.createTask.estimateLoading")
         : remainingCreditsLabel,
     },
@@ -244,7 +298,7 @@ export function CreateTaskConfirmModal({
     }
     if (isInsufficientPaid) {
       onBeforeBilling?.();
-      onBuyCredits();
+      onBuyCredits(estimatedCredits);
       return;
     }
     if (isTrialOffer) {
@@ -266,7 +320,20 @@ export function CreateTaskConfirmModal({
       return;
     }
     onBeforeBilling?.();
-    onBuyCredits();
+    onBuyCredits(estimatedCredits);
+  };
+
+  const handleDetailedEstimate = () => {
+    if (detailedRunning || creating) return;
+    void detailed.run({
+      modules,
+      targets,
+      isCover,
+      isHandle,
+      includeLiquid,
+      aiModel,
+      source: sourceLocale,
+    });
   };
 
   if (!open) return null;
@@ -277,7 +344,7 @@ export function CreateTaskConfirmModal({
       role="dialog"
       style={overlayStyle}
       onClick={() => {
-        if (!creating) onClose();
+        if (!creating && !detailedRunning) onClose();
       }}
     >
       <div style={panelStyle} onClick={(event) => event.stopPropagation()}>
@@ -302,7 +369,7 @@ export function CreateTaskConfirmModal({
             type="button"
             aria-label={t("Close")}
             onClick={onClose}
-            disabled={creating}
+            disabled={creating || detailedRunning}
             style={closeButtonStyle}
           >
             ×
@@ -346,7 +413,32 @@ export function CreateTaskConfirmModal({
                 />
               </div>
               <div style={estimateHintStyle}>
-                {t("v4.createTask.confirmEstimateExactHint")}
+                {detailedDone
+                  ? t("v4.createTask.detailedEstimateDoneHint")
+                  : detailed.progress.status === "error"
+                    ? t("v4.createTask.detailedEstimateErrorHint")
+                    : t("v4.createTask.confirmEstimateExactHint")}
+              </div>
+              <div style={detailedEstimateRowStyle}>
+                <Button
+                  size="slim"
+                  onClick={handleDetailedEstimate}
+                  loading={detailedRunning}
+                  disabled={creating || detailedRunning || targets.length === 0}
+                >
+                  {detailedDone
+                    ? t("v4.createTask.detailedEstimateRerun")
+                    : t("v4.createTask.detailedEstimateAction")}
+                </Button>
+                {detailedRunning ? (
+                  <span style={detailedEstimateProgressStyle}>
+                    {t("v4.createTask.detailedEstimateProgress", {
+                      current: detailed.progress.doneCount,
+                      total: detailed.progress.totalCount,
+                      label: detailed.progress.currentLabel,
+                    })}
+                  </span>
+                ) : null}
               </div>
             </div>
           </section>
@@ -755,6 +847,21 @@ const progressFillStyle = {
 } as const;
 
 const estimateHintStyle = {
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: "18px",
+} as const;
+
+const detailedEstimateRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  marginTop: 10,
+  flexWrap: "wrap",
+} as const;
+
+const detailedEstimateProgressStyle = {
   color: v4Colors.textMuted,
   fontSize: 12,
   fontWeight: 500,

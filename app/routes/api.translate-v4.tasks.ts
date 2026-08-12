@@ -42,8 +42,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     modules?: string[];
     isCover?: boolean;
     isHandle?: boolean;
+    includeLiquid?: boolean;
     aiModel?: string;
+    /** 同一次创建点击共用；缺省则该 job 走旧整店邮件聚合。 */
+    batchId?: string;
   };
+
+  const batchIdRaw = typeof body.batchId === "string" ? body.batchId.trim() : "";
+  const batchId =
+    batchIdRaw && batchIdRaw.length <= 64 ? batchIdRaw : undefined;
 
   const source =
     body.source?.trim() ||
@@ -57,12 +64,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (target === source)
     return json({ ok: false, error: "v4.validation.sameAsSource" }, { status: 400 });
 
+  const includeLiquid = Boolean(body.includeLiquid);
   const allowedSet = new Set<string>(TRANSLATION_V4_MODULES);
-  const modules = (body.modules ?? defaultManualV4Modules())
+  const modules = (body.modules ?? (includeLiquid ? [] : defaultManualV4Modules()))
     .map((m) => m.trim().toUpperCase())
     .filter((m) => allowedSet.has(m)) as TranslationV4Module[];
 
-  if (!modules.length)
+  if (!modules.length && !includeLiquid)
     return json({ ok: false, error: "v4.validation.selectModule" }, { status: 400 });
 
   const shopName = session.shop;
@@ -99,7 +107,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     limitPerType: V4_LIMIT_UNLIMITED,
     isCover: body.isCover ?? false,
     isHandle: body.isHandle ?? false,
+    includeLiquid,
     taskSource: TS_FRONTEND_TASK_SOURCE,
+    ...(batchId ? { batchId } : {}),
     status: "INIT_QUEUED",
     blobPrefix: `tasks/v4/${shopName}/${jobId}`,
     createdBy: shopName,
@@ -117,7 +127,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   console.log(
-    `[translateV4] job created id=${jobId} shop=${shopName} ${source}→${target} modules=${modules.join(",")} source=${TS_FRONTEND_TASK_SOURCE} hasProfileBlock=${Boolean(profileBlock?.trim())}`,
+    `[translateV4] job created id=${jobId} shop=${shopName} ${source}→${target} modules=${modules.join(",")} source=${TS_FRONTEND_TASK_SOURCE} batchId=${batchId ?? ""} hasProfileBlock=${Boolean(profileBlock?.trim())}`,
   );
   return json({ ok: true, jobId: job.id });
 };

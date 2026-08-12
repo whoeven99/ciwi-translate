@@ -230,6 +230,7 @@ const Index = () => {
     selectorPosition: "",
     positionData: "0",
     isTransparent: false,
+    autoLiquidCollect: true,
   });
   const [selectedLanguage, setSelectedLanguage] = useState<any>(
     localization.languages.find((language) => language.selected),

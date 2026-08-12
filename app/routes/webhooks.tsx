@@ -26,7 +26,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   switch (topic) {
     case "APP_UNINSTALLED": {
       // 无论如何必须返回 200，删除失败只记日志不阻断响应。
-      // 先快照（订阅/额度/大小）→ 清订阅 → 软删 Account / 删 Session → 用快照发飞书。
+      // 先快照（订阅/额度/大小）→ 清本地订阅 → 软删 Account / 删 Session → 用快照发飞书。
       let snapshot: UninstallShopSnapshot | null = null;
       try {
         snapshot = await snapshotShopForUninstall(shop);
@@ -37,6 +37,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         await cleanupBillingOnUninstall({
           shop,
           accessToken: session?.accessToken,
+          attemptShopifyCancel: false,
         });
       } catch (e) {
         console.error("APP_UNINSTALLED: billing cleanup failed", e);
@@ -96,6 +97,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         await cleanupBillingOnUninstall({
           shop,
           accessToken: session?.accessToken,
+          attemptShopifyCancel: true,
         });
       } catch (e) {
         console.error("SHOP_REDACT: billing cleanup failed", e);

@@ -8,9 +8,13 @@
  *   SHOPIFY_BULK_DOWNLOAD_CONCURRENCY / INIT_BULK_DOWNLOAD_CONCURRENCY (default 5)
  *   SHOPIFY_BULK_TIMEOUT_MS / INIT_BULK_TIMEOUT_MS (default 6h)
  *   SHOPIFY_BULK_SUBMIT_MAX_RETRIES (default 24; slot busy / throttle)
+ *
+ * Fatal: missing Turso offline Session aborts the whole shop queue (no poll
+ * spin / no requeue) — typical after APP_UNINSTALLED mid-init.
  */
 import { createInterface } from "readline";
 import { Readable } from "stream";
+import { isNoOfflineTokenError } from "./shopAccessToken.js";
 import { shopifyGraphql } from "./shopifyFetch.js";
 
 const LOG = "[shopifyBulk]";
@@ -469,6 +473,11 @@ export async function runShopifyBulkJobQueue(args: {
   };
 
   const failOrFallback = (job: ShopifyBulkJob, reason: string) => {
+    // 卸载 / Session 丢失：fallback 与 requeue 都会再次撞 token，直接记失败。
+    if (isNoOfflineTokenError(reason)) {
+      errors.push(`${job.id}: ${reason}`);
+      return;
+    }
     if (fallbackOnFailure) {
       enqueueOutcome({ job, mode: "fallback", reason });
       return;
@@ -483,6 +492,20 @@ export async function runShopifyBulkJobQueue(args: {
       return;
     }
     errors.push(`${job.id}: ${reason}`);
+  };
+
+  /** 整店无 token：清掉 inFlight + 待提交队列，避免 poll 空转至 timeout。 */
+  const abortQueueForNoOfflineToken = (reason: string) => {
+    console.warn(
+      `${logPrefix} abort shop=${shopDomain} reason=no_offline_token inFlight=${inFlight.size} queued=${queue.length}`,
+    );
+    for (const [id, op] of [...inFlight.entries()]) {
+      inFlight.delete(id);
+      failOrFallback(op.job, reason);
+    }
+    while (queue.length > 0) {
+      failOrFallback(queue.shift()!, reason);
+    }
   };
 
   const submitOneWithRetry = async (job: ShopifyBulkJob): Promise<void> => {
@@ -515,6 +538,12 @@ export async function runShopifyBulkJobQueue(args: {
         return;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
+        if (isNoOfflineTokenError(msg)) {
+          console.warn(`${logPrefix} submit failed id=${job.id}: ${msg}`);
+          failOrFallback(job, msg);
+          abortQueueForNoOfflineToken(msg);
+          return;
+        }
         if (
           isRetriableBulkSubmitError(msg) &&
           attempt < submitMaxRetries &&
@@ -564,6 +593,13 @@ export async function runShopifyBulkJobQueue(args: {
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           console.warn(`${logPrefix} poll error id=${id}: ${msg}`);
+          if (isNoOfflineTokenError(msg)) {
+            // 原先 continue 会让 inFlight 永远不空 → 每秒刷日志直到 6h timeout。
+            inFlight.delete(id);
+            failOrFallback(op.job, msg);
+            abortQueueForNoOfflineToken(msg);
+            break;
+          }
           continue;
         }
 

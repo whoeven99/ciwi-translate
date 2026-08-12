@@ -36,6 +36,7 @@ export async function getSwitcherConfigForAdmin(shop: string): Promise<SwitcherA
     selectorPosition,
     positionData,
     isTransparent,
+    autoLiquidCollect,
   } = payload;
 
   return {
@@ -52,6 +53,7 @@ export async function getSwitcherConfigForAdmin(shop: string): Promise<SwitcherA
     selectorPosition,
     positionData,
     isTransparent,
+    autoLiquidCollect,
   };
 }
 
@@ -74,5 +76,6 @@ export async function saveSwitcherConfigForAdmin(
     selectorPosition: payload.selectorPosition,
     positionData: payload.positionData,
     isTransparent: payload.isTransparent,
+    autoLiquidCollect: payload.autoLiquidCollect,
   });
 }

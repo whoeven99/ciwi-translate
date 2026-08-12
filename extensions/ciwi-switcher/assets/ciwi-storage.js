@@ -30,6 +30,16 @@ export function getWithTTL(key) {
   }
 }
 
+/** 空数组或空对象（LiquidMap {}）视为可负缓存的空响应。 */
+function isEmptyCacheableResponse(data) {
+  const response = data?.response;
+  if (Array.isArray(response)) return response.length === 0;
+  if (response && typeof response === "object") {
+    return Object.keys(response).length === 0;
+  }
+  return false;
+}
+
 /**
  * useCacheThenRefresh:
  *  - 如果没有缓存 => await fetcher() 并保存，返回 fresh（与原第一次调用逻辑一致）
@@ -38,7 +48,11 @@ export function getWithTTL(key) {
  * @param {string} key
  * @param {() => Promise<any>} fetcher
  * @param {number} ttlMs
- * @param {boolean} refreshInBackground
+ * @param {object} [options]
+ * @param {boolean} [options.refreshOnCacheHit=true] 命中缓存时是否后台刷新
+ * @param {boolean} [options.refetchWhenCachedEmpty=false] 缓存为空数组时前台重拉
+ * @param {boolean} [options.skipRefreshWhenEmpty=false] 缓存为空时跳过后台刷新（负缓存降 QPS）
+ * @param {number} [options.emptyTtlMs] 空结果使用更短 TTL（默认与 ttlMs 相同）
  */
 export async function useCacheThenRefresh(
   key,
@@ -46,29 +60,53 @@ export async function useCacheThenRefresh(
   ttlMs = 1000 * 60 * 60,
   options = {},
 ) {
-  const { refreshOnCacheHit = true, refetchWhenCachedEmpty = false } = options;
+  const {
+    refreshOnCacheHit = true,
+    refetchWhenCachedEmpty = false,
+    skipRefreshWhenEmpty = false,
+    emptyTtlMs,
+  } = options;
+
+  const ttlFor = (data) => {
+    if (
+      emptyTtlMs != null &&
+      emptyTtlMs > 0 &&
+      isEmptyCacheableResponse(data)
+    ) {
+      return emptyTtlMs;
+    }
+    return ttlMs;
+  };
+
   const cached = getWithTTL(key);
   if (!cached) {
     const fresh = await fetcher();
-    if (fresh !== null && fresh !== undefined) setWithTTL(key, fresh, ttlMs);
+    if (fresh !== null && fresh !== undefined) {
+      setWithTTL(key, fresh, ttlFor(fresh));
+    }
     return fresh;
   }
 
   const cachedResponse = cached?.response;
-  const isCachedEmptyResponse =
+  const isCachedEmptyArray =
     Array.isArray(cachedResponse) && cachedResponse.length === 0;
 
-  if (refetchWhenCachedEmpty && isCachedEmptyResponse) {
+  if (refetchWhenCachedEmpty && isCachedEmptyArray) {
     const fresh = await fetcher();
-    if (fresh !== null && fresh !== undefined) setWithTTL(key, fresh, ttlMs);
+    if (fresh !== null && fresh !== undefined) {
+      setWithTTL(key, fresh, ttlFor(fresh));
+    }
     return fresh;
   }
 
-  if (refreshOnCacheHit) {
+  const cachedEmpty = isEmptyCacheableResponse(cached);
+  if (refreshOnCacheHit && !(skipRefreshWhenEmpty && cachedEmpty)) {
     Promise.resolve()
       .then(fetcher)
       .then((fresh) => {
-        if (fresh !== null && fresh !== undefined) setWithTTL(key, fresh, ttlMs);
+        if (fresh !== null && fresh !== undefined) {
+          setWithTTL(key, fresh, ttlFor(fresh));
+        }
       })
       .catch((error) => {
         console.warn(`useCacheThenRefresh background refresh failed for ${key}`, error);

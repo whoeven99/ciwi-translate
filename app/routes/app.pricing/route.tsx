@@ -44,21 +44,8 @@ import {
   buildBillingReturnPath,
   sanitizeBillingReturnPath,
 } from "~/utils/billingReturn";
-
-function redirectToBillingConfirmation(confirmationUrl: string) {
-  if (typeof window === "undefined") return false;
-  try {
-    window.open(confirmationUrl, "_top");
-    return true;
-  } catch {
-    try {
-      window.top!.location.href = confirmationUrl;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-}
+import { redirectToBillingConfirmation } from "~/utils/billingConfirmation.client";
+import { buildShopifyEmbeddedAppReturnUrl } from "~/lib/shopifyAppHandle.server";
 
 const { Title, Text, Link } = Typography;
 
@@ -91,7 +78,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const adminAuthResult = await authenticate.admin(request);
   const { shop, accessToken } = adminAuthResult.session;
-  const { admin, redirect: shopifyRedirect } = adminAuthResult;
+  const { admin } = adminAuthResult;
 
   const formData = await request.formData();
   const payInfo = JSON.parse(formData.get("payInfo") as string);
@@ -103,8 +90,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   switch (true) {
     case !!payInfo:
       try {
-        const returnUrl = new URL(
-          `https://admin.shopify.com/store/${shop.split(".")[0]}/apps/${process.env.HANDLE}${requestedReturnPath}`,
+        const returnUrl = buildShopifyEmbeddedAppReturnUrl(
+          shop,
+          requestedReturnPath,
         );
         const res = await mutationAppPurchaseOneTimeCreate({
           shop,
@@ -120,21 +108,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             res?.data?.appPurchaseOneTimeCreate?.confirmationUrl;
 
           // tsf 用户入账靠 APP_PURCHASES_ONE_TIME_UPDATE → Turso，不写 Java CharsOrders
-          let orderData: {
-            success: boolean;
-            errorCode?: number;
-            errorMsg?: string;
-            response?: unknown;
-          } = { success: true, response: null };
           if (confirmationUrl) {
-            throw shopifyRedirect(confirmationUrl, { target: "_top" });
+            return {
+              success: true,
+              response: { confirmationUrl },
+            };
           }
 
+          const userErrors =
+            res?.data?.appPurchaseOneTimeCreate?.userErrors ?? [];
           return {
-            ...orderData,
-            response: {
-              confirmationUrl,
-            },
+            success: false,
+            errorCode: 10002,
+            errorMsg: userErrors[0]?.message ?? "NO_CONFIRMATION_URL",
+            response: null,
           };
         }
 
@@ -159,8 +146,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     case !!payForPlan:
       try {
-        const returnUrl = new URL(
-          `https://admin.shopify.com/store/${shop.split(".")[0]}/apps/${process.env.HANDLE}${requestedReturnPath}`,
+        const returnUrl = buildShopifyEmbeddedAppReturnUrl(
+          shop,
+          requestedReturnPath,
         );
         const res = await mutationAppSubscriptionCreate({
           shop,
@@ -182,22 +170,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           const confirmationUrl =
             res?.data?.appSubscriptionCreate?.confirmationUrl;
 
-          // tsf 用户入账靠 APP_SUBSCRIPTIONS_UPDATE → Turso，不写 Java CharsOrders
-          let orderData: {
-            success: boolean;
-            errorCode?: number;
-            errorMsg?: string;
-            response?: unknown;
-          } = { success: true, response: null };
           if (confirmationUrl) {
-            throw shopifyRedirect(confirmationUrl, { target: "_top" });
+            return {
+              success: true,
+              response: { confirmationUrl },
+            };
           }
 
+          const userErrors = res?.data?.appSubscriptionCreate?.userErrors ?? [];
           return {
-            ...orderData,
-            response: {
-              confirmationUrl,
-            },
+            success: false,
+            errorCode: 10002,
+            errorMsg: userErrors[0]?.message ?? "NO_CONFIRMATION_URL",
+            response: null,
           };
         }
 

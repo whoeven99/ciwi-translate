@@ -5,7 +5,7 @@ import {
   Select as PolarisSelect,
   Text as PolarisText,
 } from "@shopify/polaris";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { handleContactSupport } from "~/utils/supportChat";
@@ -17,6 +17,8 @@ import { V4ModalShell } from "~/components/V4ModalShell";
 import { buildPaymentOptions, type OptionType } from "./paymentModal.shared";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
 import type { CreditsPurchaseModalContext } from "~/utils/creditsPurchaseModal";
+import { redirectToBillingConfirmation } from "~/utils/billingConfirmation.client";
+import { message } from "~/ui/message";
 
 interface PaymentModalProps {
   visible: boolean;
@@ -32,8 +34,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 }) => {
   const [selectedKey, setSelectedKey] = useState<string>("option-1");
   const [buyButtonLoading, setBuyButtonLoading] = useState<boolean>(false);
+  const paySubmittingRef = useRef(false);
   const { t } = useTranslation();
-  const payFetcher = useFetcher<any>();
+  const payFetcher = useFetcher<{
+    success?: boolean;
+    errorMsg?: string;
+    response?: { confirmationUrl?: string };
+  }>();
   const { reportClick } = useReport();
   const { plan, totalChars } = useSelector((state: any) => state.userConfig);
   void variant;
@@ -75,15 +82,33 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   );
 
   useEffect(() => {
-    if (payFetcher.data) {
-      if (payFetcher.data.success) {
-        const confirmationUrl = payFetcher.data.response.confirmationUrl;
-        open(confirmationUrl, "_top");
-      } else {
-        setBuyButtonLoading(false);
-      }
+    if (payFetcher.state === "submitting" || payFetcher.state === "loading") {
+      return;
     }
-  }, [payFetcher.data]);
+    if (payFetcher.state !== "idle" || !paySubmittingRef.current) return;
+
+    paySubmittingRef.current = false;
+    setBuyButtonLoading(false);
+
+    if (!payFetcher.data) return;
+
+    const confirmationUrl = payFetcher.data.response?.confirmationUrl;
+    if (payFetcher.data.success && confirmationUrl) {
+      redirectToBillingConfirmation(confirmationUrl);
+      return;
+    }
+
+    message.error(
+      payFetcher.data.errorMsg ??
+        t("Something went wrong. Please try again later."),
+    );
+  }, [payFetcher.state, payFetcher.data, t]);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (!recommendedOption?.key) return;
+    setSelectedKey(recommendedOption.key);
+  }, [visible, recommendedOption]);
 
   useEffect(() => {
     if (!visible) return;
@@ -93,6 +118,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const onClick = () => {
     setBuyButtonLoading(true);
+    paySubmittingRef.current = true;
     const payInfo = {
       name: selectedOption?.name,
       price: {

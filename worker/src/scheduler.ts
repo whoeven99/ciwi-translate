@@ -39,6 +39,16 @@ import {
   resolveNextShopScanJobCleanupAt,
 } from "./services/cleanupOldShopScanJobs.js";
 import {
+  cleanupOldAutoLiquidRules,
+  getAutoLiquidRetentionDays,
+  getAutoLiquidRetentionIntervalMs,
+  getAutoLiquidRetentionMinute,
+  getAutoLiquidRetentionTimezone,
+  isAutoLiquidRetentionEnabled,
+  msUntilNextAutoLiquidRetention,
+  resolveNextAutoLiquidRetentionAt,
+} from "./services/cleanupOldAutoLiquid.js";
+import {
   runBillingSubscriptionNearDueReconcile,
   runBillingSubscriptionReconcile,
 } from "./services/billingSubscriptionReconcile.js";
@@ -343,6 +353,43 @@ function scheduleJobRetentionCleanup(): void {
   scheduleNext();
 }
 
+/** 每小时 :55 缓慢清理过期 source=auto 的 LiquidRule（不碰 manual）。 */
+function scheduleAutoLiquidRetentionCleanup(): void {
+  if (!isAutoLiquidRetentionEnabled()) {
+    console.log(
+      "[scheduler] autoLiquidRetention 未启用（AUTO_LIQUID_RETENTION_ENABLED=false）",
+    );
+    return;
+  }
+
+  const tz = getAutoLiquidRetentionTimezone();
+  const minute = getAutoLiquidRetentionMinute();
+  const intervalMs = getAutoLiquidRetentionIntervalMs();
+  const retentionDays = getAutoLiquidRetentionDays();
+
+  const scheduleNext = () => {
+    const waitMs = msUntilNextAutoLiquidRetention();
+    const nextAt = resolveNextAutoLiquidRetentionAt();
+    console.log(
+      `[scheduler] autoLiquidRetention 下次 ${nextAt.toISOString()} (tz=${tz}, :${String(minute).padStart(2, "0")}, interval=${intervalMs}ms, retentionDays=${retentionDays})`,
+    );
+    setTimeout(() => {
+      if (isShuttingDown()) return;
+      void (async () => {
+        try {
+          await cleanupOldAutoLiquidRules();
+        } catch (err) {
+          console.error("[scheduler] autoLiquidRetention error", err);
+        } finally {
+          if (!isShuttingDown()) scheduleNext();
+        }
+      })();
+    }, waitMs);
+  };
+
+  scheduleNext();
+}
+
 export function startScheduler(): void {
   const stages = enabledStages();
   const claimSuffix = `-${process.env.HOSTNAME ?? hostname()}-${process.pid}`;
@@ -419,6 +466,9 @@ export function startScheduler(): void {
 
   // shop_scan_jobs 保留期清理：每小时 :50；Blob 稳定产物 latest-scan.json 不删。
   scheduleShopScanJobCleanup();
+
+  // auto LiquidRule 保留清理：每小时 :55；只删 source=auto。
+  scheduleAutoLiquidRetentionCleanup();
 
   for (const stage of ALL_STAGES) {
     if (!stages.has(stage)) {

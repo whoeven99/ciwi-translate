@@ -20,3 +20,12 @@ export async function getShopAccessToken(shop: string): Promise<string> {
   }
   return token;
 }
+
+/** 卸载 / Session 丢失等：重试或继续 poll 无意义。 */
+export function isNoOfflineTokenError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.includes("no offline token in Turso Session") ||
+    msg.includes("Turso Session 中缺少 offline token")
+  );
+}

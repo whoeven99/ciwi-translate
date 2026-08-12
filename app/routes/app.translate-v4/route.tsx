@@ -17,13 +17,9 @@ import { useSelector } from "react-redux";
 import { authenticate } from "~/shopify.server";
 import type { RootState } from "~/store";
 import { ensureShopV4Settings } from "~/server/translateV4/migration.server";
-import { listV4JobSummaries } from "~/server/translateV4/progress.server";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import type { ShopQuota } from "~/lib/translationQuota";
-import {
-  getCoverageSummaryFromCache,
-  type CoverageSummary,
-} from "~/server/translateV4/coverage.server";
+import type { CoverageSummary } from "~/server/translateV4/coverage.server";
 import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
@@ -79,7 +75,16 @@ import {
   stripBillingReturnParams,
 } from "~/utils/billingReturn";
 
+/** 首屏骨架期的占位覆盖率；真实值由客户端首帧从 `coverage?cache=1` 拉取。 */
+const EMPTY_COVERAGE: CoverageSummary = {
+  languageCount: 0,
+  translatedItems: 0,
+  totalItems: 0,
+  overallPercent: null,
+  locales: [],
+};
 async function readJsonResponse<T = any>(res: Response): Promise<T> {
+  const text = await res.text();
   const text = await res.text();
   if (!text.trim()) {
     throw new Error(`Empty response body (${res.status})`);
@@ -129,23 +134,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.error("[translateV4] syncShopTargetLocales failed:", syncErr);
   });
 
-  const targetLocales = selectShopTargetLocales(locales, primaryLocale);
-
-  // 关键内容（任务列表 + 覆盖率）在 loader 阻塞等待；quota / planType 由客户端拉取，
-  // 避免阻塞首屏，且不使用 defer（自定义 entry.server 的 renderToString 不支持 defer 流式）。
-  // ensureShopV4Settings（Turso 写，返回值不参与渲染，且 jobs/coverage 不依赖该行）
-  // 并入 Promise.all 与 jobs/coverage 并行，省去一次串行 Turso 往返。
-  const keyDataStart = Date.now();
-  const [, jobs, coverage] = await Promise.all([
-    ensureShopV4Settings(session.shop, primaryLocale),
-    listV4JobSummaries(session.shop, { escalateStuck: false }),
-    getCoverageSummaryFromCache({
-      shop: session.shop,
-      targetLocales,
-      includeRuntimeSignals: false,
-    }),
-  ]);
-  const keyDataMs = Date.now() - keyDataStart;
+  // 首屏文档只等渲染骨架必需的语言列表。任务列表与覆盖率改由客户端首帧并行拉取
+  // （`/api/translate-v4/tasks` + `coverage?cache=1`），把 Cosmos/Redis/Turso 往返
+  // 移出 LCP 关键路径。ensureShopV4Settings 是 Turso 写、返回值不参与渲染，后台执行。
+  void ensureShopV4Settings(session.shop, primaryLocale).catch((err) => {
+    console.error("[translateV4] ensureShopV4Settings failed:", err);
+  });
 
   if (perfDebug) {
     console.log(
@@ -153,10 +147,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         shop: session.shop,
         authMs,
         localeMs,
-        keyDataMs,
         totalMs: Date.now() - reqStart,
-        jobsCount: jobs.length,
-        targetCount: targetLocales.length,
+        localeCount: locales.length,
       })}`,
     );
   }
@@ -165,8 +157,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop: session.shop,
     locales,
     primaryLocale,
-    jobs,
-    coverage,
     perfDebug,
   });
 };
@@ -179,14 +169,8 @@ export default function AppTranslateV4() {
     | { spotlightTaskIds?: string[] }
     | null
     | undefined;
-  const {
-    shop,
-    locales,
-    primaryLocale,
-    jobs: initialJobs,
-    coverage: initialCoverage,
-    perfDebug,
-  } = useLoaderData<typeof loader>();
+  const { shop, locales, primaryLocale, perfDebug } =
+    useLoaderData<typeof loader>();
   const [perfDebugEnabled, setPerfDebugEnabled] = useState(perfDebug);
 
   useEffect(() => {
@@ -195,23 +179,22 @@ export default function AppTranslateV4() {
     }
   }, []);
 
-  const [jobs, setJobs] =
-    useState<TranslationJobProgressSummary[]>(initialJobs);
+  const [jobs, setJobs] = useState<TranslationJobProgressSummary[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
   const currentJobCount = useMemo(
     () => jobs.filter(isCurrentV4Job).length,
     [jobs],
   );
   const [quota, setQuota] = useState<ShopQuota | null>(null);
-  const [strictQuotaGate, setStrictQuotaGate] = useState(false);
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
-  const [coverage, setCoverage] = useState<CoverageSummary>(initialCoverage);
+  const [coverage, setCoverage] = useState<CoverageSummary>(EMPTY_COVERAGE);
   const plan = useSelector((state: RootState) => state.userConfig.plan);
   const isNew = useSelector((state: RootState) => state.userConfig.isNew);
   const totalChars = useSelector((state: RootState) => state.userConfig.totalChars);
   const planType = plan?.type?.trim() || null;
   const createDisabledMessage =
     normalizedQuota == null ? t("v4.create.quotaUnavailable") : null;
-  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageLoading, setCoverageLoading] = useState(true);
   const [coverageExpanded, setCoverageExpanded] = useState(false);
   const source = primaryLocale || "en";
 
@@ -242,6 +225,7 @@ export default function AppTranslateV4() {
   const [aiModel, setAiModel] = useState<string>(DEFAULT_AI_MODEL);
   const [isCover, setIsCover] = useState(false);
   const [isHandle, setIsHandle] = useState(false);
+  const [includeLiquid, setIncludeLiquid] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
   const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<
@@ -352,26 +336,26 @@ export default function AppTranslateV4() {
     [shop, source, targetOptions, t],
   );
 
-  const refreshCoverageFromCache = useCallback(async () => {
-    try {
-      const res = await fetch(
-        `/api/translate-v4/coverage?shopName=${encodeURIComponent(shop)}&cache=1`,
-      );
-      const data = await readJsonResponse(res);
-      if (data?.ok) setCoverage(data.summary as CoverageSummary);
-    } catch (err) {
-      // Passive cache refresh should not pollute exception telemetry.
-      console.warn("[translateV4] refresh coverage from cache failed:", err);
-    }
-  }, [shop]);
+  const refreshCoverageFromCache = useCallback(
+    async (includeRuntimeSignals = true) => {
+      try {
+        // signals=0 跳过 enrichCoverageWithRuntimeSignals 的 Cosmos 扫描；首帧只要数字，
+        // autoTranslate / isTranslating 标记留给后续带信号的刷新补上。
+        const signalsParam = includeRuntimeSignals ? "" : "&signals=0";
+        const res = await fetch(
+          `/api/translate-v4/coverage?shopName=${encodeURIComponent(shop)}&cache=1${signalsParam}`,
+        );
+        const data = await readJsonResponse(res);
+        if (data?.ok) setCoverage(data.summary as CoverageSummary);
+      } catch (err) {
+        // Passive cache refresh should not pollute exception telemetry.
+        console.warn("[translateV4] refresh coverage from cache failed:", err);
+      }
+    },
+    [shop],
+  );
 
   const jobStatusRef = useRef<Map<string, string>>(new Map());
-
-  useEffect(() => {
-    const map = new Map<string, string>();
-    for (const j of initialJobs) map.set(j.taskId, j.status);
-    jobStatusRef.current = map;
-  }, [initialJobs]);
 
   const applyJobsUpdate = useCallback(
     (newJobs: TranslationJobProgressSummary[]) => {
@@ -407,6 +391,8 @@ export default function AppTranslateV4() {
       markPerfEnd("translate-v4.tasks.refresh", perfStart, {
         failed: true,
       });
+    } finally {
+      setJobsLoading(false);
     }
   }, [shop, applyJobsUpdate]);
 
@@ -423,7 +409,6 @@ export default function AppTranslateV4() {
       });
       if (data?.ok) {
         setQuota(normalizeShopQuota(data.quota as ShopQuota | null));
-        setStrictQuotaGate(Boolean(data.strictQuotaGate));
       }
     } catch (err) {
       console.error("[translateV4] refresh quota failed:", err);
@@ -654,6 +639,7 @@ export default function AppTranslateV4() {
         aiModel,
         isCover,
         isHandle,
+        includeLiquid,
       },
     });
     try {
@@ -664,6 +650,7 @@ export default function AppTranslateV4() {
         aiModel,
         isCover,
         isHandle,
+        includeLiquid,
         targetOptions,
         shop,
       });
@@ -738,6 +725,7 @@ export default function AppTranslateV4() {
     aiModel,
     isCover,
     isHandle,
+    includeLiquid,
     targetOptions,
     shop,
     refreshList,
@@ -799,14 +787,19 @@ export default function AppTranslateV4() {
     };
   }, [refreshList, refreshQuota]);
 
-  const coverageAutoRefreshDone = useRef(false);
+  const firstLoadDone = useRef(false);
   useEffect(() => {
-    if (coverageAutoRefreshDone.current) return;
-    if (!initialCoverage.locales.some((l) => l.cacheMissing)) return;
-    coverageAutoRefreshDone.current = true;
-    // 翻译进行中勿全量扫 Shopify；仅读 Redis 缓存，用户可手动「刷新统计」
-    void refreshCoverageFromCache();
-  }, [initialCoverage.locales, refreshCoverageFromCache]);
+    if (firstLoadDone.current) return;
+    firstLoadDone.current = true;
+    // 文档已不再阻塞等这两份数据，首帧挂载后立即并行补齐。
+    const perfStart = markPerfStart("translate-v4.first-load.content");
+    void Promise.all([
+      refreshList(),
+      refreshCoverageFromCache(false).finally(() => setCoverageLoading(false)),
+    ]).finally(() => {
+      markPerfEnd("translate-v4.first-load.content", perfStart);
+    });
+  }, [refreshCoverageFromCache, refreshList]);
 
   const translateSlotBusy = useMemo(
     () => jobs.some((j) => j.status === "TRANSLATING" || j.isStopping),
@@ -824,6 +817,7 @@ export default function AppTranslateV4() {
     modules: moduleKeys,
     targets,
     isCover,
+    includeLiquid,
     untranslatedRatioByLocale,
     remainingCredits,
   });
@@ -922,7 +916,11 @@ export default function AppTranslateV4() {
                     : null),
                 }}
               >
-                <SummaryDonutCard summary={coverage} compact />
+                <SummaryDonutCard
+                  summary={coverage}
+                  compact
+                  loading={coverageLoading && coverage.locales.length === 0}
+                />
               </div>
               <div
                 style={{
@@ -1003,6 +1001,8 @@ export default function AppTranslateV4() {
                     onIsCoverChange={setIsCover}
                     isHandle={isHandle}
                     onIsHandleChange={setIsHandle}
+                    includeLiquid={includeLiquid}
+                    onIncludeLiquidChange={setIncludeLiquid}
                     estimate={taskEstimate}
                   />
                 </div>
@@ -1028,6 +1028,7 @@ export default function AppTranslateV4() {
                     jobs={jobs}
                     spotlightTaskIds={spotlightTaskIds}
                     translateSlotBusy={translateSlotBusy}
+                    loading={jobsLoading}
                     onBuyCredits={openTaskCreditsModal}
                     onAction={handleAction}
                   />
@@ -1047,6 +1048,8 @@ export default function AppTranslateV4() {
         aiModel={aiModel}
         isCover={isCover}
         isHandle={isHandle}
+        includeLiquid={includeLiquid}
+        sourceLocale={source}
         estimate={taskEstimate}
         scenario={createConfirmScenario}
         previousTotalChars={
@@ -1055,11 +1058,12 @@ export default function AppTranslateV4() {
         onClose={() => setCreateConfirmOpen(false)}
         onConfirmCreate={handleCreateConfirm}
         onBeforeBilling={persistCreateTaskDraft}
-        onBuyCredits={() => {
+        onBuyCredits={(detailedCredits) => {
           setCreateConfirmOpen(false);
           openCreditsPurchaseModal(
             buildCreateTaskCreditsPurchaseContext({
-              estimatedCredits: taskEstimate?.estimatedCredits ?? null,
+              estimatedCredits:
+                detailedCredits ?? taskEstimate?.estimatedCredits ?? null,
               currentRemainingCredits: normalizedQuota?.remaining ?? null,
               targetsCount: targets.length,
               modulesCount: moduleKeys.length,

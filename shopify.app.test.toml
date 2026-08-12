@@ -37,7 +37,8 @@ compliance_topics = [
 
 [app_proxy]
 url = "https://typescriptfrontend.onrender.com/api/storefront"
-subpath = "ciwi"
+# 与正式版 subpath=ciwi 错开，避免同店多 App 被改成 /apps/ciwi-4
+subpath = "ciwi-test"
 prefix = "apps"
 
 [pos]

@@ -24,6 +24,13 @@ import {
 import { isShuttingDown } from "../shutdown.js";
 import { recordJobUsageSnapshot } from "../services/recordJobUsageSnapshot.js";
 import {
+  CUSTOM_LIQUID_MODULE,
+  claimPendingLiquidRules,
+  jobModulesWithLiquid,
+  liquidRulesToInitChunk,
+  releaseLiquidRulesForJob,
+} from "../services/customLiquid.js";
+import {
   V4_MESSAGE_INIT_REQUEUING,
   V4_MESSAGE_JOB_FAILED,
 } from "../services/userFacingMessages.js";
@@ -337,7 +344,9 @@ async function processInitJob(jobId: string, shopName: string): Promise<void> {
   let totalItems = 0;
   let totalUnits = 0;
   let lastHeartbeatAt = 0;
-  const initModulesTotal = job.modules.length;
+  const effectiveModules = jobModulesWithLiquid(job);
+  const shopifyModules = job.modules.filter((m) => m !== CUSTOM_LIQUID_MODULE);
+  const initModulesTotal = effectiveModules.length;
   let initModulesDone = 0;
   const activeModules = new Map<string, "querying" | "saving">();
   const completedModules: Array<{ module: string; items: number }> = [];
@@ -409,56 +418,106 @@ async function processInitJob(jobId: string, shopName: string): Promise<void> {
 
   try {
     console.log(
-      `[init] job=${jobId} fetch=bulk modules=${job.modules.length} shop=${shopDomain}`,
+      `[init] job=${jobId} fetch=bulk modules=${shopifyModules.length} includeLiquid=${Boolean(job.includeLiquid)} shop=${shopDomain}`,
     );
     const bulkUnitsByModule = new Map<string, number>();
-    await runBulkInitModules({
-      shopDomain,
-      modules: job.modules,
-      limitPerType: job.limitPerType,
-      chunkSize: CHUNK_SIZE,
-      options: {
-        targetLocale: job.target,
-        isCover: job.isCover,
-        isHandle: job.isHandle,
-      },
-      onHeartbeat: throttledHeartbeat,
-      isShutdown: isShuttingDown,
-      writeChunk: async (module, chunkIndex, chunk) => {
-        let units = bulkUnitsByModule.get(module) ?? 0;
-        for (const r of chunk) {
-          for (const f of r.fields) {
-            units += countFieldUnits(f.key, f.value, f.shopifyType);
+    if (shopifyModules.length > 0) {
+      await runBulkInitModules({
+        shopDomain,
+        modules: shopifyModules,
+        limitPerType: job.limitPerType,
+        chunkSize: CHUNK_SIZE,
+        options: {
+          targetLocale: job.target,
+          isCover: job.isCover,
+          isHandle: job.isHandle,
+        },
+        onHeartbeat: throttledHeartbeat,
+        isShutdown: isShuttingDown,
+        writeChunk: async (module, chunkIndex, chunk) => {
+          let units = bulkUnitsByModule.get(module) ?? 0;
+          for (const r of chunk) {
+            for (const f of r.fields) {
+              units += countFieldUnits(f.key, f.value, f.shopifyType);
+            }
           }
+          bulkUnitsByModule.set(module, units);
+          await blobWrite(
+            `${blobPrefix}/init/${module}/chunk-${String(chunkIndex).padStart(5, "0")}.json`,
+            chunk,
+          );
+        },
+        onModuleStart: async (module) => {
+          await setModulePhase(module, "querying");
+        },
+        onModulePhase: async (module, phase) => {
+          await setModulePhase(module, phase);
+        },
+        onModuleComplete: async ({ module, totalItems: moduleItemCount, chunks }) => {
+          if (moduleItemCount === 0) {
+            console.log(`[init] module=${module} 0 items, skipping`);
+            await completeModule(module, 0, 0, 0);
+            return;
+          }
+          console.log(
+            `[init] module=${module} items=${moduleItemCount} chunks=${chunks} fetch=bulk`,
+          );
+          const moduleUnits = bulkUnitsByModule.get(module) ?? 0;
+          await completeModule(module, moduleItemCount, chunks, moduleUnits);
+        },
+      });
+    }
+
+    // Custom Liquid: claim PENDING Turso rows → virtual CUSTOM_LIQUID init blobs
+    if (job.includeLiquid) {
+      await setModulePhase(CUSTOM_LIQUID_MODULE, "querying");
+      try {
+        const rules = await claimPendingLiquidRules({
+          shop: shopName,
+          languageCode: job.target,
+          jobId,
+        });
+        if (!rules.length) {
+          console.log(`[init] module=${CUSTOM_LIQUID_MODULE} 0 pending rows`);
+          await completeModule(CUSTOM_LIQUID_MODULE, 0, 0, 0);
+        } else {
+          await setModulePhase(CUSTOM_LIQUID_MODULE, "saving");
+          const resources = liquidRulesToInitChunk(rules);
+          const LIQUID_CHUNK_SIZE = 200;
+          let chunkCount = 0;
+          let moduleUnits = 0;
+          for (let i = 0; i < resources.length; i += LIQUID_CHUNK_SIZE) {
+            const chunk = resources.slice(i, i + LIQUID_CHUNK_SIZE);
+            for (const r of chunk) {
+              for (const f of r.fields) {
+                moduleUnits += countFieldUnits(f.key, f.value, f.shopifyType);
+              }
+            }
+            await blobWrite(
+              `${blobPrefix}/init/${CUSTOM_LIQUID_MODULE}/chunk-${String(chunkCount).padStart(5, "0")}.json`,
+              chunk,
+            );
+            chunkCount += 1;
+          }
+          console.log(
+            `[init] module=${CUSTOM_LIQUID_MODULE} items=${resources.length} chunks=${chunkCount}`,
+          );
+          await completeModule(
+            CUSTOM_LIQUID_MODULE,
+            resources.length,
+            chunkCount,
+            moduleUnits,
+          );
         }
-        bulkUnitsByModule.set(module, units);
-        await blobWrite(
-          `${blobPrefix}/init/${module}/chunk-${String(chunkIndex).padStart(5, "0")}.json`,
-          chunk,
-        );
-      },
-      onModuleStart: async (module) => {
-        await setModulePhase(module, "querying");
-      },
-      onModulePhase: async (module, phase) => {
-        await setModulePhase(module, phase);
-      },
-      onModuleComplete: async ({ module, totalItems: moduleItemCount, chunks }) => {
-        if (moduleItemCount === 0) {
-          console.log(`[init] module=${module} 0 items, skipping`);
-          await completeModule(module, 0, 0, 0);
-          return;
-        }
-        console.log(
-          `[init] module=${module} items=${moduleItemCount} chunks=${chunks} fetch=bulk`,
-        );
-        const moduleUnits = bulkUnitsByModule.get(module) ?? 0;
-        await completeModule(module, moduleItemCount, chunks, moduleUnits);
-      },
-    });
+      } catch (liquidErr) {
+        console.error(`[init] CUSTOM_LIQUID failed job=${jobId}:`, liquidErr);
+        await releaseLiquidRulesForJob({ shop: shopName, jobId }).catch(() => 0);
+        throw liquidErr;
+      }
+    }
 
     // Ensure every selected module counts toward x/N even if a path skipped it.
-    for (const module of job.modules) {
+    for (const module of effectiveModules) {
       if (!completedSet.has(module)) {
         await completeModule(module, 0, 0, 0);
       }

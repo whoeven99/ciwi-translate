@@ -22,9 +22,9 @@ export type TranslateSingleTextArgs = {
 
 export async function translateSingleText(
   args: TranslateSingleTextArgs,
-): Promise<{ translatedText: string; usedTokens: number }> {
+): Promise<{ translatedText: string; usedTokens: number; googleCredits: number }> {
   const profileBlock = await loadShopProfilePromptBlock(args.shop);
-  const { translatedText, usedTokens } = await translateSingleField({
+  const { translatedText, usedTokens, googleCredits } = await translateSingleField({
     shop: args.shop,
     target: args.target,
     text: args.text,
@@ -35,7 +35,7 @@ export async function translateSingleText(
     profileBlock,
     customPrompt: args.customPrompt,
   });
-  return { translatedText, usedTokens };
+  return { translatedText, usedTokens, googleCredits };
 }
 
 /** 单字段扣费时附带的审计上下文（写入 CreditUsage.metadata）。 */
@@ -47,19 +47,22 @@ export type DeductQuotaAuditMeta = {
   textLength?: number;
 };
 
-/** 扣额度（tokens 为 LLM 原始用量，内部按模型 × 系数）并写 CreditUsage。 */
+/** 扣额度（tokens 为 LLM 原始用量，内部按模型 × 系数；Google credits 已是最终积分）并写 CreditUsage。 */
 export async function deductQuota(
   shop: string,
   rawLlmTokens: number,
   meta?: DeductQuotaAuditMeta,
   aiModel?: string | null,
+  googleCredits = 0,
 ): Promise<void> {
-  const credits = llmTokensToQuotaCredits(rawLlmTokens, aiModel);
+  const llmCredits = llmTokensToQuotaCredits(rawLlmTokens, aiModel);
+  const credits = llmCredits + Math.max(0, Math.floor(googleCredits));
   if (credits <= 0) return;
   await deductShopCredits(shop, credits, {
     source: "single",
     metadata: {
       rawTokens: Math.max(0, Math.floor(rawLlmTokens)),
+      googleCredits: Math.max(0, Math.floor(googleCredits)),
       aiModel: aiModel ?? null,
       target: meta?.target ?? null,
       sourceLocale: meta?.sourceLocale ?? null,

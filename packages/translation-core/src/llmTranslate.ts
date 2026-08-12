@@ -1,4 +1,4 @@
-import { tmGet, tmGetByValue, tmSet, tmSetByValue } from "./translationMemory.js";
+import { tmMGet, tmMGetByValue, tmSet, tmSetByValue } from "./translationMemory.js";
 import { loadGlossaryLines } from "./glossary.js";
 import {
   applyJsonSlotTranslations,
@@ -74,7 +74,20 @@ import {
 import {
   getShopQuotaState,
   refreshGateFromBudget,
+  setShopQuotaCap,
 } from "./quotaGate.js";
+
+/** Google source chars → merchant credits (default 1.6, same ballpark as create-task estimate). */
+export function googleCharsToCredits(chars: number): number {
+  const k = Number(process.env.GOOGLE_CREDITS_PER_CHAR);
+  const perChar = Number.isFinite(k) && k > 0 ? k : 1.6;
+  return Math.max(0, Math.ceil(Math.max(0, chars) * perChar));
+}
+
+export function isGoogleUsageModel(model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return m === "google-translate" || m.startsWith("google");
+}
 
 // ── Public API re-exports (keep App / Worker import surface stable) ───────────
 export {
@@ -1043,7 +1056,12 @@ async function translateItemsRouted(
   customPrompt = "",
   /** 仅管理页单条翻译：把 LLM 原始返回打到日志。 */
   logSingleTranslate = false,
-): Promise<{ results: Map<string, RoutedResult>; llmTokens: number }> {
+): Promise<{
+  results: Map<string, RoutedResult>;
+  llmTokens: number;
+  googleCredits: number;
+  quotaStopped: boolean;
+}> {
   // placeholdersByKey: variable tokens (string[]) extracted from each item's value.
   const placeholdersByKey = new Map<string, string[]>();
   const masked = items.map((it) => {
@@ -1055,15 +1073,19 @@ async function translateItemsRouted(
   const collected = new Map<string, string>(); // masked translations
   const engineByKey = new Map<string, Engine>(); // which engine resolved each key
   const llmTokensByKey = new Map<string, number>(); // LLM API tokens charged per key (EngineUsage)
+  const googleCreditsByKey = new Map<string, number>(); // merchant credits for Google (chars×k)
   const costByKey = new Map<string, TranslationFieldCost>();
   let systemPrompt: string | null = null;
   const tokenAccum = { value: 0 }; // accumulates LLM token usage across all retries
+  let googleCreditsAccum = 0;
   let tokenAccumBaseline = 0; // tokens already attributed before current LLM engine pass
   let llmAttempted = false;
+  let quotaStopped = false;
 
   for (const engine of order) {
     const missing = masked.filter((i) => !collected.has(i.key));
     if (missing.length === 0) break;
+    if (quotaStopped) break;
 
     if (engine === "llm") {
       const useGpt = isGptModel(aiModel);
@@ -1092,7 +1114,7 @@ async function translateItemsRouted(
       tokenAccumBaseline = tokenAccum.value;
       try {
         if (useGpt) {
-          await gatherTranslations(
+          quotaStopped = await gatherTranslations(
             missing,
             aiModel,
             systemPrompt,
@@ -1105,13 +1127,13 @@ async function translateItemsRouted(
           );
           // GPT exhausted its own retries; try DeepSeek before cascading to Google.
           const stillMissing = missing.filter((i) => !collected.has(i.key));
-          if (stillMissing.length > 0 && useDeepSeek) {
+          if (!quotaStopped && stillMissing.length > 0 && useDeepSeek) {
             const fallbackModel = resolveModel();
             console.warn(
               `[llm] GPT left ${stillMissing.length}/${missing.length} unresolved; ` +
                 `falling back to DeepSeek (${fallbackModel})`,
             );
-            await gatherTranslations(
+            quotaStopped = await gatherTranslations(
               stillMissing,
               fallbackModel,
               systemPrompt,
@@ -1124,7 +1146,7 @@ async function translateItemsRouted(
             );
           }
         } else {
-          await gatherTranslations(
+          quotaStopped = await gatherTranslations(
             missing,
             aiModel,
             systemPrompt,
@@ -1137,6 +1159,7 @@ async function translateItemsRouted(
           );
         }
       } catch (e) {
+        // Real engine failures only (quota soft-stop no longer throws).
         console.warn(`[route] llm engine error`, e);
       }
       // Attribute newly-resolved keys to the LLM; distribute tokens evenly across keys
@@ -1148,6 +1171,9 @@ async function translateItemsRouted(
         engineByKey.set(i.key, "llm");
         llmTokensByKey.set(i.key, tokensEach);
       }
+      // Budget exhausted: wait out in-flight LLM (already done in gather) and do NOT
+      // open Google as a free escape hatch.
+      if (quotaStopped) break;
     } else {
       if (!googleConfigured()) continue;
       const { reason, detail } = describeGoogleRouteReason(order, aiModel, {
@@ -1156,6 +1182,23 @@ async function translateItemsRouted(
         missingCount: missing.length,
       });
       for (const batch of batchByChars(missing, MAX_CHARS_PER_BATCH)) {
+        const batchChars = batch.reduce((n, b) => n + b.value.length, 0);
+        const batchCredits = googleCharsToCredits(batchChars);
+        // Respect the same shop budget before spending Google credits.
+        const state = getShopQuotaState(shopName);
+        if (state.budgetCredits != null) {
+          if (state.committedCredits + batchCredits > state.budgetCredits) {
+            setShopQuotaCap(shopName, 0);
+            quotaStopped = true;
+            console.log(
+              `[quota] stop Google shop=${shopName} credits=${batchCredits} ` +
+                `committed=${state.committedCredits} budget=${state.budgetCredits}`,
+            );
+            break;
+          }
+          state.committedCredits += batchCredits;
+          refreshGateFromBudget(state);
+        }
         console.log("[google]", {
           shopName,
           source,
@@ -1169,6 +1212,8 @@ async function translateItemsRouted(
           totalItems: items.length,
           missingCount: missing.length,
           batchSize: batch.length,
+          batchChars,
+          batchCredits,
           items: batch.map((b) => {
             const original = items.find((it) => it.key === b.key)?.value ?? b.value;
             return {
@@ -1182,10 +1227,15 @@ async function translateItemsRouted(
         });
         try {
           const out = await callGoogleTranslate(batch.map((b) => b.value), target, "text");
+          let chargedChars = 0;
           batch.forEach((b, i) => {
             if (out[i] != null && !collected.has(b.key)) {
               collected.set(b.key, out[i]!);
               engineByKey.set(b.key, "google");
+              const credits = googleCharsToCredits(b.value.length);
+              googleCreditsByKey.set(b.key, credits);
+              googleCreditsAccum += credits;
+              chargedChars += b.value.length;
               costByKey.set(b.key, {
                 provider: "google",
                 model: "google-translate",
@@ -1193,7 +1243,20 @@ async function translateItemsRouted(
               });
             }
           });
+          // Release unused reserved credits when some items were skipped/failed.
+          if (state.budgetCredits != null) {
+            const actual = googleCharsToCredits(chargedChars);
+            const unused = Math.max(0, batchCredits - actual);
+            if (unused > 0) {
+              state.committedCredits = Math.max(0, state.committedCredits - unused);
+              refreshGateFromBudget(state);
+            }
+          }
         } catch (e) {
+          if (state.budgetCredits != null && batchCredits > 0) {
+            state.committedCredits = Math.max(0, state.committedCredits - batchCredits);
+            refreshGateFromBudget(state);
+          }
           console.warn(`[route] google engine error`, e);
           break; // stop this engine; remaining items cascade to the next
         }
@@ -1243,15 +1306,25 @@ async function translateItemsRouted(
       result.set(it.key, { value: it.value, status: "fallback", engine: null, tokens: 0 });
       continue;
     }
+    const eng = engineByKey.get(it.key) ?? null;
     result.set(it.key, {
       value: finalValue,
       status: "translated",
-      engine: engineByKey.get(it.key) ?? null,
-      tokens: llmTokensByKey.get(it.key) ?? 0,
+      engine: eng,
+      // LLM: raw API tokens; Google: merchant credits (chars×k) stored in the same field for engineUsage.
+      tokens:
+        eng === "google"
+          ? (googleCreditsByKey.get(it.key) ?? 0)
+          : (llmTokensByKey.get(it.key) ?? 0),
       cost: costByKey.get(it.key),
     });
   }
-  return { results: result, llmTokens: tokenAccum.value };
+  return {
+    results: result,
+    llmTokens: tokenAccum.value,
+    googleCredits: googleCreditsAccum,
+    quotaStopped,
+  };
 }
 
 /** Re-translate pool units that fell back or echoed source, one item per request. */
@@ -1267,9 +1340,17 @@ async function retryPoolFallbacks(
   customPrompt = "",
   onLeafTranslated?: (text: string, result: RoutedResult, poolPrimaryModel: string) => void,
   logSingleTranslate = false,
-): Promise<number> {
+  usage?: EngineUsage,
+  onProgress?: (
+    doneUnitsDelta: number,
+    tokensDelta: number,
+    googleCreditsDelta?: number,
+  ) => Promise<void>,
+): Promise<{ retried: number; quotaStopped: boolean }> {
   let retried = 0;
+  let quotaStopped = false;
   for (const [sig, occ] of pools) {
+    if (quotaStopped) break;
     const { order } = parsePoolSignature(sig);
     const poolPrimaryModel = engineModel(order[0]!, aiModel);
     const tmap = translated.get(sig)!;
@@ -1285,9 +1366,9 @@ async function retryPoolFallbacks(
       }
     }
     for (const text of needsRetry) {
-      if (await shouldAbort()) break;
+      if (quotaStopped || (await shouldAbort())) break;
       const { isHandle, order: poolOrder } = parsePoolSignature(sig);
-      const { results: m } = await translateItemsRouted(
+      const routed = await translateItemsRouted(
         [{ key: "0", value: text, digest: "" }],
         source,
         target,
@@ -1299,15 +1380,29 @@ async function retryPoolFallbacks(
         customPrompt,
         logSingleTranslate,
       );
-      const r = m.get("0");
+      if (routed.quotaStopped) {
+        quotaStopped = true;
+        break;
+      }
+      const r = routed.results.get("0");
       if (r?.status === "translated" && !looksLikeUntranslated(text, r.value, target) && !looksLikeWrongScriptLeak(text, r.value, target)) {
         tmap.set(text, r);
         retried++;
+        if (r.engine && usage) {
+          const model = engineModel(r.engine, aiModel);
+          const acc = (usage[model] ??= { units: 0, chars: 0, tokens: 0 });
+          acc.units += 1;
+          acc.chars += text.length;
+          acc.tokens += r.tokens;
+        }
+        if (onProgress) {
+          await onProgress(1, routed.llmTokens, routed.googleCredits);
+        }
         if (onLeafTranslated) onLeafTranslated(text, r, poolPrimaryModel);
       }
     }
   }
-  return retried;
+  return { retried, quotaStopped };
 }
 
 // Retries for a single (un-splittable) item that fails transiently.
@@ -1556,7 +1651,11 @@ type LlmOnceResult = {
   map: Map<string, string>;
   tokens: number;
   cost: TranslationCallCost;
+  /** Soft stop: do not throw; caller skips new LLM/Google and returns normally. */
+  quotaStopped?: boolean;
 };
+
+const EMPTY_LLM_COST: TranslationCallCost = { provider: "llm" };
 
 function buildLlmCallCost(args: {
   model: string;
@@ -1633,7 +1732,18 @@ async function callLLMOnce(
 
   const state = shopName ? getShopQuotaState(shopName) : null;
   const quotaGate = state?.gate ?? null;
-  if (quotaGate) await quotaGate.acquire();
+  let gateHeld = false;
+  if (quotaGate) {
+    gateHeld = await quotaGate.tryAcquire();
+    if (!gateHeld) {
+      return {
+        map: new Map(),
+        tokens: 0,
+        cost: EMPTY_LLM_COST,
+        quotaStopped: true,
+      };
+    }
+  }
 
   /** 本批占坑预估；成功返回后换成实扣并清零；失败则在 finally 释放。 */
   let reservedEst = 0;
@@ -1673,9 +1783,19 @@ async function callLLMOnce(
         state.quotaMultiplier,
       );
       if (state.committedCredits + est > state.budgetCredits) {
-        throw new QuotaExhaustedError(
-          `QUOTA_EXHAUSTED est=${est} committed=${state.committedCredits} budget=${state.budgetCredits}`,
+        // Soft stop: close the gate so sibling batches wait out in-flight LLM,
+        // then return a normal signal (no throw / no error log).
+        if (shopName) setShopQuotaCap(shopName, 0);
+        console.log(
+          `[quota] stop new LLM shop=${shopName ?? "?"} est=${est} ` +
+            `committed=${state.committedCredits} budget=${state.budgetCredits}`,
         );
+        return {
+          map: new Map(),
+          tokens: 0,
+          cost: EMPTY_LLM_COST,
+          quotaStopped: true,
+        };
       }
       state.committedCredits += est;
       reservedEst = est;
@@ -1793,7 +1913,7 @@ async function callLLMOnce(
   } finally {
     // 失败 / 预检失败：释放未结算的预估占坑。
     releaseEst();
-    if (quotaGate) quotaGate.release();
+    if (gateHeld && quotaGate) quotaGate.release();
   }
 }
 
@@ -1813,9 +1933,9 @@ async function gatherTranslations(
   shopName?: string,
   firstTokenRetriesLeft = FIRST_TOKEN_DRAIN_RETRIES,
   logSingleTranslate = false,
-): Promise<void> {
+): Promise<boolean> {
   const pend = items.filter((i) => !collected.has(i.key));
-  if (pend.length === 0) return;
+  if (pend.length === 0) return false;
 
   const applyLlmResult = (map: Map<string, string>, tokens: number, cost: TranslationCallCost) => {
     tokenAccum.value += tokens;
@@ -1836,38 +1956,41 @@ async function gatherTranslations(
     console.log(
       `[llm] batch of ${pend.length} items exceeds cap ${MAX_ITEMS_PER_BATCH}; splitting proactively`,
     );
-    await gatherTranslations(
+    const a = await gatherTranslations(
       pend.slice(0, mid), aiModel, systemPrompt, collected, tokenAccum, costByKey, shopName,
       FIRST_TOKEN_DRAIN_RETRIES, logSingleTranslate,
     );
-    await gatherTranslations(
+    const b = await gatherTranslations(
       pend.slice(mid), aiModel, systemPrompt, collected, tokenAccum, costByKey, shopName,
       FIRST_TOKEN_DRAIN_RETRIES, logSingleTranslate,
     );
-    return;
+    return a || b;
   }
 
   try {
-    const { map, tokens, cost } = await callLLMOnce(
+    const once = await callLLMOnce(
       pend, aiModel, systemPrompt, shopName, logSingleTranslate,
     );
-    const progressed = applyLlmResult(map, tokens, cost);
+    if (once.quotaStopped) return true;
+    const progressed = applyLlmResult(once.map, once.tokens, once.cost);
     const missing = pend.filter((i) => !collected.has(i.key));
     // Model parsed OK but dropped some keys → retry just those, but only while
     // making progress (avoids looping on a key the model refuses to return).
     if (missing.length > 0 && progressed && missing.length < pend.length) {
-      await gatherTranslations(
+      return await gatherTranslations(
         missing, aiModel, systemPrompt, collected, tokenAccum, costByKey, shopName,
         FIRST_TOKEN_DRAIN_RETRIES, logSingleTranslate,
       );
     }
-    return;
+    return false;
   } catch (e) {
-    // 额度耗尽：勿拆批/重试（会继续打 API），向上抛出由 Worker 暂停任务。
+    // Legacy throw path from pool semaphore: treat as soft stop (no rethrow).
     if (isQuotaExhaustedError(e)) {
-      throw e instanceof QuotaExhaustedError
-        ? e
-        : new QuotaExhaustedError(e instanceof Error ? e.message : undefined);
+      if (shopName) setShopQuotaCap(shopName, 0);
+      console.log(
+        `[quota] stop new LLM shop=${shopName ?? "?"} (${e instanceof Error ? e.message : "QUOTA_EXHAUSTED"})`,
+      );
+      return true;
     }
     const msg = e instanceof Error ? e.message : String(e);
     const timeoutKind = e instanceof LlmTimeoutError ? e.kind : null;
@@ -1879,7 +2002,7 @@ async function gatherTranslations(
           `[llm] Azure content policy rejected batch of ${pend.length}; ` +
             `falling back to DeepSeek (${fallbackModel})`,
         );
-        await gatherTranslations(
+        return await gatherTranslations(
           pend,
           fallbackModel,
           systemPrompt,
@@ -1888,13 +2011,12 @@ async function gatherTranslations(
           costByKey,
           shopName,
         );
-      } else {
-        console.warn(
-          `[llm] Azure content policy rejected batch of ${pend.length}; ` +
-            "DeepSeek unavailable, continuing to Google fallback",
-        );
       }
-      return;
+      console.warn(
+        `[llm] Azure content policy rejected batch of ${pend.length}; ` +
+          "DeepSeek unavailable, continuing to Google fallback",
+      );
+      return false;
     }
     if (pend.length > 1) {
       // First-token timeout = the request sat queued server-side before emitting
@@ -1911,11 +2033,10 @@ async function gatherTranslations(
         if (FIRST_TOKEN_DRAIN_MS > 0) {
           await new Promise((res) => setTimeout(res, FIRST_TOKEN_DRAIN_MS));
         }
-        await gatherTranslations(
+        return await gatherTranslations(
           pend, aiModel, systemPrompt, collected, tokenAccum, costByKey, shopName,
           firstTokenRetriesLeft - 1, logSingleTranslate,
         );
-        return;
       }
       // Timeout ≠ poison data. Halving a timed-out batch re-pays the base timeout
       // at every level (25→12→6→3…). Instead jump straight to small chunks so each
@@ -1924,27 +2045,31 @@ async function gatherTranslations(
         console.warn(
           `[llm] batch of ${pend.length} timed out (${msg}); re-chunking to ${TIMEOUT_RESPLIT_SIZE}`,
         );
+        let stopped = false;
         for (const chunk of chunkArray(pend, TIMEOUT_RESPLIT_SIZE)) {
-          await gatherTranslations(
+          if (await gatherTranslations(
             chunk, aiModel, systemPrompt, collected, tokenAccum, costByKey, shopName,
             FIRST_TOKEN_DRAIN_RETRIES, logSingleTranslate,
-          );
+          )) {
+            stopped = true;
+            break;
+          }
         }
-        return;
+        return stopped;
       }
       const mid = Math.ceil(pend.length / 2);
       console.warn(
         `[llm] batch of ${pend.length} ${isTimeout ? "timed out" : "unparseable"} (${msg}); splitting`,
       );
-      await gatherTranslations(
+      const left = await gatherTranslations(
         pend.slice(0, mid), aiModel, systemPrompt, collected, tokenAccum, costByKey, shopName,
         FIRST_TOKEN_DRAIN_RETRIES, logSingleTranslate,
       );
-      await gatherTranslations(
+      if (left) return true;
+      return await gatherTranslations(
         pend.slice(mid), aiModel, systemPrompt, collected, tokenAccum, costByKey, shopName,
         FIRST_TOKEN_DRAIN_RETRIES, logSingleTranslate,
       );
-      return;
     }
     // Single item: retry transient failures with backoff, then give up (→ fallback).
     for (let r = 0; r < LEAF_RETRIES; r++) {
@@ -1952,18 +2077,16 @@ async function gatherTranslations(
         await new Promise((res) => setTimeout(res, LEAF_RETRY_BACKOFF_MS * (r + 1)));
       }
       try {
-        const { map, tokens, cost } = await callLLMOnce(
+        const once = await callLLMOnce(
           pend, aiModel, systemPrompt, shopName, logSingleTranslate,
         );
-        applyLlmResult(map, tokens, cost);
-        if (collected.has(pend[0]!.key)) return;
+        if (once.quotaStopped) return true;
+        applyLlmResult(once.map, once.tokens, once.cost);
+        if (collected.has(pend[0]!.key)) return false;
       } catch (retryErr) {
         if (isQuotaExhaustedError(retryErr)) {
-          throw retryErr instanceof QuotaExhaustedError
-            ? retryErr
-            : new QuotaExhaustedError(
-                retryErr instanceof Error ? retryErr.message : undefined,
-              );
+          if (shopName) setShopQuotaCap(shopName, 0);
+          return true;
         }
         // keep retrying up to the cap
       }
@@ -1973,6 +2096,7 @@ async function gatherTranslations(
     // "wasted attempts that recovered" from "user-visible fallbacks".
     getPool().recordTerminalFallback(1);
     console.warn(`[llm] item ${pend[0]!.key} failed after retries (${msg}); using original`);
+    return false;
   }
 }
 
@@ -1982,7 +2106,15 @@ export type ResourceInput = { resourceId: string; fields: TranslateItem[]; modul
 export type ResourceResult = { resourceId: string; results: TranslateResult[] };
 /** Per-engine-model tally of how much content each engine translated. */
 export type EngineUsage = Record<string, { units: number; chars: number; tokens: number }>;
-export type TranslateChunkResult = { resources: ResourceResult[]; usage: EngineUsage };
+export type TranslateChunkResult = {
+  resources: ResourceResult[];
+  usage: EngineUsage;
+  /**
+   * Soft stop: shop credit budget exhausted. In-flight LLM calls were allowed to
+   * finish; caller should pause the job after flushing actual charges — not an error.
+   */
+  quotaStopped?: boolean;
+};
 
 export function mergeEngineUsage(into: EngineUsage, from: EngineUsage): void {
   for (const [model, u] of Object.entries(from)) {
@@ -2378,7 +2510,13 @@ export async function translateResources(
   target: string,
   aiModel: string,
   shopName: string,
-  onProgress?: (doneUnitsDelta: number, tokensDelta: number) => Promise<void>,
+  onProgress?: (
+    doneUnitsDelta: number,
+    /** LLM raw API tokens (worker applies model multiplier). */
+    tokensDelta: number,
+    /** Google merchant credits already final (chars×GOOGLE_CREDITS_PER_CHAR). */
+    googleCreditsDelta?: number,
+  ) => Promise<void>,
   onResourceDone?: (resource: TranslatedResourceOutput) => Promise<void>,
   shouldAbort?: () => boolean | Promise<boolean>,
   options?: TranslateResourcesOptions,
@@ -2492,12 +2630,37 @@ export async function translateResources(
   const tmWrites: Promise<void>[] = [];
 
   // 1b. Field-digest TM only for plain fields (HTML/JSON/list skip whole-field digest).
+  //     Both plain tiers are prefetched in MGET batches here so step 1c never
+  //     issues a per-field round-trip. The value tier is fetched for every plain
+  //     field (not just digest misses) to keep this a single batched read; 1c
+  //     still prefers the digest hit, so lookup order is unchanged.
   const cacheHits = skipCacheRead
     ? fieldWorks.map(() => null)
-    : await Promise.all(
-        fieldWorks.map(({ f, klass, cacheModel }) =>
-          klass === "plain" ? tmGet(shopName, target, cacheModel, f.digest) : Promise.resolve(null),
-        ),
+    : await tmMGet(
+        shopName,
+        target,
+        fieldWorks.map(({ f, klass, cacheModel }) => ({
+          model: cacheModel,
+          digest: klass === "plain" ? f.digest : null,
+        })),
+      );
+
+  // Value-tier prefetch for the same plain fields, aligned with `fieldWorks`.
+  const valueCacheHits = skipCacheRead
+    ? fieldWorks.map(() => null)
+    : await tmMGetByValue(
+        fieldWorks.map(({ f, klass, cacheModel }) => ({
+          sourceText:
+            klass === "plain"
+              ? isHandleFieldKey(f.key)
+                ? prepareHandleSourceText(f.value)
+                : f.value
+              : "",
+          model: cacheModel,
+          digest: f.digest,
+        })),
+        source,
+        target,
       );
 
   // 1c. Process results: plain digest/value hit → credit; else plan + pool units.
@@ -2540,14 +2703,7 @@ export async function translateResources(
 
     // Plain secondary: value TM (Shopify digest if present, else CRC-32).
     if (!skipCacheRead && klass === "plain") {
-      const valueCacheSource = isHandleFieldKey(f.key) ? prepareHandleSourceText(f.value) : f.value;
-      const cachedByValue = await tmGetByValue(
-        valueCacheSource,
-        source,
-        target,
-        cacheModel,
-        f.digest,
-      );
+      const cachedByValue = valueCacheHits[wi] ?? null;
       if (cachedByValue !== null) {
         logSingleTranslatePath(logSingleTranslate, "cache", {
           kind: "field_value",
@@ -2822,7 +2978,9 @@ export async function translateResources(
   //    Hits go into translated map; misses go to batch. AdaptiveSemaphore throttles.
   const usage: EngineUsage = {};
   const translated = new Map<string, Map<string, RoutedResult>>();
+  let quotaStopped = false;
   for (const [sig, occ] of pools) {
+    if (quotaStopped || (await abortRequested())) break;
     const { order, isHandle, isShort } = parsePoolSignature(sig);
     const cacheModel = engineModel(order[0]!, aiModel);
     const allTexts = [...occ.keys()];
@@ -2830,8 +2988,10 @@ export async function translateResources(
 
     // 2a. Value-TM prefilter for every unique leaf in this pool (before JSON pack).
     if (!skipCacheRead) {
-      const leafHits = await Promise.all(
-        allTexts.map((text) => tmGetByValue(text, source, target, cacheModel)),
+      const leafHits = await tmMGetByValue(
+        allTexts.map((text) => ({ sourceText: text, model: cacheModel })),
+        source,
+        target,
       );
       let leafCacheUnits = 0;
       for (let i = 0; i < allTexts.length; i++) {
@@ -2854,7 +3014,7 @@ export async function translateResources(
         });
         leafCacheUnits += occ.get(text) ?? 1;
       }
-      if (leafCacheUnits > 0 && onProgress) await onProgress(leafCacheUnits, 0);
+      if (leafCacheUnits > 0 && onProgress) await onProgress(leafCacheUnits, 0, 0);
       if (tmap.size > 0) {
         translated.set(sig, tmap);
         const lookupHit: LookupFn = (poolSig, text) => translated.get(poolSig)?.get(text);
@@ -2872,9 +3032,10 @@ export async function translateResources(
     const items: TranslateItem[] = texts.map((t, i) => ({ key: String(i), value: t, digest: "" }));
     const { maxChars, maxItems } = resolveBatchLimits(order, { isShort });
     const batches = batchByChars(items, maxChars, maxItems);
+    // Wait for the whole batch wave (incl. in-flight LLM) before moving on.
     await Promise.all(batches.map(async (batch) => {
       if (await abortRequested()) return;
-      const { results: m, llmTokens } = await translateItemsRouted(
+      const routed = await translateItemsRouted(
         batch,
         source,
         target,
@@ -2886,8 +3047,9 @@ export async function translateResources(
         customPrompt,
         logSingleTranslate,
       );
+      if (routed.quotaStopped) quotaStopped = true;
       let batchUnits = 0;
-      for (const [k, v] of m) {
+      for (const [k, v] of routed.results) {
         const text = texts[Number(k)];
         if (text === undefined) continue;
         tmap.set(text, v);
@@ -2905,33 +3067,38 @@ export async function translateResources(
         }
       }
       translated.set(sig, tmap);
-      if (onProgress) await onProgress(batchUnits, llmTokens);
+      if (onProgress) await onProgress(batchUnits, routed.llmTokens, routed.googleCredits);
       const lookup: LookupFn = (poolSig, text) => translated.get(poolSig)?.get(text);
       await finishReadyResources(lookup);
     }));
     translated.set(sig, tmap);
   }
 
-  const retried = await retryPoolFallbacks(
-    translated,
-    pools,
-    source,
-    target,
-    aiModel,
-    shopName,
-    abortRequested,
-    profileBlock,
-    customPrompt,
-    skipCacheWrite
-      ? undefined
-      : (text, r, poolPrimaryModel) => {
-          tmWrites.push(tmSetByValue(text, source, target, poolPrimaryModel, r.value));
-        },
-    logSingleTranslate,
-  );
-  if (retried > 0) {
-    console.log(`[llm] individually retried ${retried} fallback/untranslated text unit(s)`);
-    reconstructedResources.clear();
+  if (!quotaStopped && !(await abortRequested())) {
+    const retry = await retryPoolFallbacks(
+      translated,
+      pools,
+      source,
+      target,
+      aiModel,
+      shopName,
+      abortRequested,
+      profileBlock,
+      customPrompt,
+      skipCacheWrite
+        ? undefined
+        : (text, r, poolPrimaryModel) => {
+            tmWrites.push(tmSetByValue(text, source, target, poolPrimaryModel, r.value));
+          },
+      logSingleTranslate,
+      usage,
+      onProgress,
+    );
+    if (retry.quotaStopped) quotaStopped = true;
+    if (retry.retried > 0) {
+      console.log(`[llm] individually retried ${retry.retried} fallback/untranslated text unit(s)`);
+      reconstructedResources.clear();
+    }
   }
 
   const lookup: LookupFn = (poolSig, text) => translated.get(poolSig)?.get(text);
@@ -2956,7 +3123,7 @@ export async function translateResources(
       ),
     };
   });
-  return { resources: out, usage };
+  return { resources: out, usage, quotaStopped: quotaStopped || undefined };
 }
 
 /**

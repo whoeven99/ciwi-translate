@@ -8,7 +8,7 @@ import { canPauseV4Job, isAutoV4TaskSource } from "~/server/translateV4/types";
 import { v4Colors, v4CardStyle } from "../v4Styles";
 import { formatLocaleRoute } from "../localeDisplay";
 import { jobDisplayPercent } from "../jobStageUtils";
-import { ProgressRing, StatusTag, MiniStageTrack } from "./V4JobCardParts";
+import { ProgressRing, StatusTag, MiniStageTrack, V4Skeleton } from "./V4JobCardParts";
 import { AutoTaskBadge } from "./AutoTranslateMarkers";
 import { JobCollapsedMeta, JobSummaryStats, JobStageProgressList } from "./JobExpandedDetail";
 import {
@@ -375,12 +375,15 @@ export function TaskQueueSection({
   jobs,
   spotlightTaskIds = [],
   translateSlotBusy,
+  loading = false,
   onBuyCredits,
   onAction,
 }: {
   jobs: TranslationJobProgressSummary[];
   spotlightTaskIds?: string[];
   translateSlotBusy: boolean;
+  /** 首帧骨架：数据到达前不要先闪「暂无任务」空态。 */
+  loading?: boolean;
   onBuyCredits: (job: TranslationJobProgressSummary) => void;
   onAction: Props["onAction"];
 }) {
@@ -465,7 +468,29 @@ export function TaskQueueSection({
         </div>
       ) : null}
 
-      {currentJobs.length === 0 ? (
+      {loading ? (
+        <div style={{ display: "grid", gap: 12 }}>
+          {[0, 1].map((row) => (
+            <div
+              key={row}
+              style={{
+                borderRadius: 8,
+                background: v4Colors.cardSubdued,
+                padding: "18px 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: 16,
+              }}
+            >
+              <V4Skeleton width={44} height={44} radius={22} />
+              <div style={{ display: "grid", gap: 8, flex: 1, minWidth: 0 }}>
+                <V4Skeleton width="42%" height={14} />
+                <V4Skeleton width="72%" height={12} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : currentJobs.length === 0 ? (
         <div style={{ borderRadius: 8, background: v4Colors.cardSubdued, padding: "32px 16px" }}>
           <div style={emptyStateStyle}>
             <div style={emptyStateIconStyle} aria-hidden>

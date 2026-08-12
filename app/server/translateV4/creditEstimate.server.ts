@@ -6,6 +6,7 @@
 import { getLatestShopScanJob } from "~/server/shopScan/cosmos.server";
 import { getShopCreditQuota } from "~/server/billing/quota/quotaRouter.server";
 import { expandV2ModuleKeys } from "./moduleCatalog";
+import { sumPendingLiquidChars } from "./liquidRule.server";
 
 /** 历史上限系数：credits ≈ ceil(sourceChars × k)。 */
 const ESTIMATE_CREDITS_PER_CHAR = Number(
@@ -77,17 +78,19 @@ export async function estimateCreateTaskCredits(args: {
   v2ModuleKeys: string[];
   targets: string[];
   isCover: boolean;
+  includeLiquid?: boolean;
   untranslatedRatioByLocale?: Record<string, number | null>;
 }): Promise<CreateTaskCreditEstimate> {
   const targets = args.targets.map((t) => t.trim()).filter(Boolean);
   const v2ModuleKeys = [
     ...new Set(args.v2ModuleKeys.map((k) => k.trim()).filter(Boolean)),
   ];
+  const includeLiquid = Boolean(args.includeLiquid);
 
   const quota = await getShopCreditQuota(args.shop).catch(() => null);
   const remainingCredits = Math.max(0, Math.floor(quota?.remaining ?? 0));
 
-  if (targets.length === 0 || v2ModuleKeys.length === 0) {
+  if (targets.length === 0 || (v2ModuleKeys.length === 0 && !includeLiquid)) {
     return {
       estimatedCredits: null,
       remainingCredits,
@@ -97,38 +100,62 @@ export async function estimateCreateTaskCredits(args: {
     };
   }
 
-  const v4Modules = expandV2ModuleKeys(v2ModuleKeys);
-  const scan = await getLatestShopScanJob(args.shop).catch(() => null);
-  const moduleStats = scan?.summary?.moduleStats;
-  const { chars: scannedChars, hitCount } = sumCharsForModules(
-    moduleStats,
-    v4Modules,
-  );
+  let usedShopScan = false;
+  let estimated = 0;
 
-  let usedShopScan = hitCount > 0;
-  let chars =
-    hitCount > 0
-      ? scannedChars
-      : fallbackChars(moduleStats, v2ModuleKeys, v4Modules);
-  if (hitCount === 0 && typeof moduleStats?.PRODUCT?.chars === "number") {
-    usedShopScan = true;
+  if (v2ModuleKeys.length > 0) {
+    const v4Modules = expandV2ModuleKeys(v2ModuleKeys);
+    const scan = await getLatestShopScanJob(args.shop).catch(() => null);
+    const moduleStats = scan?.summary?.moduleStats;
+    const { chars: scannedChars, hitCount } = sumCharsForModules(
+      moduleStats,
+      v4Modules,
+    );
+
+    usedShopScan = hitCount > 0;
+    let chars =
+      hitCount > 0
+        ? scannedChars
+        : fallbackChars(moduleStats, v2ModuleKeys, v4Modules);
+    if (hitCount === 0 && typeof moduleStats?.PRODUCT?.chars === "number") {
+      usedShopScan = true;
+    }
+
+    estimated = estimateCreditsFromChars(chars) * targets.length;
+
+    if (!args.isCover) {
+      const ratios = targets.map((locale) => {
+        const raw = args.untranslatedRatioByLocale?.[locale];
+        return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+      });
+      const known = ratios.filter((r): r is number => r != null);
+      if (known.length > 0) {
+        const avg =
+          known.reduce((sum, r) => sum + Math.min(1, Math.max(0, r)), 0) /
+          known.length;
+        const scale = Math.max(INCREMENTAL_MIN_RATIO, avg);
+        estimated = Math.max(1, Math.ceil(estimated * scale));
+      }
+    }
   }
 
-  let estimated = estimateCreditsFromChars(chars) * targets.length;
-
-  if (!args.isCover) {
-    const ratios = targets.map((locale) => {
-      const raw = args.untranslatedRatioByLocale?.[locale];
-      return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
-    });
-    const known = ratios.filter((r): r is number => r != null);
-    if (known.length > 0) {
-      const avg =
-        known.reduce((sum, r) => sum + Math.min(1, Math.max(0, r)), 0) /
-        known.length;
-      const scale = Math.max(INCREMENTAL_MIN_RATIO, avg);
-      estimated = Math.max(1, Math.ceil(estimated * scale));
+  if (includeLiquid) {
+    const liquidChars = await sumPendingLiquidChars(args.shop, targets).catch(
+      () => 0,
+    );
+    if (liquidChars > 0) {
+      estimated += estimateCreditsFromChars(liquidChars);
     }
+  }
+
+  if (estimated <= 0) {
+    return {
+      estimatedCredits: null,
+      remainingCredits,
+      usedShopScan,
+      isUpperBound: true,
+      needsMoreCredits: false,
+    };
   }
 
   const estimatedCredits = Math.max(1, Math.floor(estimated));

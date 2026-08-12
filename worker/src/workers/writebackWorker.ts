@@ -12,9 +12,15 @@ import {
 import { pushHint, setProgress } from "../services/redisV4.js";
 import { claimNextJobWithFairScheduling } from "../services/fairStageClaim.js";
 import { blobRead, blobWrite } from "../services/blobV4.js";
-import { loadTranslatedItemsForJob } from "../services/translateBlobIO.js";
+import { iterateTranslatedItemsForModule } from "../services/translateBlobIO.js";
 import { registerTranslations, type TranslationInput } from "../services/shopifyFetch.js";
 import { filterWritebackFields } from "../services/writebackFields.js";
+import {
+  CUSTOM_LIQUID_MODULE,
+  completeLiquidRuleWriteback,
+  jobModulesWithLiquid,
+  releaseLiquidRulesForJob,
+} from "../services/customLiquid.js";
 import { runShopifyAdaptive, getShopifyCap } from "../services/shopifyConcurrency.js";
 import type { HintPayload } from "../services/redisV4.js";
 import { isShuttingDown } from "../shutdown.js";
@@ -179,11 +185,6 @@ type FailedResource = {
   translations: TranslationInput[];
 };
 
-type PendingResource = {
-  resource: TranslatedItem;
-  module: string;
-};
-
 async function persistWritebackCheckpoint(
   jobId: string,
   progressPath: string,
@@ -208,6 +209,7 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
   const blobPrefix = job.blobPrefix || `tasks/v4/${shopName}/${jobId}`;
   const progressPath = `${blobPrefix}/writeback/progress.json`;
   const failedPath = `${blobPrefix}/writeback/failed.json`;
+  const modules = jobModulesWithLiquid(job);
 
   // Load existing progress for resume support (idempotent re-entry after crash)
   const existingProgress = await blobRead<{ written: string[] }>(progressPath);
@@ -230,41 +232,65 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
     }
   };
 
-  try {
-    // ── Phase 1: Collect all pending resources ────────────────────────────────
-    await maybeHeartbeat();
-    const pendingResources: PendingResource[] = [];
-    const allItems = await loadTranslatedItemsForJob(blobPrefix, job.modules, {
-      onModuleLoaded: async () => {
-        if (isShuttingDown()) return;
-        await maybeHeartbeat();
-      },
-    });
-    if (isShuttingDown()) {
-      await persistWritebackCheckpoint(
-        jobId,
-        progressPath,
-        writtenSet,
+  let shutdownYield = false;
+
+  /** Custom Liquid → Turso LiquidRule（不经 Shopify），串行写一批。 */
+  const writeLiquidBatch = async (items: TranslatedItem[]): Promise<void> => {
+    for (const resource of items) {
+      if (isShuttingDown()) {
+        shutdownYield = true;
+        return;
+      }
+      await maybeHeartbeat();
+      const fields = filterWritebackFields(resource.translations, CUSTOM_LIQUID_MODULE);
+      const field = fields.find((t) => t.key === "liquid") ?? fields[0];
+      const translated = (field?.translatedValue ?? "").trim();
+      if (!translated) {
+        writtenSet.add(resource.resourceId);
+        writebackDone++;
+      } else {
+        const ok = await completeLiquidRuleWriteback({
+          shop: shopName,
+          ruleId: resource.resourceId,
+          afterTranslation: translated,
+          jobId,
+        });
+        if (ok) {
+          writtenSet.add(resource.resourceId);
+          writebackDone++;
+        } else {
+          writebackFailed++;
+          failedResources.push({
+            resourceId: resource.resourceId,
+            translations: [
+              {
+                locale: target,
+                key: "liquid",
+                value: translated,
+                translatableContentDigest: field?.digest ?? "",
+              },
+            ],
+          });
+        }
+      }
+      if ((writebackDone + writebackFailed) % 20 === 0) {
+        await blobWrite(progressPath, { written: [...writtenSet] });
+      }
+      await setProgress(jobId, {
         writebackDone,
         writebackFailed,
         writebackTotal,
-      );
-      console.log(`[writeback] job=${jobId} yielding for shutdown (after blob load)`);
-      return;
+        currentModule: CUSTOM_LIQUID_MODULE,
+      });
     }
-    for (const { module, resource } of allItems) {
-      if (!writtenSet.has(resource.resourceId)) {
-        pendingResources.push({ resource, module });
-      }
-    }
+  };
 
-    console.log(
-      `[writeback] job=${jobId} pending=${pendingResources.length} concurrency=${getShopifyCap(shopDomain)}(adaptive)`,
-    );
-
-    // ── Phase 2: Adaptive parallel writeback ──────────────────────────────────
-    let shutdownYield = false;
-    await runShopifyAdaptive(shopDomain, pendingResources, async ({ resource, module }) => {
+  /** Shopify 写回一批，并发由 runShopifyAdaptive 按 429/cost 反馈自适应。 */
+  const writeShopifyBatch = async (
+    module: string,
+    items: TranslatedItem[],
+  ): Promise<void> => {
+    await runShopifyAdaptive(shopDomain, items, async (resource) => {
       if (isShuttingDown()) {
         shutdownYield = true;
         return;
@@ -272,13 +298,15 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
 
       await maybeHeartbeat();
 
-      const translations: TranslationInput[] = filterWritebackFields(resource.translations, module)
-        .map((t) => ({
-          locale: target,
-          key: t.key,
-          value: t.translatedValue,
-          translatableContentDigest: t.digest,
-        }));
+      const translations: TranslationInput[] = filterWritebackFields(
+        resource.translations,
+        module,
+      ).map((t) => ({
+        locale: target,
+        key: t.key,
+        value: t.translatedValue,
+        translatableContentDigest: t.digest,
+      }));
 
       // Nothing to write for this resource (all fields unchanged / empty)
       if (!translations.length) {
@@ -322,6 +350,55 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
         currentModule: module,
       });
     });
+  };
+
+  try {
+    // ── Phase 1+2: 按 module 分批流式写回 ──────────────────────────────────────
+    // 不再把全店译文一次读进内存（大店会顶到 OOM）：每批处理完即可释放。
+    // 续跑时 writtenSet 里的资源在**下载前**就被 skipResourceId 挡掉，
+    // 不会把已写回的译文内容重新拉一遍。
+    await maybeHeartbeat();
+    console.log(
+      `[writeback] job=${jobId} start modules=${modules.length} done=${writebackDone}/${writebackTotal} concurrency=${getShopifyCap(shopDomain)}(adaptive)`,
+    );
+
+    let shopifyWritten = 0;
+    let liquidWritten = 0;
+
+    for (const module of modules) {
+      if (isShuttingDown()) {
+        shutdownYield = true;
+        break;
+      }
+      await maybeHeartbeat();
+
+      for await (const batch of iterateTranslatedItemsForModule(blobPrefix, module, {
+        skipResourceId: (id) => writtenSet.has(id),
+      })) {
+        if (isShuttingDown()) {
+          shutdownYield = true;
+          break;
+        }
+        // 批与批之间可能有重复（legacy chunk 与 per-resource blob 重叠已在
+        // generator 内去重，这里只挡本轮刚写过的）。
+        const pending = batch.filter((r) => !writtenSet.has(r.resourceId));
+        if (!pending.length) continue;
+
+        if (module === CUSTOM_LIQUID_MODULE) {
+          liquidWritten += pending.length;
+          await writeLiquidBatch(pending);
+        } else {
+          shopifyWritten += pending.length;
+          await writeShopifyBatch(module, pending);
+        }
+        if (shutdownYield) break;
+      }
+      if (shutdownYield) break;
+    }
+
+    console.log(
+      `[writeback] job=${jobId} processed shopify=${shopifyWritten} liquid=${liquidWritten}`,
+    );
 
     if (shutdownYield || isShuttingDown()) {
       await persistWritebackCheckpoint(
@@ -361,6 +438,10 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
     const pauseIntent = latestJob?.pauseAfterWriteback ?? job.pauseAfterWriteback;
     if (pauseIntent === "pause" || pauseIntent === "cancel") {
       const terminalStatus = pauseIntent === "cancel" ? "CANCELLED" : "PAUSED";
+      // 取消：未写完的 Liquid 回 PENDING；暂停：保留 TRANSLATING+jobId 供续跑
+      if (pauseIntent === "cancel" && job.includeLiquid) {
+        await releaseLiquidRulesForJob({ shop: shopName, jobId }).catch(() => 0);
+      }
       await updateJob(shopName, jobId, {
         status: terminalStatus,
         claimedBy: null,
@@ -396,6 +477,9 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
       metrics: updatedMetrics,
       stageTimings: writebackTiming,
     });
+    if (job.includeLiquid) {
+      await releaseLiquidRulesForJob({ shop: shopName, jobId }).catch(() => 0);
+    }
     console.log(
       `[writeback] done job=${jobId} written=${writebackDone} failed=${writebackFailed} → finalized`,
     );
@@ -420,6 +504,9 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
       new Date().toISOString(),
     );
     const latestFail = await getJob(shopName, jobId).catch(() => null);
+    if (job.includeLiquid) {
+      await releaseLiquidRulesForJob({ shop: shopName, jobId }).catch(() => 0);
+    }
     await updateJob(shopName, jobId, {
       status: "FAILED",
       errorMessage: V4_MESSAGE_JOB_FAILED,

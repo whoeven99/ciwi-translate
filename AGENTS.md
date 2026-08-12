@@ -12,7 +12,8 @@ right route, server helper, worker, extension, script, or Prisma model.
 
 1. Read `AGENTS.md` first and identify the feature area.
 2. Read and follow `.cursor/skills/deliberate-collab/SKILL.md` (Claude-style
-  collab: confirm technical choices, then plan / UI samples, then edit).
+ collab: confirm technical choices, then **P0/P1** plan / UI samples, then
+ edit; default execute P0 only).
 3. Run `git status --short` before editing. Do not overwrite user changes or
   unrelated untracked files.
 4. Read the route entry, server helper, worker or extension caller, and Prisma
@@ -85,7 +86,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `extensions/ciwi-switcher/*`                                 | Storefront language/currency switcher theme extension.                                    |
 | `extensions/web-pixel/*`                                     | Shopify web pixel extension.                                                              |
 | `scripts/*`                                                  | Migration, audit, diagnostic, cleanup, and one-off operational scripts.                   |
-| `public/locales/*/translation.json`                          | App i18n strings. Add at least `en` and `zh-CN` for new UI text.                          |
+| `public/locales/*/translation.json`                          | App i18n strings (15 locales，清单在 `app/lib/appI18nLanguages.ts`)。手写 `en` + `zh-CN`，其余可用 `npm run translate` 机翻补齐。 |
 | `.github/workflows/tsf-deploy.yml`                           | Manual Shopify extension/config and Render app/worker deployment workflow.                |
 | `Dockerfile`                                                 | Render container build for the Remix app; the worker is built from `worker/`.             |
 
@@ -139,10 +140,14 @@ and chip / `ChoiceList` / `Combobox` for multi-select. Avoid Ant Design
 reason; do not add page-local CSS that overrides `.ant-select-selection-item`
 globally inside a card (it breaks Ant single-select layout). ESLint
 `no-restricted-imports` blocks `Select` from `antd` under
-`app/routes/app.translate-v4/**`. Remaining Ant Selects (allow for now):
-manage-translation header / custom liquid / glossary / currency edit /
-productImage — prefer Polaris when those screens are next touched. Cursor
-rule: `.cursor/rules/polaris-dropdowns.mdc`.
+`app/routes/app.translate-v4/**`（`.eslintrc.cjs` override；`app.translate-v4-history`
+目前不在该 glob 内，新增下拉仍请用 Polaris）。Remaining Ant Selects
+(allow for now, 已核对):
+`app/components/singleTranslateAction.tsx`（AI 模型）、manage-translation 头部
+（`app.manage_translation/route.tsx`）、custom liquid `updateCustomTransModal`、
+glossary `updateGlossaryModal`、currency `currencyEditModal` — prefer Polaris
+when those screens are next touched。`app/components/paymentModal.tsx` 已是
+Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns.mdc`.
 - Ant Design theme values should be derived from Polaris-like tokens through
 `app/ui/theme.ts`; avoid creating a second visual system.
 - Prefer existing shared wrappers in `app/ui/components/*`, including
@@ -159,7 +164,11 @@ large inline style blocks in route files.
 - One page section should have one clear primary action. Secondary actions should
 not compete visually with the main action.
 - Add i18n keys for visible UI text in `public/locales/en/translation.json` and
-`public/locales/zh-CN/translation.json`.
+`public/locales/zh-CN/translation.json`. The admin UI ships 15 locales
+(`APP_I18N_LANGUAGES` in `app/lib/appI18nLanguages.ts`); the other 13 files are
+machine-filled from `en` via `npm run translate` (needs `GOOGLE_CLOUD_API_KEY`).
+Do not leave merchant-visible English literals in route files — recent i18n
+sweeps moved plan names, modal copy, and worker notice text into locale keys.
 
 
 
@@ -173,8 +182,9 @@ not compete visually with the main action.
 - `app/routes/auth.$.tsx`, `app/routes/auth.login/route.tsx`: Shopify auth.
 - `app/routes/webhooks.tsx`: Shopify webhook topic handling. Billing and uninstall
 logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
-`cleanupBillingOnUninstall` (best-effort Shopify cancel + local
-`cancelSubscription`) before Account soft-delete and Session delete.
+`cleanupBillingOnUninstall` (local `cancelSubscription`; SHOP_REDACT only
+best-effort Shopify cancel when token present) before Account soft-delete and
+Session delete.
 `APP_UNINSTALLED` snapshots subscription/quota/size via
 `uninstallSnapshot.server.ts` before cleanup, then sends that text to Feishu.
 Billing webhooks ACK first and process in the background
@@ -195,7 +205,11 @@ and embedded `/app` redirect/landing behavior.
 
 ### Main Pages
 
-- `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`.
+- `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（只展示进行中 /
+暂停 / 失败任务，见 `jobFilters.ts` `isCurrentV4Job`）。
+- `/app/translate-v4-history`: `app/routes/app.translate-v4-history/route.tsx`
+（终态任务历史；无导航入口，由 `TaskQueueSection.tsx` 的「历史」按钮跳入；复用
+`CompactJobCard` + `isHistoryV4Job` + `/api/translate-v4/task-action`）。
 - `/app/language`: `app/routes/app.language/route.tsx`.
 - `/app/manage_translation`: `app/routes/app.manage_translation/route.tsx`.
 - `/app/manage_translation/<module>`: `app/routes/app.manage_translation_.*/route.tsx`.
@@ -213,7 +227,9 @@ real `route.tsx` or route module is added.
 
 ### API Routes
 
-- `/api/app-bootstrap`: `app/routes/api.app-bootstrap.ts`.
+- `/api/app-bootstrap`: `app/routes/api.app-bootstrap.ts` →
+`app/server/appBootstrap.server.ts`（plan / credits / locales 一次性引导数据，
+`app/routes/app.tsx` 与 Redux `userConfig` 共用）。
 - `/api/billing/active-subscription`: `app/routes/api.billing.active-subscription.ts`.
 - `/api/shop-profile`: `app/routes/api.shop-profile.ts`.
 - `/api/support`: `app/routes/api.support.tsx`.
@@ -221,6 +237,9 @@ real `route.tsx` or route module is added.
 - `/api/picture/*`: `app/routes/api.picture.{product,shop,upload,upsert,delete,save-from-url}.ts`.
 - `/api/translate-v4/tasks`: `app/routes/api.translate-v4.tasks.ts`.
 - `/api/translate-v4/estimate`: `app/routes/api.translate-v4.estimate.ts`.
+- `/api/translate-v4/estimate-detailed`: `app/routes/api.translate-v4.estimate-detailed.ts`
+  （确认弹窗「精准预估」：单 locale×module 扫 Shopify + TM miss，客户端分片串行；
+  `detailedCreditEstimate.server.ts`）。
 - `/api/translate-v4/task-action`: `app/routes/api.translate-v4.task-action.ts`.
 - `/api/translate-v4/task-progress`: `app/routes/api.translate-v4.task-progress.ts`.
 - `/api/translate-v4/coverage`: `app/routes/api.translate-v4.coverage.ts`.
@@ -232,6 +251,8 @@ real `route.tsx` or route module is added.
   （Preparing 真进度：逐 label 现算最重要 1 语 × 5 模块，写 Redis 不写 Turso）。
 - `/api/translate-v4/quota`: `app/routes/api.translate-v4.quota.ts`.
 - `/api/translate-v4/single`: `app/routes/api.translate-v4.single.ts`.
+- `/api/translate-v4/single-estimate`: `app/routes/api.translate-v4.single-estimate.ts`
+（单字段积分预估，展示用；`singleTranslateEstimate.server.ts`）。
 - `/api/translate-v4/image`: `app/routes/api.translate-v4.image.ts`.
 - `/api/translate-v4/currency`: `app/routes/api.translate-v4.currency.ts`.
 - `/api/translate-v4/glossary`, `liquid`, `pagefly`, `switcher`,
@@ -250,7 +271,9 @@ Core files:
 - UI page: `app/routes/app.translate-v4/route.tsx`.
 - UI components: `app/routes/app.translate-v4/components/*`.
 - UI constants/status/i18n: `constants.ts`, `v4I18n.ts`, `jobStageUtils.ts`,
-`v4JobNotice.ts`, `localeDisplay.ts`.
+`v4JobNotice.ts`, `localeDisplay.ts`, `v4Styles.ts`（共享色板/卡片样式，
+`paymentModal` 等也在用）, `jobFilters.ts`（current / history 任务切分）,
+`hooks/useCountUp.ts`.
 - Client create-task helper: `app/lib/createTranslateV4Tasks.ts`.
 - Create/list jobs: `app/routes/api.translate-v4.tasks.ts`.
 - Create-task credit estimate (display upper bound): 
@@ -259,7 +282,11 @@ default `k=1.6` / `TRANSLATE_ESTIMATE_CREDITS_PER_CHAR`),
 `app/routes/api.translate-v4.estimate.ts`,
 `app/routes/app.translate-v4/useCreateTaskEstimate.ts` (wired in
 `CreateTaskCard` / `route.tsx`). Uses shop scan `moduleStats.chars` +
-coverage untranslated ratio; not the worker bill formula.
+coverage untranslated ratio; `includeLiquid` 时再加上 `sumPendingLiquidChars`
+（`liquidRule.server.ts`，PENDING 自定义 Liquid 字符数）。不是 worker 实扣公式。
+精准预估（可选、可等待）：`CreateTaskConfirmModal` →
+`useDetailedCreateTaskEstimate` → `/api/translate-v4/estimate-detailed`，
+按语言×v4 module 分片拉字段、拆叶子、`tmMGetByValue` 去命中后按 miss 字符×k。
 - Pause/resume/cancel/delete: `app/routes/api.translate-v4.task-action.ts`.
 - Progress summaries: `app/server/translateV4/progress.server.ts`.
 - Init activity UI (module `x/N` bar + i18n activity log): Redis fields
@@ -324,7 +351,8 @@ then `api.translate-v4.tasks.ts`.
 - Billing return after buy-credits / subscribe from create confirm: draft in
   `app/utils/createTaskDraft.ts` (sessionStorage); return flag via
   `app/utils/billingReturn.ts`; restore + reopen confirm in
-  `app/routes/app.translate-v4/route.tsx`.
+  `app/routes/app.translate-v4/route.tsx`. 补额度弹窗本身是全局共享的，见
+  Billing And Quota →「Credits purchase modal」。
 - Change pause/resume/cancel: inspect `api.translate-v4.task-action.ts`,
 `resumeStatus.ts`, `translateWorker.ts`, and `writebackWorker.ts`.
 - Change progress display: inspect `progress.server.ts`, `jobStageUtils.ts`,
@@ -341,6 +369,12 @@ then `api.translate-v4.tasks.ts`.
 - Source of truth: `packages/translation-core/src/*`.
 - Filter entry: `packages/translation-core/src/translationFilter/index.ts`.
 - Runtime ports: `packages/translation-core/src/runtime.ts`.
+- TM 读走批量：`translationMemory.ts` `tmMGet` / `tmMGetByValue`（`mgetAligned`
+ 按 index 对齐、500 一批、异常整批当 miss），`llmTranslate.ts` 的 digest / value /
+ leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同步两份
+ `MigratingRedis`**（`app/server/translateV4/redisDualClient.server.ts` 与
+ `worker/src/services/redisDualClient.ts`）：sole mode 下 core 拿到的是原生
+ ioredis，但双写兼容层是手写代理，缺方法会让 TM 静默整批 miss（只烧钱不报错）。
 - App adapter: `app/server/translateV4/translationCoreRuntime.server.ts`.
 - Worker adapter: `worker/src/services/translationCoreRuntime.ts`.
 - EMAIL / packing-slip Liquid HTML: `packages/translation-core/src/liquidHtmlTranslate.ts`
@@ -351,6 +385,10 @@ literals like `else` and `Default Title` never enter the LLM text pool;
 - Structural BR leaves (`⟦BR⟧` from `htmlTranslate`, ascii `[BR]`):
   `isPassthroughLeafText` in `translateQuality.ts` skips the LLM/Google pool and
   reassembles identity in `llmTranslate.ts` (not counted as echo/`fallback`).
+- Output quality gates (`looksLikeUntranslated`, wrong-script, empty-source
+  hallucination, prompt sentinel) live in `translateQuality.ts` and gate
+  fallback/retry in `llmTranslate.ts`. Disable all with
+  `TRANSLATE_QUALITY_GATE=false` (placeholder/HTML integrity checks unchanged).
 - Short plain fields (`<80` chars, not handle / meta_description): chunk-level
   JSON pack in `llmTranslate.ts` — field/value TM first, then dedupe by text,
   then size-capped JSON batches (`TRANSLATE_SHORT_JSON_MAX_CHARS` /
@@ -432,9 +470,20 @@ Pipeline:
 - `worker/src/workers/translateWorker.ts`: translation stage, LLM calls,
 checkpoints, quota, pause/cancel.
 - `worker/src/workers/writebackWorker.ts`: Shopify translation writeback.
+**按 module 分批流式**读译文（`iterateTranslatedItemsForModule`，默认 500/批），
+不再一次性把全店译文读进内存。`skipResourceId` 在**下载前**用 blob 文件名
+（base64url(resourceId)）挡掉 `writtenSet` 里已写回的资源，所以续跑不会重新
+下载已完成部分。写回按 resource 独立、module 间无依赖，所以分批安全；每批边界
+会让 `runShopifyAdaptive` 的在飞请求排空一次。改这里请保持 `writtenSet` 全局
+（resume 语义）与 `writebackTotal` 取自 `job.metrics`（不依赖数组长度）。
 - `worker/src/workers/shopScanWorker.ts`: shop scan（install/scheduled 计量；
 manual AI 画像；glossary 阶段已停用）。
-- `worker/src/workers/emailWorker.ts`: notifications.
+- `worker/src/workers/emailWorker.ts`: notifications. 候选店走 **Redis 标记快路径**
+（`translate:v4:email:pending:{manual|auto}`，Worker 侧 `updateJob` 写入终态时
+由 `noteEmailPendingIfTerminal` 打标），只在 `EMAIL_FALLBACK_SCAN_INTERVAL_MS`
+（默认 5min）到点时才跑跨分区 DISTINCT 兜底。标记清除发生在「该店确认无待发
+任务」时（`jobs.length === 0`），不在发信后清，宁可多留一轮也不漏发。App 侧手动
+暂停/取消不经过 Worker 的 `updateJob`，靠兜底扫描捞回——所以**兜底不能关掉**。
 
 Services:
 
@@ -481,13 +530,17 @@ job retention cleanup).
 - `worker/src/services/coverageSummary.ts`: language-level coverage module set
 (`COVERAGE_SUMMARY_MODULES`, excludes Policies; aligned with App
 `COVERAGE_COUNT_LABELS`).
-- `worker/src/services/workerEmail.ts`, `shopEmail.ts`: email sending; shop
-  contact email lookup via Shopify GraphQL (1h cache) for recipient/greeting.
+- `worker/src/services/workerEmail.ts`, `shopEmail.ts`, `feishuNotify.ts`:
+  email sending; shop contact via Shopify GraphQL (1h cache). No offline
+  Session（已卸载）→ `emailWorker` 不发信、标 `emailSent`，并经
+  `FEISHU_WEBHOOK_URL_SUPPORT` 飞书通知（缺配置则跳过）；`shopEmail` 静默跳过。
   Manual: success merge `210764` (`total_credits`) vs quota-insufficient
   incomplete `211401` (`total_credits_used` / `required_credits`); auto:
   success `140352` / partial `159297`. Manual create persists
   `estimatedCredits` (chars×1.6, no coverage scale) for required_credits
-  two-handed math vs `usedTokens`.
+  two-handed math vs `usedTokens`. 同一次创建点击写共享 `batchId`
+  （`createTranslateV4Tasks` → Cosmos）；有 `batchId` 时该批终态即发一封、
+  不等其它批次；无 `batchId` 旧任务仍整店待发汇总。
 - `worker/src/services/translationReport.ts` and
 `worker/src/scripts/exportTranslationReport.ts`: offline quality report builder
 for translated blob entries.
@@ -537,8 +590,18 @@ Admin 体量标签另用 `COSMOS_SHOP_DATABASE_ID`（默认 `shop`）、
 `TRANSLATE_QUOTA_FLUSH_CHARGE`, `QUOTA_PER_CALL_COST`（默认 15k；`remaining < perCall` →
 并发 cap=0）, `QUOTA_MAX_CONCURRENCY`, `TRANSLATE_QUOTA_ESTIMATE_SAFETY`（默认 1.2）。
 任务 seed 记下 `budget`；发 LLM 前 `committed += 预估`；返回后预估换成实扣
-（`syncShopQuotaBudget` + `callLLMOnce`）。`committed + nextEst > budget` 则不发新请求；
-暂停/耗尽立刻 `setShopQuotaCap(0)`；已在飞仍跑完实扣。
+（`syncShopQuotaBudget` + `callLLMOnce`）。`committed + nextEst > budget` 则**软停**
+（`quotaStopped` 正常返回，不抛 `QuotaExhaustedError`、不打 `[route] llm engine error`、
+**不 fallback Google**）；`setShopQuotaCap(0)` 后等在飞 LLM 结清，Worker
+`flushQuota` 实扣后再 `PAUSED`。Google 质量兜底单独计费：
+`credits = ceil(chars × GOOGLE_CREDITS_PER_CHAR)`（默认 1.6，不再乘模型系数），
+记入 `engineUsage["google-translate"]` 与任务 `usedTokens`。
+`TRANSLATE_QUOTA_RECHECK_MS`（默认 30s）：chunk 循环里读剩余额度是**节流 +
+single-flight**（`getRemainingThrottled`），不是每 chunk 打一次 Turso——并发 chunk
+默认 64，逐 chunk 查询会把 Turso 打成瓶颈（502 的流量源之一）。超支准入由上面的
+budget/committed 把住，这里只负责发现**任务外部**的额度变化；`seed` 与 `flushQuota`
+拿到权威 remaining 时会一并推进时间戳。查询失败时沿用 `lastKnownRemaining` 继续
+（不再让 Turso 抖动把 chunk 打挂），并推进时间戳避免重试风暴。
 - Scheduling: `WORKER_STAGES`, `WORKER_POLL_INTERVAL_MS`,
 `TRANSLATE_CHUNK_CONCURRENCY`, `MAX_CONCURRENT_AUTO_TRANSLATE_JOBS`,
 `MAX_CONCURRENT_MANUAL_TRANSLATE_JOBS`, `AUTO_TRANSLATE_*`.
@@ -551,7 +614,9 @@ Code: `worker/src/services/shopifyBulkShared.ts`.
 同店 bulk **submit** 串行（Shopify 每店仅 1 个 bulk query）；多 module 排队 submit + 滑动下载。
 - Init bulk（全量；submit 限流/槽位忙自动重试；单 module 失败重入队 bulk，不回退分页）:
 `SHOPIFY_BULK_SUBMIT_MAX_RETRIES`（默认 24，submit 与 module 级重试共用上限）.
-Code: `worker/src/services/shopifyBulkFetch.ts`，接入 `initWorker.ts`.
+无 offline Session（卸载等）→ `shopifyBulkShared` 立刻 abort 整店队列（不 poll
+空转、不 requeue）。Code: `worker/src/services/shopifyBulkFetch.ts`，接入
+`initWorker.ts`.
 - Shop scan bulk（计量全量，无 allowlist；默认偏慢以削平 CPU）:
 `SHOP_SCAN_BULK_FALLBACK`（默认开，失败回退 `countModuleScan` 分页）,
 `SHOP_SCAN_DRAIN_MAX`（默认 1；且 tick 互斥，避免 setInterval 叠跑）,
@@ -567,6 +632,8 @@ Code: `worker/src/services/shopScan/scanPace.ts`、
 `TRANSLATION_MAX_CHUNK_BYTES`（默认 2MiB；单资源超限则独占一个 chunk）.
 Code: `worker/src/services/shopifyFetch.ts` `chunkResources`.
 - Auxiliary schedules: `SHOP_SCAN_POLL_INTERVAL_MS`, `EMAIL_WORKER_INTERVAL_MS`,
+`EMAIL_FALLBACK_SCAN_INTERVAL_MS`（默认 5min；邮件 worker 跨分区 DISTINCT 兜底
+间隔，平时走 Redis 标记快路径），
 `AUTO_EMPTY_JOB_CLEANUP_INTERVAL_MS`,
 `BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`, and
 `BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`.
@@ -632,15 +699,20 @@ Code:
 (`APP_SUBSCRIPTIONS_UPDATE` CANCELLED/EXPIRED → `cancelSubscription`; idempotent
 if uninstall already cleared the row).
 - `app/server/billing/subscription/cleanupOnUninstall.server.ts`: uninstall /
-redact billing cleanup (Shopify `appSubscriptionCancel` best-effort + local
-cancel). Reinstall path in `ensureAccount.server.ts` also clears leftover
-`AppSubscription` when restoring a soft-deleted Account.
+redact billing cleanup (local cancel always; Shopify `appSubscriptionCancel`
+best-effort only on SHOP_REDACT when token present; APP_UNINSTALLED skips
+outbound cancel). Reinstall path in `ensureAccount.server.ts` also clears
+leftover `AppSubscription` when restoring a soft-deleted Account.
 - `app/server/billing/uninstallSnapshot.server.ts`: pre-cleanup snapshot for
 uninstall Feishu (plan, interval, quota, size tier via
 `shopScan/shopSizeProfile.server.ts`).
 - `app/server/billing/email/billingEmail.server.ts`: purchase/subscribe/renewal emails.
 - `app/server/billing/email/welcomeEmail.server.ts`: first-install welcome email
 (`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init).
+- 收件人/后台 token：`app/server/shop/fetchShopContact.server.ts`（Shopify
+GraphQL 拉店铺联系邮箱）与 `app/server/shop/offlineSessionToken.server.ts`
+（App 侧唯一的 offline token 读取口，Turso `Session`；storefront switcher /
+liquid collect 也走它）。卸载后取不到 token 属预期，调用方需静默降级。
 - `worker/src/services/billingSubscriptionReconcile.ts`: worker-only Shopify
 subscription reconciliation (writes Turso directly; does not call TSF Web).
 Syncs `AppSubscription.currentPeriodEnd/Start` from Shopify for MONTHLY and
@@ -651,13 +723,34 @@ Shopify year) derived from `currentPeriodEnd` (never from `createdAt`).
 helpers for annual credit-cycle math.
 - `worker/src/services/accountBalance.ts`: credit pool settle helpers for renewals.
 - `app/routes/webhooks.tsx`: Shopify webhook branching.
-- `app/routes/app.pricing/route.tsx`: pricing UI/actions.
+- `app/routes/app.pricing/route.tsx`: pricing UI/actions. `action` 现在
+**返回** `response.confirmationUrl`（不再 `shopifyRedirect` 抛重定向），由客户端
+`app/utils/billingConfirmation.client.ts` `redirectToBillingConfirmation()` 在
+top frame 打开；无 confirmationUrl 时返回 `errorCode: 10002` + Shopify
+`userErrors[0].message`。
 - `app/server/billing/quota/quotaRouter.server.ts`: shared app-side quota facade;
 `/api/translate-v4/quota`, task creation, single translation, and picture
 translation all use this TSF account path.
 - `worker/src/services/tsfQuota.ts`: worker quota adapter.
 - `worker/src/services/creditUsage.ts`: Worker `CreditUsage` writer; `translateWorker`
   `flushQuota` records each successful credit flush (`source=v4_job`).
+
+Credits purchase modal（全局唯一补额度入口）:
+
+- `app/components/paymentModal.tsx`（+ `paymentModal.shared.ts`
+`buildPaymentOptions` / `paymentOptionSelect.tsx`）在 `app/routes/app.tsx` 里
+`lazy` 挂载一次，靠 window 事件 `ciwi:open-credits-purchase-modal` 打开。
+- 触发方：`app/utils/creditsPurchaseModal.ts` `openCreditsPurchaseModal(context)`，
+`context.kind` = `translate_v4_task` | `create_task` | `single_translate`，
+带 `estimatedCredits` / `currentRemainingCredits` / `shortfallCredits`；弹窗按
+shortfall 预选**最小够用**的积分包。新增调用方请复用该事件，不要在页面里再挂一个
+PaymentModal。
+- 回跳：`app/utils/billingReturn.ts`（`ciwiBillingReturn` / `ciwiBillingKind` /
+`ciwiBillingPrevTotal` 三个 query；只保留 `/app/**` pathname，剔除嵌入式 session
+参数）+ `app/lib/shopifyAppHandle.server.ts`
+`buildShopifyEmbeddedAppReturnUrl()`（按 `SHOPIFY_API_KEY` 解析 Partners app
+handle，不再读 `process.env.HANDLE`；超过 Shopify 255 字符上限时降级为无 query
+的最短路径）。改 returnUrl 时必须同时确认这个长度上限。
 
 Quota work must check:
 
@@ -722,6 +815,9 @@ Currency changes often touch admin, App Proxy, and extension JS.
 - App Proxy: `app/routes/api.storefront.$.ts`.
 - Extension: `extensions/ciwi-switcher/blocks/ciwi_I18n_Switcher.liquid` and
 `extensions/ciwi-switcher/assets/ciwi-*.js`.
+- App Proxy 店面路径：Extension `ciwi-api.js` 固定 `STOREFRONT_APP_PROXY_BASE=/apps/ciwi`
+ （对齐正式 `shopify.app.prod.toml` `subpath=ciwi`）。测试 App 为 `ciwi-test` 时
+ 需临时改扩展常量或单独分支后再 `deployTest`。
 - Constants: `app/lib/switcherConstants.ts`.
 - `ipOpen` is the live geolocation switch and is stored on Turso
 `SwitcherConfiguration`. The old `IpRedirection` table/model was dropped
@@ -731,6 +827,54 @@ Prisma model still exist; design a new owner before reviving region-specific
 redirect records.
 - 确认保存时**不再**调用 Spring `/userIp/addOrUpdateUserIp`。店面 IP 定位走
 `ciwi-main.js` + ipapi。
+- **第三方 / 自定义 Liquid 翻译管线（PENDING→Worker→DONE）**：
+ 1. **采集（默认开，无商户开关）**：storefront `CollectUntranslatedText` → App
+ Proxy `POST liquid/collect` → `liquidCollect.server.ts` 只写入
+ `LiquidRule(status=PENDING, source=auto, afterTranslation="")`，**不在 Web
+ 进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
+ `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
+ 过滤）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
+ shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
+ 名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
+ Redis 日聚合 `tsf:auto_liquid:deny:req|texts|shops:{utcYmd}`（8d TTL）。
+  服务端细日志默认开（`AUTO_LIQUID_DEBUG` 默认 true，可设 false）；店面
+  `[ciwi-auto-liquid]` / `[ciwi-liquid-translate]` 默认开，关：
+  `localStorage.ciwi_debug_auto_liquid=0` /
+  `localStorage.ciwi_debug_liquid_translate=0`。
+ 主语言（Redis 缓存 1h）、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 100）、
+ 总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 50000）。店面 Switcher **全店采集上报**；
+ 采集只写 PENDING，**不查额度**；真正扣费在后续 v4「自定义 Liquid」翻译阶段。
+ `SwitcherConfiguration.autoLiquidCollect` 列保留且默认 `true`，保存时强制
+ `true`，Switcher UI 开关已移除。
+ 2. **建任务**：勾选「自定义 Liquid」→ `job.includeLiquid=true`（不进 Shopify
+ module 枚举）。
+ 3. **Worker**：init 读 PENDING → 虚拟 module `CUSTOM_LIQUID` init blob（行
+ `PENDING→TRANSLATING`+`jobId`）；translate 复用现有管线；writeback 写回
+ Turso `DONE`（**不** `registerTranslations`）。代码：
+ `worker/src/services/customLiquid.ts`、`initWorker` / `writebackWorker`。
+ 4. **店面替换**：`parseLiquidTranslations` **只返回 `status=DONE` 且译文非空**；
+ `CustomLiquidTextTranslate` + App Proxy `liquid/parse` 不变。空结果返回
+ `ok({})` 供浏览器负缓存。
+ 5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
+ （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
+ 慢删 `source='auto'`（绝不碰 manual）。管理页
+ `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
+
+- **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
+ `api.storefront.$.ts` 的 switcher / currency（`getCurrencyByShopName` +
+ `getCacheData`）/ liquid / picture 读端点经
+ `readThroughStorefrontCache(kind, shop, extra, load)`，TTL 300s，只缓存
+ `success: true`；Redis 任何异常都静默降级直查库，`load()` 自身异常照常上抛。
+ 失效用 per-(kind, shop) 版本号 key `tsf:sf:ver:{kind}:{shop}`，
+ `invalidateStorefrontCache` 对版本 key 做 `INCR` + `EXPIRE`（sole
+ `RENDER_KV` / 原生 ioredis；生产禁止 KEYS/SCAN 批量删）。
+ 已接失效的写入方：`switcherData.upsertSwitcherConfig`、currency
+ `insertCurrency`/`updateCurrency`/`deleteCurrency`/`updateDefaultCurrency`、
+ picture `upsertUserPicture`/`softDeleteUserPicture`（覆盖 upload / saveFromUrl）、
+ liquid manual `createLiquidDo`/`updateLiquidDo`/`deleteLiquidDo`/
+ `toggleLiquidReplacementMethod`。**新增 storefront 读端点或写入方时必须同步接入**。
+ 缓存只用于店面路径，admin 页面仍直查库，避免商户看到自己刚改的旧值。
+ 未接主动失效：Worker 写 liquid `DONE`（跨进程），靠 300s TTL 收敛。
 
 Do not make storefront API unauthenticated. App Proxy requests use HMAC checks.
 
@@ -764,7 +908,11 @@ gets `302` from `authenticate.admin` on `/api/picture/upload`.
 - Manage save paths use TSF/Shopify helpers such as
 `app/server/shopify/translations.server.ts`.
 - Editors: `app/components/manageTableInputEditor.tsx`,
-`manageTableInput.tsx`, `manageTableRichText.ts`, `richTextInput/*`.
+`manageTableInput.tsx`, `manageTableRichText.ts`, `manageTranslationFieldRow.tsx`,
+`richTextInput/*`.
+- 页面共享行为：`app/utils/manageSave.ts`、`manageTranslationState.ts`、
+`manageTranslationErrors.ts`（保存提交 / 脏值状态 / 错误归一）。改一个 manage 页
+的保存或报错前，先看这三个是否已经有实现。
 - Shopify translation helper: `app/server/shopify/translations.server.ts`.
 
 These pages are not the same UX as translation v4 jobs. Preserve existing
@@ -784,6 +932,15 @@ AI model `Select` + optional prompt + credit estimate) →
 the real system prompt (glossary + shop profile + custom prompt) via
 `estimateSingleTranslateLlmTokens`, then ceil(tokens × model multiplier)
 (DeepSeek default 1, GPT/Google default 1.5).
+- 单字段额度不足：打开弹窗时先预估 + 读剩余额度，`shortfallCredits > 0` 直接转到
+共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
+`openCreditsPurchaseModal({ kind: "single_translate", … })`）；翻译失败后的
+额度类报错统一走 `app/hooks/useSingleTranslateQuotaGate.tsx` +
+`app/lib/singleTranslateQuotaFeedback.ts`（`v4.create.noCreditsPricing` → 补额度
+弹窗，`noCreditsTrial` → `CreateTaskQuotaGateModal` trial 模式，其余落
+`v4.error.singleQuotaInsufficient`）。20 多个 manage 页共用这一套，不要在单页
+自己拼额度文案。
+
 Image translation, PageFly, and some summary/count behavior may still be
 separate from the save path.
 
@@ -981,10 +1138,14 @@ Current models:
   `coveragePercent` / `coverageUpdatedAt` / `coverageSource`).
 - `Glossary`: glossary terms.
 - `ShopProfile`: AI-generated shop profile.
-- `SwitcherConfiguration`: storefront switcher settings.
+- `SwitcherConfiguration`: storefront switcher settings（含 `autoLiquidCollect`
+ 默认 `true`：店面自动抓取第三方未翻译文本回填 `LiquidRule`；无商户开关）。
 - `Currency`, `CurrencyRate`: currency list and rate cache.
 - `PageFlyTranslation`: PageFly translations.
-- `LiquidRule`: custom Liquid translation rules.
+- `LiquidRule`: custom Liquid translation rules（`source` = `manual`|`auto`；
+ `status` = `PENDING`|`TRANSLATING`|`DONE`；可选 `sourceDigest` / `jobId`；
+ `@@unique([shop, languageCode, beforeTranslation])`；采集侧 `createMany` +
+ `skipDuplicates` 落 PENDING；Worker 写 DONE）。
 - `Account`, `PlanCatalog`, `AppSubscription`, `BillingLog`,
 `AccountPeriodUsage`: TSF billing/quota.
 - `TranslateV4JobUsage`: per-job translation usage snapshot (time, tokens,
@@ -1079,8 +1240,11 @@ For "合入PR然后发布测试环境", the script will:
 | Translation quality report       | `worker/src/scripts/exportTranslationReport.ts`       | `worker/src/services/translationReport.ts`, Blob translate chunks                                       |
 | Quota mismatch                   | `quotaRouter.server.ts`                               | `webhooks.tsx`, TSF billing webhooks, worker `tsfQuota.ts`                                              |
 | Subscription/purchase bug        | `app/routes/app.pricing/route.tsx`                    | `webhooks.tsx`, `app/server/billing/*`                                                                  |
+| 补额度弹窗 / Shopify 回跳        | `app/utils/creditsPurchaseModal.ts`                   | `app/components/paymentModal.tsx`, `app/routes/app.tsx`, `app/utils/billingReturn.ts`, `app/lib/shopifyAppHandle.server.ts` |
+| 任务历史页                       | `app/routes/app.translate-v4-history/route.tsx`       | `app/routes/app.translate-v4/jobFilters.ts`, `components/TaskQueueSection.tsx`, `progress.server.ts`     |
 | Currency switcher bug            | `app/server/currency/currency.server.ts`              | `api.storefront.$.ts`, extension `ciwi-api.js`                                                          |
 | App Proxy 401/404                | `api.storefront.$.ts`                                 | `server/storefront/auth.server.ts`, extension caller                                                    |
+| 店面数据不更新 / Turso 502       | `app/server/storefront/cache.server.ts`               | `app/config/libsqlFetch.server.ts`, `api.storefront.$.ts`, 写入方的 `invalidateStorefrontCache` 调用     |
 | Manage Translation resource page | `app/routes/app.manage_translation_.<type>/route.tsx` | `manageTranslationRoute.server.ts`, `pictureClient.ts`                                                  |
 | Picture translation/storage      | `app/server/picture/picture.server.ts`                | `api.picture.*`, `api.translate-v4.image`, `UserPicture`, App Proxy picture branches                    |
 | Glossary                         | `app/routes/app.glossary/route.tsx`                   | `glossary.server.ts`, Worker `tsfDb.loadGlossaryRowsFromTsf` via `translationCoreRuntime.ts`            |
@@ -1289,6 +1453,13 @@ translation memory cache.
 - App、Worker、运维脚本、Agent 诊断：**只连** `RENDER_KV`。
 - **不要**再使用 `REDIS_URL` / `REDIS_URL_V4`（Azure Cache 已弃用；本地 `.env*` 里若仍残留可忽略或删除）。
 - 不要打印 URL/密码；只打印脱敏 host。
+- **新增 Redis 用法前先查 `RedisLike` 支持哪些命令**（`worker/src/services/redisDualClient.ts`
+  与 `app/server/translateV4/redisDualClient.server.ts`）。`getRedis()` 的返回类型标成
+  `IORedis`，但双写模式下实际是手写代理 `MigratingRedis`：类型检查会放过
+  `sadd`/`smembers`/`srem` 之类未实现的命令，运行时才崩。目前代理只有
+  get/mget/set/del/hset/hget/hgetall/hdel/expire/lpush/rpush/lpop/ltrim/ping/pipeline/multi
+  ——需要集合语义时用 Hash 代替 Set（见 `translate:v4:email:pending:*`），
+  或先把命令补进两份代理。
 - Render 服务内用 **Internal** URL（通常 `redis://…`）；本机 / Agent `.env*` 用 **External**
   `rediss://…`（需 Dashboard 放行 Inbound IP）。
 - 交互 CLI：Dashboard **Valkey CLI Command**，或服务同区 Shell 里
@@ -1333,6 +1504,7 @@ node worker/scripts/probe-hint-queues.mjs
 | `translate:v4:hint:verify`, `translate:v4:hint:analysis` | List: retired stages (compat / probe only; no live producers) |
 | `translate:v4:progress:<jobId>` | Hash: per-stage done/total, init module activity, pausePending (TTL 7d) |
 | `translate:v4:control:<jobId>` | String: `pause` / `cancel` (TTL 1d) |
+| `translate:v4:email:pending:{manual\|auto}` | Hash: shopName → 标记时刻；emailWorker 候选店快路径（TTL 7d，跨分区 DISTINCT 兜底仍保留）。用 Hash 而非 Set：双写 `RedisLike` 没有 `sadd`/`smembers`/`srem` |
 | `translate:v4:auto_scan:last_at` | String: last / next auto-scan schedule marker |
 | `translate:v4:auto_scan:last_success_at` | String: last successful auto-scan completion |
 | `tsf:shop_scan:hints` | List: shop-scan wake hints `{scanId,shopName}` (Cosmos poll is fallback) |
@@ -1508,6 +1680,15 @@ single jobs instead of crashing the page, and inspect
 GraphQL cost buckets or upstream services. Check batching gaps, delayed
 non-core count batches, `itemsCount.server.ts` throttle handling, and whether
 logging uses beacon-style client logging instead of route `fetcher.submit`.
+- Turso `SERVER_ERROR: Server returned HTTP status 502`: 这是 Turso 网关在容量
+ 紧张时拒绝请求，**不是慢查询**（曾在 `switcherConfiguration.findUnique()` 这种
+ 主键单行查询上出现）。Prisma 把它包成 `transient: false` 直接抛出，店面 App
+ Proxy 因此冒 500，错误呈突发聚集而非均匀分布。两处缓解已落地：
+ `app/config/libsqlFetch.server.ts` 对 429/502/503/504 最多重试 2 次（请求体
+ 先缓冲才可重放；**仅**当 body 像只读 SQL——含 SELECT/WITH 且无
+ INSERT/UPDATE/DELETE/事务边界等——才重试，避免写重放），以及 storefront 读
+ 路径的 Redis 缓存（见 Switcher And Storefront App Proxy）。再遇同类问题先看
+ 请求量与缓存命中，不要先去优化 SQL。
 - `pricing` AbortError: Remix fetcher replacement or route changes can produce
 expected aborts. Global client error reporting should ignore AbortError-like
 noise, and exposure logging should prefer `reportClientLog(..., { beacon: true })` over competing fetcher submits.
@@ -1552,12 +1733,14 @@ translation, but auto-translate still does not set it. Empty Turso
 
 ## Short Locator Flow
 
-1. Read and follow `.cursor/skills/deliberate-collab/SKILL.md`.
+1. Read and follow `.cursor/skills/deliberate-collab/SKILL.md` (P0/P1 plan;
+ default execute P0 only).
 2. `git status --short`
 3. Read the matching section in this file.
 4. `rg -n "<keyword>" app worker extensions scripts prisma`
 5. Read route entry, server helper, worker/extension caller, and data model.
-6. Apply the smallest patch.
+6. Apply the smallest P0 patch.
 7. Run the validation command that matches the change.
-8. Final response should include changed files, validation result, and residual risk.
+8. Final response should include changed files, validation result, residual
+ risk, and unfinished P1 items when applicable.
 

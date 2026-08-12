@@ -8,7 +8,7 @@ alwaysApply: true
 在本仓库中，**动手改任何文件之前**（包括编辑、新增、删除），都必须按以下顺序执行：
 
 1. **先阅读** 仓库根目录的 `AGENTS.md`，根据任务识别对应功能区、路由、server helper、worker、extension、script 或 Prisma model。
-2. **先读协作 skill**：完整读取并遵循 `.cursor/skills/deliberate-collab/SKILL.md`（先确认选型 → 方案/UI 样例 → 再动手）。
+2. **先读协作 skill**：完整读取并遵循 `.cursor/skills/deliberate-collab/SKILL.md`（先确认选型 → P0/P1 方案/UI 样例 → 默认只做 P0）。
 3. **再** 按 `AGENTS.md` 中的路径与章节定位具体源码；不要跳过索引直接全库盲搜。
 4. **改之前** 运行 `git status --short`，避免覆盖用户改动或无关未跟踪文件。
 5. 若 `AGENTS.md` 已指向明确入口文件，优先从那些文件读起，再按调用链向下。

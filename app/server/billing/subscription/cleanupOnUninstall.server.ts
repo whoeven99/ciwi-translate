@@ -5,18 +5,24 @@ import { APP_SUBSCRIPTION_STATUS } from "../types.server";
 import { cancelSubscription } from "./cancelSubscription.server";
 
 /**
- * 卸载 / GDPR redact：best-effort 取消 Shopify 订阅，并清本地 AppSubscription。
+ * 卸载 / GDPR redact：清本地 AppSubscription；可选 best-effort 取消 Shopify 订阅。
+ * APP_UNINSTALLED 仅本地清（Shopify 卸载时会自动终止订阅）；SHOP_REDACT 仍尝试 outbound cancel。
  * 与 APP_SUBSCRIPTIONS_UPDATE(CANCELLED) 互补；两边都调 cancelSubscription，后者对已删行幂等 no-op。
  */
 export async function cleanupBillingOnUninstall(params: {
   shop: string;
   accessToken?: string | null;
+  attemptShopifyCancel: boolean;
 }): Promise<void> {
-  const { shop, accessToken } = params;
+  const { shop, accessToken, attemptShopifyCancel } = params;
   const sub = await prisma.appSubscription.findUnique({ where: { shop } });
   if (!sub) return;
 
-  if (accessToken && sub.shopifySubscriptionId) {
+  if (
+    attemptShopifyCancel &&
+    accessToken &&
+    sub.shopifySubscriptionId
+  ) {
     await cancelShopifySubscriptionBestEffort({
       shop,
       accessToken,

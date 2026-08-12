@@ -6,6 +6,7 @@ import { v4Colors, v4CardStyle, V4_OVERVIEW_CARD_MIN_HEIGHT } from "../v4Styles"
 import { localeRegionCode, localeShortName } from "../localeDisplay";
 import { coverageBarColor } from "./SummaryAndHeader";
 import { AutoTranslateBadge } from "./AutoTranslateMarkers";
+import { V4Skeleton } from "./V4JobCardParts";
 import {
   formatV4LastAutoUpdateDisplay,
   formatV4NextAutoUpdateDisplay,
@@ -33,6 +34,20 @@ const AUTO_BADGE_HOVER_CSS = `
 
 /** 默认仅展示前 N 种语言，保持与左侧摘要卡等高；其余通过「查看全部」展开。 */
 const COVERAGE_PREVIEW_COUNT = 3;
+
+/** 覆盖率首帧占位：避免数据到达前先闪「暂无目标语言」。 */
+function CoverageRowsSkeleton({ rows }: { rows: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} style={{ display: "grid", gap: 8 }}>
+          <V4Skeleton width="38%" height={13} />
+          <V4Skeleton width="100%" height={8} radius={4} />
+        </div>
+      ))}
+    </>
+  );
+}
 
 type Props = {
   locales: LocaleCoverageRow[];
@@ -157,7 +172,9 @@ export function CoverageCard({
 
         <style>{AUTO_BADGE_HOVER_CSS}</style>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {locales.length === 0 ? (
+          {locales.length === 0 && loading ? (
+            <CoverageRowsSkeleton rows={COVERAGE_PREVIEW_COUNT} />
+          ) : locales.length === 0 ? (
             <div style={{ fontSize: 13, color: v4Colors.textMuted }}>
               {t("v4.coverage.noTargetLanguages")}
             </div>
@@ -239,7 +256,9 @@ export function CoverageCard({
 
       <style>{AUTO_BADGE_HOVER_CSS}</style>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {locales.length === 0 ? (
+        {locales.length === 0 && loading ? (
+          <CoverageRowsSkeleton rows={COVERAGE_PREVIEW_COUNT} />
+        ) : locales.length === 0 ? (
           <div style={{ fontSize: 13, color: v4Colors.textMuted }}>{t("v4.coverage.noTargetLanguages")}</div>
         ) : (
           displayLocales.map((row) => <CoverageRow key={row.locale} row={row} />)

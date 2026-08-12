@@ -4,6 +4,8 @@ export type LiquidTableRow = {
   targetText: string;
   replacementMethod: boolean;
   languageCode: string;
+  source: string;
+  status: string;
 };
 
 function mapLiquidDoToRow(item: Record<string, unknown>): LiquidTableRow {
@@ -13,6 +15,8 @@ function mapLiquidDoToRow(item: Record<string, unknown>): LiquidTableRow {
     targetText: String(item?.liquidAfterTranslation ?? ""),
     replacementMethod: Boolean(item?.replacementMethod),
     languageCode: String(item?.languageCode ?? ""),
+    source: String(item?.source ?? "manual"),
+    status: String(item?.status ?? "DONE"),
   };
 }
 

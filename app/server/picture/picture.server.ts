@@ -6,6 +6,7 @@ import {
   uploadImageFromUrl,
 } from "./cos.server";
 import { type BaseResponse } from "~/server/storefront/response.server";
+import { invalidateStorefrontCache } from "~/server/storefront/cache.server";
 
 export { PICTURE_CDN_URL, PICTURE_COS_URL };
 
@@ -166,6 +167,7 @@ export async function upsertUserPicture(
             : {}),
         },
       });
+      await invalidateStorefrontCache("picture", input.shop);
       return ok(toPayload(updated));
     }
 
@@ -182,6 +184,7 @@ export async function upsertUserPicture(
         isDelete: false,
       },
     });
+    await invalidateStorefrontCache("picture", input.shop);
     return ok(toPayload(created));
   } catch (err) {
     console.error(`[picture] upsert failed shop=${input.shop}:`, err);
@@ -213,6 +216,7 @@ export async function softDeleteUserPicture(args: {
       where: { id: existing.id },
       data: { isDelete: true },
     });
+    await invalidateStorefrontCache("picture", args.shop);
     return ok(toPayload(updated));
   } catch (err) {
     console.error(`[picture] delete failed shop=${args.shop}:`, err);

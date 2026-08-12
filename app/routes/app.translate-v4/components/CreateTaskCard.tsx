@@ -29,6 +29,8 @@ type Props = {
   onIsCoverChange: (v: boolean) => void;
   isHandle: boolean;
   onIsHandleChange: (v: boolean) => void;
+  includeLiquid: boolean;
+  onIncludeLiquidChange: (v: boolean) => void;
   advancedDefaultOpen?: boolean;
   submitPlacement?: "header" | "footer-center";
   createDisabled?: boolean;
@@ -52,6 +54,8 @@ export function CreateTaskCard({
   onIsCoverChange,
   isHandle,
   onIsHandleChange,
+  includeLiquid,
+  onIncludeLiquidChange,
   advancedDefaultOpen = true,
   submitPlacement = "header",
   createDisabled = false,
@@ -60,7 +64,10 @@ export function CreateTaskCard({
 }: Props) {
   const { t } = useTranslation();
   const canCreate =
-    targets.length > 0 && modules.length > 0 && !creating && !createDisabled;
+    targets.length > 0 &&
+    (modules.length > 0 || includeLiquid) &&
+    !creating &&
+    !createDisabled;
   const [advancedOpen, setAdvancedOpen] = useState(advancedDefaultOpen);
 
   // 顺序固定（按名称），避免点选时 chip 跳动。
@@ -334,6 +341,12 @@ export function CreateTaskCard({
                 label={t("v4.createTask.translateHandle")}
                 checked={isHandle}
                 onChange={onIsHandleChange}
+              />
+              <Checkbox
+                label={t("v4.createTask.includeLiquid")}
+                helpText={t("v4.createTask.includeLiquidHelp")}
+                checked={includeLiquid}
+                onChange={onIncludeLiquidChange}
               />
             </BlockStack>
           </div>

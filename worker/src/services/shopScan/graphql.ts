@@ -7,7 +7,7 @@ import { buildShopifyAdminGraphqlUrl } from "../shopifyAdminApiVersion.js";
  * 需要的最小可靠性：429 / THROTTLED / 5xx 退避重试。所有扫描读操作走这里。
  */
 
-const RETRY_5XX = new Set([502, 503, 504]);
+const RETRY_5XX = new Set([502, 503, 504, 520]);
 
 export class ShopScanThrottleError extends Error {}
 

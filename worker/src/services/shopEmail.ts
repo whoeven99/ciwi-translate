@@ -65,14 +65,8 @@ function pickFirstNameFromShop(shop: {
   return parseFirstNameFromShopOwnerName(ownerName);
 }
 
-async function resolveAccessToken(
-  shop: string,
-): Promise<string> {
-  const token = await getOfflineAccessTokenFromTsf(shop);
-  if (!token) {
-    throw new Error(`${LOG} Turso Session 中缺少 offline token shop=${shop}`);
-  }
-  return token;
+async function resolveAccessToken(shop: string): Promise<string | null> {
+  return getOfflineAccessTokenFromTsf(shop);
 }
 
 /**
@@ -111,6 +105,15 @@ export async function fetchShopContact(
     let tokenRetried = false;
     while (true) {
       const accessToken = await resolveAccessToken(normalizedShop);
+      if (!accessToken) {
+        // 已卸载或 Session 丢失：静默跳过，由 emailWorker 标 emailSent 停止重试。
+        logDetail("fetch-skipped", {
+          reason: "no_offline_token",
+          shop: normalizedShop,
+          elapsedMs: Date.now() - startedAt,
+        });
+        break;
+      }
       logDetail("graphql-request", {
         shop: normalizedShop,
         tokenRetried,

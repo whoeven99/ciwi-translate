@@ -40,6 +40,7 @@ import {
   type TranslateItem,
   type TranslatedResourceOutput,
 } from "../services/llmTranslate.js";
+import { jobModulesWithLiquid } from "../services/customLiquid.js";
 import type { TranslationV4Job } from "../services/cosmosV4.js";
 import {
   isInternalAbortReason,
@@ -276,9 +277,10 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
   // Engine routing (Google vs DeepSeek) is applied inside translateBatch.
   const blobPrefix = job.blobPrefix || `tasks/v4/${shopName}/${jobId}`;
   const hasProfileBlock = Boolean(job.profileBlock?.trim());
+  const modules = jobModulesWithLiquid(job);
 
   console.log(
-    `[translate] start job=${jobId} shop=${shopName} ${source}->${target} manualProfileBlock=${hasProfileBlock}`,
+    `[translate] start job=${jobId} shop=${shopName} ${source}->${target} manualProfileBlock=${hasProfileBlock} includeLiquid=${Boolean(job.includeLiquid)}`,
   );
 
   // Resume: restore token counter from Cosmos + Redis (412 on pause may leave Cosmos stale).
@@ -313,12 +315,12 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
   };
 
   let durableDone = 0;
-  for (const module of job.modules) {
+  for (const module of modules) {
     durableDone += (await getModuleCheckpointIds(module)).size;
   }
   const durableUnits = await countUnitsForCheckpointedResources(
     blobPrefix,
-    job.modules,
+    modules,
     getModuleCheckpointIds,
   );
   const redisDone = Number(redisProgressAtStart.translateDone) || 0;
@@ -396,6 +398,8 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
   const quotaMult = quotaTokenMultiplier(aiModel);
   let pendingQuotaCharge = 0;
   let lastKnownRemaining = 0;
+  /** 上次拿到权威 remaining 的时刻（seed / flush / 对账查询都会刷新）。 */
+  let remainingCheckedAt = 0;
   let quotaFlushSeq = 0;
   /** 是否已对本任务 seed 过 budget（避免 flush 时 resetCommitted）。 */
   let jobBudgetSeeded = false;
@@ -503,6 +507,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
       fallbackRemaining,
     );
     lastKnownRemaining = quotaRemaining;
+    remainingCheckedAt = Date.now();
     if (quotaRemaining <= 0 || quotaCap <= 0) {
       tripAbort("pause", V4_MESSAGE_QUOTA_INSUFFICIENT);
     } else {
@@ -535,6 +540,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
       return;
     }
     lastKnownRemaining = remaining;
+    remainingCheckedAt = Date.now();
     quotaFlushSeq += 1;
     await recordCreditUsage({
       shop: shopName,
@@ -564,6 +570,46 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
     });
   };
 
+  /** 剩余额度对账间隔（默认 30s）。 */
+  const QUOTA_RECHECK_MS = Math.max(
+    1_000,
+    Number(process.env.TRANSLATE_QUOTA_RECHECK_MS) || 30_000,
+  );
+  let remainingCheckInFlight: Promise<number> | null = null;
+
+  /**
+   * 读剩余额度：节流 + single-flight。
+   *
+   * 超支准入由 core 侧 budget/committed 把住（发 LLM 前预估，返回后换实扣），
+   * flush 实扣时也会刷新权威 remaining。这里只负责发现**任务外部**的额度变化
+   * （同店其它任务并发消耗、新购积分包），所以不需要每 chunk 都打 Turso——
+   * 并发 chunk 默认 64，逐 chunk 查询会把 Turso 打成瓶颈。
+   */
+  const getRemainingThrottled = async (): Promise<number> => {
+    if (Date.now() - remainingCheckedAt < QUOTA_RECHECK_MS) return lastKnownRemaining;
+    if (remainingCheckInFlight) return remainingCheckInFlight;
+    remainingCheckInFlight = getTsfRemainingWithRetry(shopName)
+      .then((remaining) => {
+        lastKnownRemaining = remaining;
+        remainingCheckedAt = Date.now();
+        return remaining;
+      })
+      .catch((e) => {
+        // Turso 抖动时沿用上次已知值继续（超支仍由 core 的 budget/committed 挡住），
+        // 并推进时间戳，避免在飞的 chunk 立刻重试把查询打成风暴。
+        remainingCheckedAt = Date.now();
+        console.warn(
+          `[translate] job=${jobId} 额度对账失败，沿用 remaining=${lastKnownRemaining}:`,
+          e instanceof Error ? e.message : e,
+        );
+        return lastKnownRemaining;
+      })
+      .finally(() => {
+        remainingCheckInFlight = null;
+      });
+    return remainingCheckInFlight;
+  };
+
   const skipTranslateLoop = translateTotal > 0 && translateDone >= translateTotal;
   if (skipTranslateLoop) {
     console.log(
@@ -585,7 +631,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
         chunkTotal: number;
       };
       const work: ChunkWork[] = [];
-      for (const module of job.modules) {
+      for (const module of modules) {
         await maybeHeartbeat();
         const initPaths = await blobListPaths(`${blobPrefix}/init/${module}/`);
         const chunkPaths = initPaths.filter((p) => p.endsWith(".json"));
@@ -624,8 +670,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
         if (abort.tripped) return;
 
         if (enforceQuota) {
-          const liveRemaining = await getTsfRemainingWithRetry(shopName);
-          lastKnownRemaining = liveRemaining;
+          const liveRemaining = await getRemainingThrottled();
           if (
             liveRemaining <= 0 ||
             quotaConcurrencyCap(Math.max(0, liveRemaining - pendingQuotaCharge)) <= 0
@@ -674,16 +719,23 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
         const checkpointedThisRun = new Set<string>();
 
         try {
-          const onProgress = async (deltaUnits: number, deltaTokens: number) => {
+          const onProgress = async (
+            deltaUnits: number,
+            deltaTokens: number,
+            googleCreditsDelta = 0,
+          ) => {
             let shouldFlushQuota = false;
             await runExclusive(async () => {
               translateUnitDone += deltaUnits;
-              liveTokens += Math.ceil(deltaTokens * tokenMultiplier);
+              const llmCredits = Math.ceil(deltaTokens * tokenMultiplier);
+              const googleCredits = Math.max(0, Math.floor(googleCreditsDelta));
+              liveTokens += llmCredits + googleCredits;
               clampUnitDone();
               // 累积额度欠账；攒够一次 perCall 量级再扣（见 flushQuota）。
               // LLM 准入的 committed 已在 callLLMOnce 内用实扣替换预估。
-              if (enforceQuota && deltaTokens > 0) {
-                pendingQuotaCharge += Math.ceil(deltaTokens * quotaMult);
+              // Google credits 已是最终积分（chars×k），不再乘模型系数。
+              if (enforceQuota && (deltaTokens > 0 || googleCredits > 0)) {
+                pendingQuotaCharge += Math.ceil(deltaTokens * quotaMult) + googleCredits;
                 if (pendingQuotaCharge >= QUOTA_FLUSH_CHARGE) shouldFlushQuota = true;
               }
             });
@@ -757,7 +809,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
             });
           };
 
-          const { usage } = await translateResources(
+          const { usage, quotaStopped } = await translateResources(
             pendingResources.map((r) => ({ resourceId: r.resourceId, fields: r.fields, module })),
             source,
             target,
@@ -772,10 +824,21 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
             },
           );
           mergeEngineUsage(engineUsage, usage);
+          if (quotaStopped) {
+            // Soft stop: in-flight LLM already settled inside translateResources.
+            // Trip abort so sibling chunks stop admitting new work; flushQuota below
+            // charges actual usage before the pause path persists status.
+            tripAbort("pause", V4_MESSAGE_QUOTA_INSUFFICIENT);
+            console.log(
+              `[translate] job=${jobId} chunk ${chunkIdx}/${chunkTotal} ` +
+                `quota soft-stop (no Google fallback; awaiting flush)`,
+            );
+          }
         } catch (e) {
+          // Legacy safety: older core builds may still throw QuotaExhaustedError.
           if (isQuotaExhaustedError(e)) {
             tripAbort("pause", V4_MESSAGE_QUOTA_INSUFFICIENT);
-            console.warn(
+            console.log(
               `[translate] job=${jobId} chunk ${chunkIdx}/${chunkTotal} stopped: quota exhausted`,
               e instanceof Error ? e.message : e,
             );
@@ -860,7 +923,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
       const redisUsedOnAbort = Number((await getProgress(jobId)).usedTokens) || 0;
       const unitsFromBlob = await countUnitsForCheckpointedResources(
         blobPrefix,
-        job.modules,
+        modules,
         getModuleCheckpointIds,
       );
       const finalizedUnits = finalizeTranslateUnitMetricsFromBlob(
@@ -955,7 +1018,7 @@ async function processTranslateJob(job: TranslationV4Job): Promise<void> {
     );
     const unitsFromBlob = await countUnitsForCheckpointedResources(
       blobPrefix,
-      job.modules,
+      modules,
       getModuleCheckpointIds,
     );
     const finalizedUnits = finalizeTranslateUnitMetricsFromBlob(

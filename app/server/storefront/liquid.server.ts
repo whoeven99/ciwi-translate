@@ -1,5 +1,5 @@
 import prisma from "~/db.server";
-import { ok, fail, type BaseResponse } from "./response.server";
+import { ok, type BaseResponse } from "./response.server";
 
 /** 对应 Java parseLiquidDataByShopNameAndLanguage 的响应 response 形状：
  *  { "原文": ["译文", replacementMethod(bool)], ... }
@@ -30,13 +30,18 @@ export async function parseLiquidTranslations(
   return readFromPrisma(shop, languageCode);
 }
 
-/** 从 Prisma LiquidRule 读取（v4）。 */
+/** 从 Prisma LiquidRule 读取（仅 DONE + 非空译文，供店面 DOM 替换）。 */
 async function readFromPrisma(
   shop: string,
   languageCode: string,
 ): Promise<BaseResponse<LiquidMap>> {
   const rules = await prisma.liquidRule.findMany({
-    where: { shop, languageCode },
+    where: {
+      shop,
+      languageCode,
+      status: "DONE",
+      afterTranslation: { not: "" },
+    },
     orderBy: { createdAt: "asc" },
     select: {
       beforeTranslation: true,
@@ -50,11 +55,10 @@ async function readFromPrisma(
     if (isJsonObject(rule.beforeTranslation) || isJsonObject(rule.afterTranslation)) {
       continue;
     }
+    if (!rule.afterTranslation?.trim()) continue;
     map[rule.beforeTranslation] = [rule.afterTranslation, rule.replacementMethod];
   }
 
-  if (Object.keys(map).length === 0) {
-    return fail(10001, "no data");
-  }
+  // 空结果也返回 success + {}，便于店面 localStorage 负缓存。
   return ok(map);
 }

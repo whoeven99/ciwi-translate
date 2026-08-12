@@ -35,3 +35,7 @@ app/generated/
 /scripts/out
 /packages/translation-core/.build/
 /packages/translation-core/dist/
+.agents/
+.cursor/
+
+

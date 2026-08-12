@@ -1,7 +1,9 @@
 import { json } from "@remix-run/node";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { verifyAppProxyHmac } from "~/server/storefront/auth.server";
+import { readThroughStorefrontCache } from "~/server/storefront/cache.server";
 import { parseLiquidTranslations } from "~/server/storefront/liquid.server";
+import { collectAutoLiquidStrings } from "~/server/storefront/liquidCollect.server";
 import { getSwitcherConfig } from "~/server/storefront/switcherConfig.server";
 import { readPageFlyTranslations } from "~/server/storefront/pagefly.server";
 import { fail } from "~/server/storefront/response.server";
@@ -68,7 +70,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     }
 
     try {
-      const result = await getCurrencyByShopName(shopName);
+      const result = await readThroughStorefrontCache(
+        "currency",
+        shopName,
+        [],
+        () => getCurrencyByShopName(shopName),
+      );
       return json(result, { headers: CORS_HEADERS });
     } catch (err) {
       console.error(`[storefront] currency list failed shop=${shopName}:`, err);
@@ -106,10 +113,50 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
 
     try {
-      const result = await parseLiquidTranslations(shopName, languageCode);
+      const result = await readThroughStorefrontCache(
+        "liquid",
+        shopName,
+        [languageCode],
+        () => parseLiquidTranslations(shopName, languageCode),
+      );
       return json(result, { headers: CORS_HEADERS });
     } catch (err) {
       console.error(`[storefront] liquid parse failed shop=${shopName}:`, err);
+      return json(fail(10001, "internal error"), {
+        status: 500,
+        headers: CORS_HEADERS,
+      });
+    }
+  }
+
+  // POST /api/storefront/liquid/collect —— 店面自动抓取未翻译文本回填
+  if (path === "liquid/collect") {
+    const shopName = url.searchParams.get("shopName") ?? auth.shop;
+    if (shopName !== auth.shop) {
+      return json(fail(403, "forbidden"), { status: 403, headers: CORS_HEADERS });
+    }
+    const languageCode = url.searchParams.get("languageCode") ?? "";
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const texts = Array.isArray(body.texts)
+      ? (body.texts as unknown[]).filter((t): t is string => typeof t === "string")
+      : [];
+
+    try {
+      const result = await collectAutoLiquidStrings({
+        shop: auth.shop,
+        target: languageCode,
+        texts,
+        meta: {
+          pathPrefix: url.searchParams.get("path_prefix") ?? undefined,
+          userAgent: request.headers.get("user-agent") ?? undefined,
+        },
+      });
+      return json(
+        { success: true, errorCode: null, errorMsg: null, response: result },
+        { status: 202, headers: CORS_HEADERS },
+      );
+    } catch (err) {
+      console.error(`[storefront] liquid collect failed shop=${shopName}:`, err);
       return json(fail(10001, "internal error"), {
         status: 500,
         headers: CORS_HEADERS,
@@ -128,7 +175,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     if (shopName) shop = shopName;
 
     try {
-      const result = await getSwitcherConfig(shop);
+      const result = await readThroughStorefrontCache("switcher", shop, [], () =>
+        getSwitcherConfig(shop),
+      );
       return json(result, { headers: CORS_HEADERS });
     } catch (err) {
       console.error(`[storefront] getSwitcherConfig failed shop=${shop}:`, err);
@@ -174,10 +223,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
 
     try {
-      const result = await getCurrencyCacheData(
+      const result = await readThroughStorefrontCache(
+        "currency",
         shopName,
-        currencyCode,
-        fromCurrencyCode,
+        ["cache", currencyCode, fromCurrencyCode],
+        () => getCurrencyCacheData(shopName, currencyCode, fromCurrencyCode),
       );
       return json(result, { headers: CORS_HEADERS });
     } catch (err) {
@@ -202,11 +252,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
 
     try {
-      const result = await getProductPictures({
-        shop: shopName,
-        imageId,
-        languageCode,
-      });
+      const result = await readThroughStorefrontCache(
+        "picture",
+        shopName,
+        ["product", imageId, languageCode],
+        () => getProductPictures({ shop: shopName, imageId, languageCode }),
+      );
       return json(result, { headers: CORS_HEADERS });
     } catch (err) {
       console.error(`[storefront] product image read failed shop=${shopName}:`, err);
@@ -229,10 +280,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
 
     try {
-      const result = await getShopPictures({
-        shop: shopName,
-        languageCode,
-      });
+      const result = await readThroughStorefrontCache(
+        "picture",
+        shopName,
+        ["shop", languageCode],
+        () => getShopPictures({ shop: shopName, languageCode }),
+      );
       return json(result, { headers: CORS_HEADERS });
     } catch (err) {
       console.error(`[storefront] shop image read failed shop=${shopName}:`, err);

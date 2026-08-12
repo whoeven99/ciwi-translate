@@ -7,10 +7,13 @@ import AppStatusBadge from "~/ui/components/AppStatusBadge";
 import AppButton from "~/ui/components/AppButton";
 import { useCountUp } from "../hooks/useCountUp";
 import { formatV4PlanType } from "../v4I18n";
+import { V4Skeleton } from "./V4JobCardParts";
 
 type Props = {
   summary: CoverageSummary;
   compact?: boolean;
+  /** 首帧骨架：文档不再阻塞等覆盖率，数据到达前不显示会被改写的 0。 */
+  loading?: boolean;
 };
 
 /** 左侧摘要卡固定宽度与高度，不随右侧表单展开而拉伸。 */
@@ -20,6 +23,7 @@ const SUMMARY_RING_SIZE = 148;
 export function SummaryDonutCard({
   summary,
   compact = false,
+  loading = false,
 }: Props) {
   const { t } = useTranslation();
   const percent = summary.overallPercent ?? 0;
@@ -89,10 +93,14 @@ export function SummaryDonutCard({
                 overflowWrap: "anywhere",
               }}
             >
-              {t("v4.targetLanguagesSummary", {
-                total: summary.languageCount,
-                translated: translatedLanguageCount,
-              })}
+              {loading ? (
+                <V4Skeleton width={200} height={14} />
+              ) : (
+                t("v4.targetLanguagesSummary", {
+                  total: summary.languageCount,
+                  translated: translatedLanguageCount,
+                })
+              )}
             </div>
           </div>
           <div
@@ -109,21 +117,25 @@ export function SummaryDonutCard({
               label={t("v4.translationProgress")}
               value={`${animatedPercent}%`}
               unit={t("v4.overallCompletion")}
+              loading={loading}
             />
             <StatFoot
               label={t("v4.languagesWithContent")}
               value={`${animatedTranslatedLang}`}
               unit={t("v4.outOfLanguages", { count: summary.languageCount })}
+              loading={loading}
             />
             <StatFoot
               label={t("v4.translatedItems")}
               value={formatLargeCount(animatedTranslatedItems)}
               unit={t("v4.done")}
+              loading={loading}
             />
             <StatFoot
               label={t("v4.pendingItems")}
               value={formatLargeCount(animatedPendingItems)}
               unit={t("v4.pending")}
+              loading={loading}
             />
           </div>
         </div>
@@ -192,7 +204,11 @@ export function SummaryDonutCard({
                   color: v4Colors.text,
                 }}
               >
-                {summary.overallPercent != null ? `${animatedPercent}%` : "—"}
+                {loading
+                ? "—"
+                : summary.overallPercent != null
+                  ? `${animatedPercent}%`
+                  : "—"}
               </span>
               <span
                 style={{
@@ -265,7 +281,11 @@ export function SummaryDonutCard({
             }}
           >
             <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: v4Colors.text }}>
-              {summary.overallPercent != null ? `${animatedPercent}%` : "—"}
+              {loading
+                ? "—"
+                : summary.overallPercent != null
+                  ? `${animatedPercent}%`
+                  : "—"}
             </span>
             <span style={{ fontSize: 11, color: v4Colors.primaryHover ?? v4Colors.primary, marginTop: 4, fontWeight: 600 }}>
               {t("v4.translated")}
@@ -304,11 +324,13 @@ function StatFoot({
   value,
   unit,
   align = "left",
+  loading = false,
 }: {
   label: string;
   value: string;
   unit: string;
   align?: "left" | "right";
+  loading?: boolean;
 }) {
   return (
     <div style={{ textAlign: align, minWidth: 0 }}>
@@ -334,7 +356,7 @@ function StatFoot({
           color: v4Colors.text,
         }}
       >
-        {value}
+        {loading ? <V4Skeleton width={64} height={22} /> : value}
       </div>
       <div
         style={{

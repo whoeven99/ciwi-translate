@@ -1,5 +1,5 @@
 import { CosmosClient, type Container } from "@azure/cosmos";
-import { getProgress, pushHint } from "./redisV4.js";
+import { getProgress, markEmailPendingShop, pushHint } from "./redisV4.js";
 
 export type TranslationV4Status =
   | "CREATED"
@@ -78,8 +78,18 @@ export type TranslationV4Job = {
   limitPerType: number;
   isCover: boolean;
   isHandle: boolean;
+  /**
+   * 是否包含自定义 Liquid / 第三方文案（Turso LiquidRule PENDING→DONE）。
+   * 不进 Shopify module 枚举；内部虚拟 module CUSTOM_LIQUID。
+   */
+  includeLiquid?: boolean;
   /** 任务来源标识（如 "Ciwi-Translator-Task"，"TsFrontend"，"TsFrontend-Auto"）。旧任务可能缺省。 */
   taskSource?: string | null;
+  /**
+   * 同一次「创建任务」点击共用的批次 id。
+   * 手动完成邮件按 batchId 聚合；缺省则走整店待发汇总（兼容旧任务）。
+   */
+  batchId?: string | null;
   status: TranslationV4Status;
   claimedBy: string | null;
   claimedAt: string | null;
@@ -534,6 +544,7 @@ export async function updateJob(
         .replace<TranslationV4Job>(updated, {
           accessCondition: { type: "IfMatch", condition: etag! },
         });
+      await noteEmailPendingIfTerminal(updated, updates.status);
       return;
     } catch (e) {
       if (isCosmosPreconditionFailed(e) && attempt < maxAttempts - 1) {
@@ -841,8 +852,28 @@ export async function releaseJobsClaimedBySuffix(claimSuffix: string): Promise<n
 }
 
 /** 完成通知邮件涵盖的终态（含用户取消的 CANCELLED）。 */
+const EMAIL_NOTIFY_STATUSES = ["COMPLETED", "PAUSED", "CANCELLED"] as const;
+
 function emailNotifyStatusFilter(): string {
-  return "(c.status = 'COMPLETED' OR c.status = 'PAUSED' OR c.status = 'CANCELLED')";
+  return `(${EMAIL_NOTIFY_STATUSES.map((s) => `c.status = '${s}'`).join(" OR ")})`;
+}
+
+/**
+ * 任务刚进入待发邮件终态时打 Redis 标记，让 emailWorker 走快路径、
+ * 免掉每轮两次跨分区 DISTINCT。
+ *
+ * 这里只覆盖 Worker 侧的状态写入；App 侧手动暂停/取消不经过本函数，
+ * 由 emailWorker 的低频 Cosmos 兜底扫描兜住，所以标记漏写不会丢邮件。
+ */
+async function noteEmailPendingIfTerminal(
+  job: TranslationV4Job,
+  nextStatus: TranslationV4Status | undefined,
+): Promise<void> {
+  if (!nextStatus) return;
+  if (!(EMAIL_NOTIFY_STATUSES as readonly string[]).includes(nextStatus)) return;
+  if (job.emailSent === true) return;
+  const pool = job.taskSource === TSF_AUTO_TASK_SOURCE ? "auto" : "manual";
+  await markEmailPendingShop(job.shopName, pool);
 }
 
 /**
@@ -963,7 +994,7 @@ export async function findManualJobsNeedingEmailForShop(
 }
 
 /**
- * 近期手动任务（用于邮件批次聚合：等同批创建的任务全部终态后再发一封）。
+ * 近期手动任务（用于无 batchId 旧任务的时间窗邮件聚合）。
  */
 export async function findRecentManualJobsForShop(
   shopName: string,
@@ -975,7 +1006,7 @@ export async function findRecentManualJobsForShop(
       .items.query<TranslationV4Job>(
         {
           query: `
-            SELECT c.id, c.shopName, c.status, c.taskSource, c.target, c.emailSent,
+            SELECT c.id, c.shopName, c.status, c.taskSource, c.batchId, c.target, c.emailSent,
                    c.createdAt, c.updatedAt, c.metrics
             FROM c
             WHERE ${manualEmailTaskSourceFilter()}
@@ -1013,6 +1044,41 @@ export async function hasActiveManualJobsForShop(shopName: string): Promise<bool
           parameters: [
             { name: "@shopName", value: shopName },
             { name: "@autoSource", value: TSF_AUTO_TASK_SOURCE },
+            { name: "@statuses", value: activeStatuses },
+          ],
+        },
+        { partitionKey: shopName },
+      )
+      .fetchAll();
+    return (resources[0] ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** 检查某手动邮件批次内是否仍有进行中任务（该批全部终态后再发该批邮件）。 */
+export async function hasActiveManualJobsForBatch(
+  shopName: string,
+  batchId: string,
+): Promise<boolean> {
+  const id = batchId.trim();
+  if (!id) return false;
+  const activeStatuses: TranslationV4Status[] = ACTIVE_V4_STATUSES;
+  try {
+    const { resources } = await getContainer()
+      .items.query<number>(
+        {
+          query: `
+            SELECT VALUE COUNT(1) FROM c
+            WHERE c.shopName = @shopName
+              AND ${manualEmailTaskSourceFilter()}
+              AND c.batchId = @batchId
+              AND ARRAY_CONTAINS(@statuses, c.status)
+          `,
+          parameters: [
+            { name: "@shopName", value: shopName },
+            { name: "@autoSource", value: TSF_AUTO_TASK_SOURCE },
+            { name: "@batchId", value: id },
             { name: "@statuses", value: activeStatuses },
           ],
         },

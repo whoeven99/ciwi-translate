@@ -14,6 +14,7 @@
 
 export type RedisLike = {
   get(key: string): Promise<string | null>;
+  mget(keys: string[]): Promise<(string | null)[]>;
   set(key: string, value: string, ...args: unknown[]): Promise<unknown>;
   del(...keys: string[]): Promise<number>;
   hget(key: string, field: string): Promise<string | null>;
@@ -401,6 +402,17 @@ class MigratingRedis implements RedisLike {
       { op: "get", key },
       false,
     )) as string | null;
+  }
+
+  /**
+   * 路由是按 key 决定的，同一批 key 不保证落在同一实例，所以这里逐 key 复用 get
+   * 的路由而不是真的发一条 MGET。sole mode 下 core 拿到的是原生 ioredis（真批量），
+   * 这个实现只是双写期的正确性兜底——缺了它 translation-core 的 TM 批量读会整批
+   * 当成 miss。
+   */
+  async mget(keys: string[]): Promise<(string | null)[]> {
+    if (keys.length === 0) return [];
+    return Promise.all(keys.map((key) => this.get(key)));
   }
 
   async set(key: string, value: string, ...args: unknown[]): Promise<unknown> {
