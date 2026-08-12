@@ -23,6 +23,20 @@ const host = new URL(process.env.SHOPIFY_APP_URL || "http://localhost")
 
 const translationCoreAliases = [
   {
+    find: "@ciwi/translation-core/llm-translate",
+    replacement: path.resolve(
+      appRoot,
+      "packages/translation-core/src/llmTranslate.ts",
+    ),
+  },
+  {
+    find: "@ciwi/translation-core/translation-memory",
+    replacement: path.resolve(
+      appRoot,
+      "packages/translation-core/src/translationMemory.ts",
+    ),
+  },
+  {
     find: "@ciwi/translation-core/runtime",
     replacement: path.resolve(appRoot, "packages/translation-core/src/runtime.ts"),
   },
