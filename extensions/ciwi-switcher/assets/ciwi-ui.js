@@ -2677,9 +2677,12 @@ const AUTO_LIQUID_MIN_LEN = 2;
 const AUTO_LIQUID_BATCH = 60; // 单次最多上报条数
 const AUTO_LIQUID_REPORTED_CAP = 1500; // 客户端已报指纹上限
 
-// 性能护栏：单次最多遍历节点数与时间预算，超出即放弃本页采集（可失败，不拖慢页面）。
+// 性能护栏：最多遍历节点数；扫描按 idle 分片（单片时间上限），不因超时整页放弃。
 const AUTO_LIQUID_MAX_NODES = 6000;
-const AUTO_LIQUID_TIME_BUDGET_MS = 12;
+/** 单片主线程扫描上限（ms）；到点 yield，继续下一段 idle。 */
+const AUTO_LIQUID_SLICE_MS = 8;
+/** 同店同语采集防重入。 */
+const autoLiquidCollectInFlight = new Set();
 
 /** 店面采集日志默认开；localStorage.ciwi_debug_auto_liquid=0 可关。 */
 function autoLiquidLog(...args) {
@@ -2833,10 +2836,11 @@ function isAutoLiquidCandidate(text) {
 /**
  * 抓取当前页面上未翻译文本并上报后端（默认开；主题预览 / 主语言页由调用方跳过）。
  * 门C：只上报仍像源语言的条目。客户端去重 + 指纹缓存；重活在后端；翻译业务过滤在入库侧。
- * 性能：idle 调度 + 节点/时间预算 + 可中断；可采失败，不拖慢页面。
+ * 性能：外层 idle 调度 + TreeWalker 分片 yield；到节点上限用已扫候选上报，不因时间整页放弃。
  * @param {{ primaryLanguage?: string }} [options]
  */
 export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
+  let flightKey = "";
   try {
     const shopValue = shop?.value || shop;
     const language = ciwiBlock?.querySelector(
@@ -2867,6 +2871,13 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
       }
     } catch {}
 
+    flightKey = `${shopValue}:${language}`;
+    if (autoLiquidCollectInFlight.has(flightKey)) {
+      autoLiquidLog("skip", { reason: "in_flight", flightKey });
+      return;
+    }
+    autoLiquidCollectInFlight.add(flightKey);
+
     const targetScript = localeScriptRegex(language);
     autoLiquidLog("classify_mode", {
       language,
@@ -2877,6 +2888,12 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
 
     const reportedKey = autoLiquidReportedKey(shopValue, language);
     const reported = loadAutoLiquidReported(reportedKey);
+
+    if (!document.body) {
+      autoLiquidCollectInFlight.delete(flightKey);
+      autoLiquidLog("skip", { reason: "no_body" });
+      return;
+    }
 
     const walker = document.createTreeWalker(
       document.body,
@@ -2914,115 +2931,150 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
     let targetCount = 0;
     let unknownCount = 0;
     let nodes = 0;
-    let aborted = false;
-    let abortReason = "";
+    let truncated = false;
 
-    while (walker.nextNode()) {
-      nodes += 1;
-      // 性能护栏：节点/时间超预算即放弃本页（不改变已扫状态，不上报）。
-      if (nodes > AUTO_LIQUID_MAX_NODES) {
-        aborted = true;
-        abortReason = "max_nodes";
-        break;
-      }
-      if ((nodes & 0xff) === 0 && now() - startedAt > AUTO_LIQUID_TIME_BUDGET_MS) {
-        aborted = true;
-        abortReason = "time_budget";
-        break;
-      }
-
-      const t = normalizeText(walker.currentNode.nodeValue || "");
-      if (!isAutoLiquidCandidate(t)) continue;
-      if (seen.has(t)) continue;
-      seen.add(t);
-
-      const cls = classifyAutoLiquidText(t, language);
-      if (cls === "source") {
-        sourceCount += 1;
-        if (!reported.has(t) && candidates.length < AUTO_LIQUID_BATCH) {
-          candidates.push(t);
-        }
-      } else if (cls === "target") {
-        targetCount += 1;
+    const scheduleSlice = (fn) => {
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        window.requestIdleCallback(fn, { timeout: 1000 });
       } else {
-        unknownCount += 1;
+        setTimeout(fn, 0);
       }
-    }
+    };
 
-    const elapsedMs = Math.round(now() - startedAt);
-    autoLiquidLog("scan", {
-      nodes,
-      uniqueTexts: seen.size,
-      elapsedMs,
-      aborted,
-      abortReason: abortReason || null,
-      sourceCount,
-      targetCount,
-      unknownCount,
-      candidateCount: candidates.length,
-    });
-
-    if (aborted) {
-      autoLiquidLog("skip", {
-        reason: "aborted",
-        abortReason,
+    const finishAndMaybePost = () => {
+      autoLiquidCollectInFlight.delete(flightKey);
+      const elapsedMs = Math.round(now() - startedAt);
+      autoLiquidLog("scan", {
         nodes,
+        uniqueTexts: seen.size,
         elapsedMs,
-        timeBudgetMs: AUTO_LIQUID_TIME_BUDGET_MS,
+        truncated,
+        truncateReason: truncated ? "max_nodes" : null,
+        sourceCount,
+        targetCount,
+        unknownCount,
+        candidateCount: candidates.length,
+        sliceMs: AUTO_LIQUID_SLICE_MS,
         maxNodes: AUTO_LIQUID_MAX_NODES,
       });
-      return;
-    }
 
-    if (!candidates.length) {
-      autoLiquidLog("skip", { reason: "no_candidates", sourceCount });
-      return;
-    }
+      if (!candidates.length) {
+        autoLiquidLog("skip", { reason: "no_candidates", sourceCount, truncated });
+        return;
+      }
 
-    // 乐观标记为已报，避免同页多次触发 / 短时间重复上报
-    candidates.forEach((t) => reported.add(t));
-    saveAutoLiquidReported(reportedKey, reported);
+      // 乐观标记为已报，避免同页多次触发 / 短时间重复上报
+      candidates.forEach((t) => reported.add(t));
+      saveAutoLiquidReported(reportedKey, reported);
 
-    autoLiquidLog("post", {
-      language,
-      primaryLanguage,
-      count: candidates.length,
-      texts: candidates.slice(0, 15).map((t) => t.slice(0, 80)),
-    });
-
-    CollectLiquidStrings({
-      shopName: shopValue,
-      languageCode: language,
-      texts: candidates,
-    })
-      .then((res) => {
-        const body = res?.response;
-        autoLiquidLog("response", {
-          success: res?.success,
-          scheduled: body?.scheduled,
-          skipped: body?.skipped,
-          reason: body?.reason,
-          raw: body,
-        });
-        const reason = body?.reason;
-        if (
-          body?.skipped &&
-          (reason === "disabled" ||
-            reason === "primary_locale" ||
-            reason === "total_cap" ||
-            reason === "daily_cap" ||
-            reason === "resource_not_ready")
-        ) {
-          try {
-            sessionStorage.setItem(sessionFlag, "1");
-          } catch {}
-          autoLiquidLog("session_off_from_server", { reason, sessionFlag });
-        }
-      })
-      .catch((err) => {
-        autoLiquidLog("request_failed", err);
+      autoLiquidLog("post", {
+        language,
+        primaryLanguage,
+        count: candidates.length,
+        truncated,
+        texts: candidates.slice(0, 15).map((t) => t.slice(0, 80)),
       });
+
+      CollectLiquidStrings({
+        shopName: shopValue,
+        languageCode: language,
+        texts: candidates,
+      })
+        .then((res) => {
+          const body = res?.response;
+          autoLiquidLog("response", {
+            success: res?.success,
+            scheduled: body?.scheduled,
+            skipped: body?.skipped,
+            reason: body?.reason,
+            raw: body,
+          });
+          const reason = body?.reason;
+          if (
+            body?.skipped &&
+            (reason === "disabled" ||
+              reason === "primary_locale" ||
+              reason === "total_cap" ||
+              reason === "daily_cap" ||
+              reason === "resource_not_ready")
+          ) {
+            try {
+              sessionStorage.setItem(sessionFlag, "1");
+            } catch {}
+            autoLiquidLog("session_off_from_server", { reason, sessionFlag });
+          }
+        })
+        .catch((err) => {
+          autoLiquidLog("request_failed", err);
+        });
+    };
+
+    const pump = (deadline) => {
+      try {
+        const sliceStart = now();
+        const sliceExhausted = () => {
+          if (
+            deadline &&
+            typeof deadline.timeRemaining === "function" &&
+            deadline.timeRemaining() < 1
+          ) {
+            return true;
+          }
+          return now() - sliceStart >= AUTO_LIQUID_SLICE_MS;
+        };
+
+        while (walker.nextNode()) {
+          nodes += 1;
+          if (nodes > AUTO_LIQUID_MAX_NODES) {
+            truncated = true;
+            break;
+          }
+
+          const t = normalizeText(walker.currentNode.nodeValue || "");
+          if (!isAutoLiquidCandidate(t)) {
+            if (sliceExhausted()) {
+              scheduleSlice(pump);
+              return;
+            }
+            continue;
+          }
+          if (seen.has(t)) {
+            if (sliceExhausted()) {
+              scheduleSlice(pump);
+              return;
+            }
+            continue;
+          }
+          seen.add(t);
+
+          const cls = classifyAutoLiquidText(t, language);
+          if (cls === "source") {
+            sourceCount += 1;
+            if (!reported.has(t) && candidates.length < AUTO_LIQUID_BATCH) {
+              candidates.push(t);
+            }
+          } else if (cls === "target") {
+            targetCount += 1;
+          } else {
+            unknownCount += 1;
+          }
+
+          if (sliceExhausted()) {
+            scheduleSlice(pump);
+            return;
+          }
+        }
+
+        finishAndMaybePost();
+      } catch (err) {
+        autoLiquidCollectInFlight.delete(flightKey);
+        console.error("[ciwi-auto-liquid] CollectUntranslatedText failed:", err);
+      }
+    };
+
+    scheduleSlice(pump);
   } catch (err) {
+    if (flightKey) autoLiquidCollectInFlight.delete(flightKey);
     console.error("[ciwi-auto-liquid] CollectUntranslatedText failed:", err);
   }
 }
