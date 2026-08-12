@@ -2674,7 +2674,8 @@ export class CiwiswitcherForm extends HTMLElement {
 
 const AUTO_LIQUID_MAX_LEN = 200;
 const AUTO_LIQUID_MIN_LEN = 2;
-const AUTO_LIQUID_BATCH = 60; // 单次最多上报条数
+/** 单次 POST 分片大小（对齐服务端 MAX_PER_REQUEST）；候选本身不设条数上限。 */
+const AUTO_LIQUID_POST_CHUNK = 100;
 const AUTO_LIQUID_REPORTED_CAP = 1500; // 客户端已报指纹上限
 
 // 性能护栏：最多遍历节点数；扫描按 idle 分片（单片时间上限），不因超时整页放弃。
@@ -2888,6 +2889,141 @@ function isAutoLiquidCandidate(text) {
 }
 
 /**
+ * 采集扫描根：主文档 body + open shadowRoot + 同源 iframe（含嵌套同源）。
+ * 跨域 iframe / closed shadow 无法访问，自动跳过。
+ */
+function collectAutoLiquidScanRoots(ciwiBlock) {
+  const roots = [];
+  const seenRoots = new Set();
+  const seenDocs = new Set();
+
+  const pushRoot = (root) => {
+    if (!root || seenRoots.has(root)) return;
+    seenRoots.add(root);
+    roots.push(root);
+  };
+
+  // 跨 iframe realm 时 `instanceof ShadowRoot` 可能失败，用 host 特征判断。
+  const isShadowRootNode = (node) =>
+    !!(
+      node &&
+      node.nodeType === Node.DOCUMENT_FRAGMENT_NODE &&
+      node.host
+    );
+
+  const docOf = (node) => {
+    try {
+      if (!node) return document;
+      if (node.nodeType === Node.DOCUMENT_NODE) return node;
+      // ShadowRoot 无 createTreeWalker，必须用 host 所在 document
+      if (isShadowRootNode(node)) {
+        return node.ownerDocument || node.host?.ownerDocument || document;
+      }
+      return node.ownerDocument || document;
+    } catch {
+      return document;
+    }
+  };
+
+  const addShadowsIn = (scope) => {
+    if (!scope) return;
+    pushRoot(scope);
+    const walkerDoc = docOf(scope);
+
+    try {
+      if (scope.nodeType === Node.ELEMENT_NODE && scope.shadowRoot) {
+        addShadowsIn(scope.shadowRoot);
+      }
+      const elWalker = walkerDoc.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT, {
+        acceptNode(node) {
+          if (!node || skipTags.has(node.nodeName)) return NodeFilter.FILTER_REJECT;
+          try {
+            if (ciwiBlock && ciwiBlock.contains(node)) return NodeFilter.FILTER_REJECT;
+          } catch {
+            // 跨文档 contains 可能抛错 → 不据此拒绝
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
+      while (elWalker.nextNode()) {
+        const el = elWalker.currentNode;
+        if (el?.shadowRoot) addShadowsIn(el.shadowRoot);
+      }
+    } catch {
+      // ignore broken roots
+    }
+  };
+
+  const addDocumentTree = (doc) => {
+    if (!doc || seenDocs.has(doc)) return;
+    seenDocs.add(doc);
+    try {
+      if (doc.body) addShadowsIn(doc.body);
+    } catch {
+      // ignore
+    }
+    let iframes = [];
+    try {
+      iframes = Array.from(doc.querySelectorAll("iframe"));
+    } catch {
+      return;
+    }
+    for (const iframe of iframes) {
+      try {
+        const idoc = iframe.contentDocument;
+        if (idoc) addDocumentTree(idoc);
+      } catch {
+        // 跨域：读不到 contentDocument
+      }
+    }
+  };
+
+  try {
+    addDocumentTree(document);
+  } catch {
+    if (document.body) pushRoot(document.body);
+  }
+
+  return roots;
+}
+
+function createAutoLiquidTextWalker(root, ciwiBlock) {
+  let walkerDoc = document;
+  try {
+    if (
+      root &&
+      root.nodeType === Node.DOCUMENT_FRAGMENT_NODE &&
+      root.host
+    ) {
+      walkerDoc = root.ownerDocument || root.host?.ownerDocument || document;
+    } else if (root?.ownerDocument) {
+      walkerDoc = root.ownerDocument;
+    }
+  } catch {
+    walkerDoc = document;
+  }
+
+  return walkerDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (skipTags.has(parent.nodeName)) return NodeFilter.FILTER_REJECT;
+      try {
+        if (ciwiBlock && ciwiBlock.contains(parent)) return NodeFilter.FILTER_REJECT;
+        if (typeof parent.closest === "function" && parent.closest("#ciwi-container")) {
+          return NodeFilter.FILTER_REJECT;
+        }
+      } catch {
+        // ignore
+      }
+      if (parent.isContentEditable) return NodeFilter.FILTER_REJECT;
+      if (isElementHiddenForTranslation(parent)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+}
+
+/**
  * 抓取当前页面上未翻译文本并上报后端（默认开；主题预览 / 主语言页由调用方跳过）。
  * 门C：只上报仍像源语言的条目。客户端去重 + 指纹缓存；重活在后端；翻译业务过滤在入库侧。
  * 性能：外层 idle 调度 + TreeWalker 分片 yield；到节点上限用已扫候选上报，不因时间整页放弃。
@@ -2964,26 +3100,16 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
       return;
     }
 
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const parent = node.parentElement;
-          if (!parent) return NodeFilter.FILTER_REJECT;
-          if (skipTags.has(parent.nodeName)) return NodeFilter.FILTER_REJECT;
-          // 跳过 switcher 自身 UI
-          if (ciwiBlock && ciwiBlock.contains(parent))
-            return NodeFilter.FILTER_REJECT;
-          if (parent.closest("#ciwi-container"))
-            return NodeFilter.FILTER_REJECT;
-          if (parent.isContentEditable) return NodeFilter.FILTER_REJECT;
-          if (isElementHiddenForTranslation(parent))
-            return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      },
-    );
+    const scanRoots = collectAutoLiquidScanRoots(ciwiBlock);
+    if (!scanRoots.length) {
+      autoLiquidCollectInFlight.delete(flightKey);
+      autoLiquidLog("skip", { reason: "no_scan_roots" });
+      return;
+    }
+    autoLiquidLog("scan_roots", {
+      count: scanRoots.length,
+      note: "body + open shadowRoot + same-origin iframe(s)",
+    });
 
     const startedAt =
       typeof performance !== "undefined" && performance.now
@@ -3001,6 +3127,9 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
     let unknownCount = 0;
     let nodes = 0;
     let truncated = false;
+    let rootIndex = 0;
+    let walker = createAutoLiquidTextWalker(scanRoots[0], ciwiBlock);
+    rootIndex = 1;
 
     const scheduleSlice = (fn) => {
       if (typeof window !== "undefined" && "requestIdleCallback" in window) {
@@ -3019,6 +3148,7 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
         elapsedMs,
         truncated,
         truncateReason: truncated ? "max_nodes" : null,
+        scanRoots: scanRoots.length,
         sourceCount,
         targetCount,
         unknownCount,
@@ -3032,50 +3162,65 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
         return;
       }
 
-      // 乐观标记为已报，避免同页多次触发 / 短时间重复上报
-      candidates.forEach((t) => reported.add(t));
-      saveAutoLiquidReported(reportedKey, reported);
-
       autoLiquidLog("post", {
         language,
         primaryLanguage,
         count: candidates.length,
+        chunks: Math.ceil(candidates.length / AUTO_LIQUID_POST_CHUNK),
+        chunkSize: AUTO_LIQUID_POST_CHUNK,
         truncated,
         texts: candidates.slice(0, 15).map((t) => t.slice(0, 80)),
       });
 
-      CollectLiquidStrings({
-        shopName: shopValue,
-        languageCode: language,
-        texts: candidates,
-      })
-        .then((res) => {
-          const body = res?.response;
-          autoLiquidLog("response", {
-            success: res?.success,
-            scheduled: body?.scheduled,
-            skipped: body?.skipped,
-            reason: body?.reason,
-            raw: body,
-          });
-          const reason = body?.reason;
-          if (
-            body?.skipped &&
-            (reason === "disabled" ||
-              reason === "primary_locale" ||
-              reason === "total_cap" ||
-              reason === "daily_cap" ||
-              reason === "resource_not_ready")
-          ) {
-            try {
-              sessionStorage.setItem(sessionFlag, "1");
-            } catch {}
-            autoLiquidLog("session_off_from_server", { reason, sessionFlag });
+      // 分片上报；成功后再写入已报指纹（避免失败也被标已报）。
+      const postChunks = async () => {
+        for (let i = 0; i < candidates.length; i += AUTO_LIQUID_POST_CHUNK) {
+          const chunk = candidates.slice(i, i + AUTO_LIQUID_POST_CHUNK);
+          try {
+            const res = await CollectLiquidStrings({
+              shopName: shopValue,
+              languageCode: language,
+              texts: chunk,
+            });
+            const body = res?.response;
+            autoLiquidLog("response", {
+              success: res?.success,
+              chunkIndex: Math.floor(i / AUTO_LIQUID_POST_CHUNK),
+              chunkCount: chunk.length,
+              scheduled: body?.scheduled,
+              skipped: body?.skipped,
+              reason: body?.reason,
+              raw: body,
+            });
+            if (res?.success) {
+              chunk.forEach((t) => reported.add(t));
+              saveAutoLiquidReported(reportedKey, reported);
+            }
+            const reason = body?.reason;
+            if (
+              body?.skipped &&
+              (reason === "disabled" ||
+                reason === "primary_locale" ||
+                reason === "total_cap" ||
+                reason === "daily_cap" ||
+                reason === "resource_not_ready")
+            ) {
+              try {
+                sessionStorage.setItem(sessionFlag, "1");
+              } catch {}
+              autoLiquidLog("session_off_from_server", { reason, sessionFlag });
+              break;
+            }
+          } catch (err) {
+            autoLiquidLog("request_failed", {
+              chunkIndex: Math.floor(i / AUTO_LIQUID_POST_CHUNK),
+              err,
+            });
+            break;
           }
-        })
-        .catch((err) => {
-          autoLiquidLog("request_failed", err);
-        });
+        }
+      };
+      postChunks();
     };
 
     const pump = (deadline) => {
@@ -3092,7 +3237,19 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
           return now() - sliceStart >= AUTO_LIQUID_SLICE_MS;
         };
 
-        while (walker.nextNode()) {
+        while (!truncated) {
+          if (!walker) {
+            if (rootIndex >= scanRoots.length) break;
+            walker = createAutoLiquidTextWalker(scanRoots[rootIndex], ciwiBlock);
+            rootIndex += 1;
+            continue;
+          }
+
+          if (!walker.nextNode()) {
+            walker = null;
+            continue;
+          }
+
           nodes += 1;
           if (nodes > AUTO_LIQUID_MAX_NODES) {
             truncated = true;
@@ -3119,7 +3276,7 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
           const cls = classifyAutoLiquidText(t, language, primaryLanguage);
           if (cls === "source") {
             sourceCount += 1;
-            if (!reported.has(t) && candidates.length < AUTO_LIQUID_BATCH) {
+            if (!reported.has(t)) {
               candidates.push(t);
             }
           } else if (cls === "target") {
