@@ -686,8 +686,14 @@ export function classifyField(
       return shouldTranslateMetafieldJson(value, shopifyType) ? "json" : "skip";
     }
   }
+  // Liquid block tags ({% … %}) must use liquid_html even without HTML markup —
+  // e.g. EMAIL_TEMPLATE title is plain text + Liquid; plain path lets the LLM
+  // reorder ⟦n⟧ placeholders and break if/endif nesting on writeback.
+  if (value !== undefined && isLiquidTemplate(value)) {
+    return "liquid_html";
+  }
   if (value !== undefined && isHtml(value)) {
-    return isLiquidTemplate(value) ? "liquid_html" : "html";
+    return "html";
   }
   return "plain";
 }
