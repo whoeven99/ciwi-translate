@@ -7,19 +7,16 @@ import {
   type CSSProperties,
 } from "react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import {
   Badge,
   BlockStack,
   Button,
   Card,
-  Checkbox,
-  Divider,
   InlineStack,
   Page,
   ProgressBar,
-  Select,
   Text,
 } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
@@ -32,8 +29,6 @@ import type {
 } from "~/server/translateV4/coverage.server";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import {
-  AI_MODEL_OPTIONS,
-  DEFAULT_AI_MODEL,
   DEFAULT_MODULE_KEYS,
 } from "~/routes/app.translate-v4/constants";
 import {
@@ -43,7 +38,6 @@ import {
 } from "~/routes/app.translate-v4/useCreateTaskEstimate";
 import {
   formatV4CreateTasksMessage,
-  getV4AiModelLabel,
   getV4ModuleLabel,
   getV4StatusLabel,
   translateV4Message,
@@ -70,7 +64,8 @@ const EMPTY_COVERAGE: CoverageSummary = {
 type Recommendation = {
   id: string;
   title: string;
-  reason: string;
+  locale: string;
+  reasons: string[];
   targets: string[];
   modules: string[];
   pendingItems: number;
@@ -144,21 +139,11 @@ function buildScanSummary(
   after: CoverageSummary,
   t: ReturnType<typeof useTranslation>["t"],
 ): string {
+  const changedLocaleCodes = findChangedLocaleCodes(before, after);
   const beforePending = Math.max(before.totalItems - before.translatedItems, 0);
   const afterPending = Math.max(after.totalItems - after.translatedItems, 0);
   const pendingDelta = afterPending - beforePending;
-  const changedLocales = after.locales.reduce((count, row) => {
-    const previous = before.locales.find((item) => item.locale === row.locale);
-    if (!previous) return count + 1;
-    if (
-      previous.total !== row.total ||
-      previous.translated !== row.translated ||
-      previous.percent !== row.percent
-    ) {
-      return count + 1;
-    }
-    return count;
-  }, 0);
+  const changedLocales = changedLocaleCodes.length;
 
   if (pendingDelta > 0) {
     return t("v4Mvp.scan.summaryPending", {
@@ -174,15 +159,53 @@ function buildScanSummary(
   return t("v4Mvp.scan.summaryNoChanges");
 }
 
+function findChangedLocaleCodes(
+  before: CoverageSummary,
+  after: CoverageSummary,
+): string[] {
+  return after.locales
+    .filter((row) => {
+      const previous = before.locales.find((item) => item.locale === row.locale);
+      if (!previous) return true;
+      return (
+        previous.total !== row.total ||
+        previous.translated !== row.translated ||
+        previous.percent !== row.percent
+      );
+    })
+    .map((row) => row.locale);
+}
+
 function coverageTone(percent: number | null): "success" | "attention" | "info" {
   if (percent == null) return "info";
   if (percent >= 90) return "success";
   return "attention";
 }
 
+function buildCustomTranslationPath({
+  targets,
+  modules,
+}: {
+  targets: string[];
+  modules: string[];
+}) {
+  const params = new URLSearchParams();
+  if (targets.length > 0) {
+    params.set("targets", targets.join(","));
+  }
+  if (modules.length > 0) {
+    params.set("modules", modules.join(","));
+  }
+  const query = params.toString();
+  return query
+    ? `/app/translate-v4-mvp-custom?${query}`
+    : "/app/translate-v4-mvp-custom";
+}
+
 function buildRecommendations(
   coverage: CoverageSummary,
   jobs: TranslationJobProgressSummary[],
+  changedLocaleCodes: string[],
   t: ReturnType<typeof useTranslation>["t"],
 ): Recommendation[] {
   const activeTargets = new Set(
@@ -190,77 +213,58 @@ function buildRecommendations(
       .filter((job) => !job.isTerminal)
       .map((job) => job.target.trim().toLowerCase()),
   );
+  const changedLocaleSet = new Set(changedLocaleCodes.map((item) => item.trim().toLowerCase()));
 
-  const rows = coverage.locales
+  return coverage.locales
     .map((row) => ({
       ...row,
       pendingItems: Math.max(row.total - row.translated, 0),
     }))
-    .filter((row) => row.total > 0 && row.pendingItems > 0)
+    .filter((row) => !activeTargets.has(row.locale.trim().toLowerCase()))
+    .map((row) => {
+      const coverageInsufficient = row.total > 0 && (row.percent ?? 0) < 100;
+      const contentChanged = changedLocaleSet.has(row.locale.trim().toLowerCase());
+      const reasons: string[] = [];
+
+      if (coverageInsufficient) {
+        reasons.push(
+          t("v4Mvp.recommended.reasonCoverage", {
+            percent: row.percent ?? 0,
+          }),
+        );
+      }
+
+      if (contentChanged) {
+        reasons.push(t("v4Mvp.recommended.reasonChanged"));
+      }
+
+      return {
+        id: `locale-${row.locale}`,
+        title: t("v4Mvp.recommended.localeTaskTitle", {
+          locale: localeShortName(row.locale, row.label),
+        }),
+        locale: row.locale,
+        reasons,
+        targets: [row.locale],
+        modules: DEFAULT_MODULE_KEYS,
+        pendingItems: row.pendingItems,
+        tone: contentChanged ? "info" : coverageTone(row.percent),
+      } satisfies Recommendation;
+    })
+    .filter((item) => item.reasons.length > 0)
     .sort((a, b) => {
-      const percentA = a.percent ?? -1;
-      const percentB = b.percent ?? -1;
-      if (percentA !== percentB) return percentA - percentB;
+      const changedA = a.reasons.some((reason) => reason === t("v4Mvp.recommended.reasonChanged"));
+      const changedB = b.reasons.some((reason) => reason === t("v4Mvp.recommended.reasonChanged"));
+      if (changedA !== changedB) return changedA ? -1 : 1;
       return b.pendingItems - a.pendingItems;
     });
-
-  const availableRows = rows.filter(
-    (row) => !activeTargets.has(row.locale.trim().toLowerCase()),
-  );
-  const recommendations: Recommendation[] = [];
-
-  const lowestCoverage = availableRows[0];
-  if (lowestCoverage) {
-    recommendations.push({
-      id: `low-${lowestCoverage.locale}`,
-      title: t("v4Mvp.recommended.lowCoverageTitle", {
-        locale: localeShortName(lowestCoverage.locale, lowestCoverage.label),
-      }),
-      reason: t("v4Mvp.recommended.lowCoverageReason", {
-        percent: lowestCoverage.percent ?? 0,
-      }),
-      targets: [lowestCoverage.locale],
-      modules: DEFAULT_MODULE_KEYS,
-      pendingItems: lowestCoverage.pendingItems,
-      tone: coverageTone(lowestCoverage.percent),
-    });
-  }
-
-  const batchRows = availableRows.filter((row) => (row.percent ?? 0) < 80).slice(0, 3);
-  if (batchRows.length >= 2) {
-    recommendations.push({
-      id: "batch-recovery",
-      title: t("v4Mvp.recommended.batchTitle", {
-        count: batchRows.length,
-      }),
-      reason: t("v4Mvp.recommended.batchReason"),
-      targets: batchRows.map((row) => row.locale),
-      modules: DEFAULT_MODULE_KEYS,
-      pendingItems: batchRows.reduce((sum, row) => sum + row.pendingItems, 0),
-      tone: "attention",
-    });
-  }
-
-  const syncRows = availableRows.slice(0, Math.min(3, availableRows.length));
-  if (syncRows.length > 0) {
-    recommendations.push({
-      id: "fresh-sync",
-      title: t("v4Mvp.recommended.syncTitle"),
-      reason: t("v4Mvp.recommended.syncReason"),
-      targets: syncRows.map((row) => row.locale),
-      modules: DEFAULT_MODULE_KEYS,
-      pendingItems: syncRows.reduce((sum, row) => sum + row.pendingItems, 0),
-      tone: "info",
-    });
-  }
-
-  return recommendations.slice(0, 3);
 }
 
 export default function TranslateV4MvpRoute() {
   const { t } = useTranslation();
   const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
-  const customSectionRef = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queueSectionRef = useRef<HTMLDivElement | null>(null);
 
   const targetOptions = useMemo(
@@ -275,21 +279,21 @@ export default function TranslateV4MvpRoute() {
   const [jobsLoading, setJobsLoading] = useState(true);
   const [quota, setQuota] = useState<ShopQuota | null>(null);
   const [quotaLoading, setQuotaLoading] = useState(true);
-  const [customTaskOpen, setCustomTaskOpen] = useState(false);
   const [lastManualScanAt, setLastManualScanAt] = useState<string | null>(null);
   const [scanSummary, setScanSummary] = useState<string | null>(null);
+  const [changedLocaleCodes, setChangedLocaleCodes] = useState<string[]>([]);
   const [scanLoading, setScanLoading] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [workbenchTab, setWorkbenchTab] = useState<"recommended" | "queue">(
+    searchParams.get("tab") === "queue" ? "queue" : "recommended",
+  );
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
 
-  const [targets, setTargets] = useState<string[]>(() =>
-    targetOptions.map((option) => option.value),
+  const customTargets = useMemo(
+    () =>
+      targetOptions.map((option) => option.value),
+    [targetOptions],
   );
-  const [modules, setModules] = useState<string[]>(DEFAULT_MODULE_KEYS);
-  const [aiModel, setAiModel] = useState<string>(DEFAULT_AI_MODEL);
-  const [isCover, setIsCover] = useState(false);
-  const [isHandle, setIsHandle] = useState(false);
-  const [includeLiquid, setIncludeLiquid] = useState(false);
+  const customModules = DEFAULT_MODULE_KEYS;
 
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
   const untranslatedRatioByLocale = useMemo(
@@ -298,30 +302,21 @@ export default function TranslateV4MvpRoute() {
   );
 
   const taskEstimate = useCreateTaskEstimate({
-    modules,
-    targets,
-    isCover,
-    includeLiquid,
+    modules: customModules,
+    targets: customTargets,
+    isCover: false,
+    includeLiquid: false,
     untranslatedRatioByLocale,
     remainingCredits: normalizedQuota?.remaining ?? null,
   });
 
   const recommendations = useMemo(
-    () => buildRecommendations(coverage, jobs, t),
-    [coverage, jobs, t],
+    () => buildRecommendations(coverage, jobs, changedLocaleCodes, t),
+    [changedLocaleCodes, coverage, jobs, t],
   );
   const [recommendationEstimates, setRecommendationEstimates] = useState<
     Record<string, number | null>
   >({});
-
-  const aiModelOptions = useMemo(
-    () =>
-      AI_MODEL_OPTIONS.map((option) => ({
-        ...option,
-        label: getV4AiModelLabel(option.value, t),
-      })),
-    [t],
-  );
 
   const refreshTasks = useCallback(async () => {
     setJobsLoading(true);
@@ -392,9 +387,11 @@ export default function TranslateV4MvpRoute() {
 
         if (latestSummary) {
           setLastManualScanAt(new Date().toISOString());
+          setChangedLocaleCodes(findChangedLocaleCodes(before, latestSummary));
           setScanSummary(buildScanSummary(before, latestSummary, t));
         } else {
           setScanSummary(t("v4Mvp.scan.summaryUpdated"));
+          setChangedLocaleCodes([]);
         }
       } catch (err) {
         console.error("[translate-v4-mvp] refresh coverage failed:", err);
@@ -464,47 +461,47 @@ export default function TranslateV4MvpRoute() {
   const activeTaskCount = jobs.filter((job) => !job.isTerminal).length;
   const displayedLastScan = lastManualScanAt ?? latestAutoScanAt(coverage.locales);
 
-  const toggleTargets = (value: string) => {
-    setTargets((prev) =>
-      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value],
+  const applyRecommendation = useCallback((item: Recommendation) => {
+    navigate(
+      buildCustomTranslationPath({
+        targets: item.targets,
+        modules: item.modules,
+      }),
     );
-  };
+  }, [navigate]);
 
-  const toggleModules = (value: string) => {
-    setModules((prev) =>
-      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value],
-    );
-  };
-
-  const applyRecommendation = (item: Recommendation) => {
-    setTargets(item.targets);
-    setModules(item.modules);
-    setCustomTaskOpen(true);
-    setTimeout(() => {
-      customSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
-    message.success(t("v4Mvp.recommended.applied"));
-  };
-
-  const handleCreate = useCallback(async () => {
-    setCreating(true);
+  const createTasksWithConfig = useCallback(async ({
+    nextTargets,
+    nextModules,
+    nextAiModel = "gpt-4o-mini",
+    nextIsCover = false,
+    nextIsHandle = false,
+    nextIncludeLiquid = false,
+  }: {
+    nextTargets: string[];
+    nextModules: string[];
+    nextAiModel?: string;
+    nextIsCover?: boolean;
+    nextIsHandle?: boolean;
+    nextIncludeLiquid?: boolean;
+  }) => {
     try {
       const result = await createTranslateV4Tasks({
         source: primaryLocale,
-        targets,
-        modules,
-        aiModel,
-        isCover,
-        isHandle,
-        includeLiquid,
+        targets: nextTargets,
+        modules: nextModules,
+        aiModel: nextAiModel,
+        isCover: nextIsCover,
+        isHandle: nextIsHandle,
+        includeLiquid: nextIncludeLiquid,
         targetOptions,
         shop,
       });
 
-      const resultMessage = formatV4CreateTasksMessage(result, t, localeRegionCode);
       if (result.created.length > 0) {
-        message.success(resultMessage);
+        message.success(formatV4CreateTasksMessage(result, t, localeRegionCode));
         await Promise.all([refreshTasks(), refreshQuota(), refreshCoverage(false)]);
+        setWorkbenchTab("queue");
         setTimeout(() => {
           queueSectionRef.current?.scrollIntoView({
             behavior: "smooth",
@@ -512,20 +509,13 @@ export default function TranslateV4MvpRoute() {
           });
         }, 120);
       } else {
-        message.error(resultMessage);
+        message.error(formatV4CreateTasksMessage(result, t, localeRegionCode));
       }
     } catch (err) {
       console.error("[translate-v4-mvp] create tasks failed:", err);
       message.error(t("v4.createFailedRetry"));
-    } finally {
-      setCreating(false);
     }
   }, [
-    aiModel,
-    includeLiquid,
-    isCover,
-    isHandle,
-    modules,
     primaryLocale,
     refreshCoverage,
     refreshQuota,
@@ -533,8 +523,22 @@ export default function TranslateV4MvpRoute() {
     shop,
     t,
     targetOptions,
-    targets,
   ]);
+
+  const handleRecommendationTranslate = useCallback(async (item: Recommendation) => {
+    await createTasksWithConfig({
+      nextTargets: item.targets,
+      nextModules: item.modules,
+    });
+  }, [createTasksWithConfig]);
+
+  const selectedSummary = useMemo(
+    () => ({
+      targetCount: customTargets.length,
+      moduleCount: customModules.length,
+    }),
+    [customModules.length, customTargets.length],
+  );
 
   const handleTaskAction = useCallback(
     async (
@@ -569,27 +573,17 @@ export default function TranslateV4MvpRoute() {
       <BlockStack gap="500">
         <Card>
           <BlockStack gap="300">
-            <InlineStack align="space-between" blockAlign="start">
-              <BlockStack gap="100">
-                <InlineStack gap="200" blockAlign="center">
-                  <Text as="h1" variant="headingLg">
-                    {t("v4Mvp.title")}
-                  </Text>
-                  <Badge tone="info">{t("v4Mvp.previewBadge")}</Badge>
-                </InlineStack>
-                <Text as="p" tone="subdued">
-                  {t("v4Mvp.subtitle")}
+            <BlockStack gap="100">
+              <InlineStack gap="200" blockAlign="center">
+                <Text as="h1" variant="headingLg">
+                  {t("v4Mvp.title")}
                 </Text>
-              </BlockStack>
-              <InlineStack gap="200">
-                <Button onClick={() => void refreshAll()} loading={coverageLoading || jobsLoading || quotaLoading}>
-                  {t("v4Mvp.scan.refreshAll")}
-                </Button>
-                <Button variant="primary" onClick={() => void refreshCoverage(true)} loading={scanLoading}>
-                  {t("v4Mvp.scan.rescan")}
-                </Button>
+                <Badge tone="info">{t("v4Mvp.previewBadge")}</Badge>
               </InlineStack>
-            </InlineStack>
+              <Text as="p" tone="subdued">
+                {t("v4Mvp.subtitle")}
+              </Text>
+            </BlockStack>
           </BlockStack>
         </Card>
 
@@ -642,255 +636,173 @@ export default function TranslateV4MvpRoute() {
         </div>
 
         <Card>
-          <BlockStack gap="300">
+          <BlockStack gap="400">
             <InlineStack align="space-between" blockAlign="start">
               <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
-                  {t("v4Mvp.scan.title")}
-                </Text>
-                <Text as="p" tone="subdued">
-                  {t("v4Mvp.scan.description")}
-                </Text>
-              </BlockStack>
-              <InlineStack gap="200">
-                <Button onClick={() => void refreshCoverage(false)} loading={coverageLoading}>
-                  {t("v4.coverage.refreshStats")}
-                </Button>
-                <Button variant="primary" onClick={() => void refreshCoverage(true)} loading={scanLoading}>
-                  {t("v4Mvp.scan.rescan")}
-                </Button>
-              </InlineStack>
-            </InlineStack>
-            <Divider />
-            <InlineStack gap="400" wrap>
-              <Text as="p" tone="subdued">
-                {displayedLastScan
-                  ? lastManualScanAt
-                    ? t("v4Mvp.scan.lastManual", {
-                        time: formatDateTime(displayedLastScan),
-                      })
-                    : t("v4Mvp.scan.lastAuto", {
-                        time: formatDateTime(displayedLastScan),
-                      })
-                  : t("v4Mvp.scan.never")}
-              </Text>
-              {scanSummary ? (
-                <Text as="p" tone="subdued">
-                  {scanSummary}
-                </Text>
-              ) : null}
-            </InlineStack>
-          </BlockStack>
-        </Card>
-
-        <Card>
-          <BlockStack gap="400">
-            <BlockStack gap="100">
-              <Text as="h2" variant="headingMd">
-                {t("v4Mvp.recommended.title")}
-              </Text>
-              <Text as="p" tone="subdued">
-                {t("v4Mvp.recommended.description")}
-              </Text>
-            </BlockStack>
-
-            {recommendations.length === 0 ? (
-              <Text as="p" tone="subdued">
-                {t("v4Mvp.recommended.empty")}
-              </Text>
-            ) : (
-              <div style={recommendationGridStyle}>
-                {recommendations.map((item) => (
-                  <RecommendationCard
-                    key={item.id}
-                    title={item.title}
-                    reason={item.reason}
-                    targets={item.targets}
-                    modules={item.modules}
-                    pendingItems={item.pendingItems}
-                    estimatedCredits={recommendationEstimates[item.id] ?? null}
-                    estimatedTime={estimateTimeLabel(item.pendingItems, t)}
-                    tone={item.tone}
-                    onApply={() => applyRecommendation(item)}
-                  />
-                ))}
-              </div>
-            )}
-          </BlockStack>
-        </Card>
-
-        <div ref={customSectionRef}>
-          <Card>
-            <BlockStack gap="400">
-              <InlineStack align="space-between" blockAlign="start">
-                <BlockStack gap="100">
+                <InlineStack gap="200" blockAlign="center">
                   <Text as="h2" variant="headingMd">
                     {t("v4Mvp.custom.title")}
                   </Text>
-                  <Text as="p" tone="subdued">
-                    {t("v4Mvp.custom.description")}
-                  </Text>
-                </BlockStack>
-                <InlineStack gap="200">
-                  <Button onClick={() => setCustomTaskOpen((prev) => !prev)}>
-                    {customTaskOpen ? t("v4Mvp.custom.hide") : t("v4Mvp.custom.show")}
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setTargets(targetOptions.map((item) => item.value));
-                      setModules(DEFAULT_MODULE_KEYS);
-                      setAiModel(DEFAULT_AI_MODEL);
-                      setIsCover(false);
-                      setIsHandle(false);
-                      setIncludeLiquid(false);
-                    }}
-                  >
-                    {t("v4Mvp.custom.reset")}
-                  </Button>
+                  <Badge tone="info">{t("v4Mvp.custom.badge")}</Badge>
                 </InlineStack>
+                <Text as="p" tone="subdued">
+                  {t("v4Mvp.custom.description")}
+                </Text>
+              </BlockStack>
+              <InlineStack gap="200">
+                <Button
+                  variant="primary"
+                  onClick={() => navigate(buildCustomTranslationPath({
+                    targets: customTargets,
+                    modules: customModules,
+                  }))}
+                >
+                  {t("v4Mvp.custom.translate")}
+                </Button>
               </InlineStack>
+            </InlineStack>
 
-              {customTaskOpen ? (
-                <BlockStack gap="400">
-                  <Divider />
+            <div style={taskMetaRowStyle}>
+              <TaskMeta
+                label={t("v4Mvp.custom.selectedTargets")}
+                value={String(selectedSummary.targetCount)}
+              />
+              <TaskMeta
+                label={t("v4Mvp.custom.selectedModules")}
+                value={String(selectedSummary.moduleCount)}
+              />
+              <TaskMeta
+                label={t("v4.createTask.confirmCreditsRequired")}
+                value={
+                  taskEstimate.loading
+                    ? "…"
+                    : taskEstimate.estimatedCredits != null
+                      ? formatEstimateCredits(taskEstimate.estimatedCredits)
+                      : "—"
+                }
+              />
+              <TaskMeta
+                label={t("v4Mvp.recommended.estimateTime")}
+                value={estimateTimeLabel(
+                  Math.max(customTargets.length, 1) * Math.max(customModules.length, 1) * 120,
+                  t,
+                )}
+              />
+            </div>
 
-                  <BlockStack gap="200">
-                    <Text as="h3" variant="headingSm">
-                      {t("v4.createTask.targetLanguages")}
-                    </Text>
-                    <div style={checkboxGridStyle}>
-                      {targetOptions.map((option) => (
-                        <div key={option.value} style={checkboxCardStyle}>
-                          <Checkbox
-                            label={`${localeShortName(option.value, option.label)} (${localeRegionCode(option.value)})`}
-                            checked={targets.includes(option.value)}
-                            onChange={() => toggleTargets(option.value)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </BlockStack>
-
-                  <BlockStack gap="200">
-                    <Text as="h3" variant="headingSm">
-                      {t("v4.createTask.content")}
-                    </Text>
-                    <div style={checkboxGridStyle}>
-                      {DEFAULT_MODULE_KEYS.map((moduleKey) => (
-                        <div key={moduleKey} style={checkboxCardStyle}>
-                          <Checkbox
-                            label={getV4ModuleLabel(moduleKey, t)}
-                            checked={modules.includes(moduleKey)}
-                            onChange={() => toggleModules(moduleKey)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </BlockStack>
-
-                  <div style={advancedGridStyle}>
-                    <Card>
-                      <BlockStack gap="300">
-                        <Text as="h3" variant="headingSm">
-                          {t("v4.createTask.translationOptions")}
-                        </Text>
-                        <Select
-                          label={t("v4.createTask.aiModel")}
-                          options={aiModelOptions}
-                          value={aiModel}
-                          onChange={setAiModel}
-                        />
-                        <Checkbox
-                          label={t("v4.createTask.overwriteExisting")}
-                          checked={isCover}
-                          onChange={setIsCover}
-                        />
-                        <Checkbox
-                          label={t("v4.createTask.translateHandle")}
-                          checked={isHandle}
-                          onChange={setIsHandle}
-                        />
-                        <Checkbox
-                          label={t("v4.createTask.includeLiquid")}
-                          helpText={t("v4.createTask.includeLiquidHelp")}
-                          checked={includeLiquid}
-                          onChange={setIncludeLiquid}
-                        />
-                      </BlockStack>
-                    </Card>
-
-                    <Card>
-                      <BlockStack gap="300">
-                        <Text as="h3" variant="headingSm">
-                          {t("v4.createTask.confirmEstimateTitle")}
-                        </Text>
-                        <InlineStack align="space-between">
-                          <Text as="span" tone="subdued">
-                            {t("v4.createTask.confirmCreditsRequired")}
-                          </Text>
-                          <Text as="span" variant="headingMd">
-                            {taskEstimate.loading
-                              ? "…"
-                              : taskEstimate.estimatedCredits != null
-                                ? formatEstimateCredits(taskEstimate.estimatedCredits)
-                                : "—"}
-                          </Text>
-                        </InlineStack>
-                        <InlineStack align="space-between">
-                          <Text as="span" tone="subdued">
-                            {t("v4.availableCredits")}
-                          </Text>
-                          <Text as="span" variant="headingMd">
-                            {normalizedQuota ? formatCredits(normalizedQuota.remaining) : "—"}
-                          </Text>
-                        </InlineStack>
-                        <InlineStack align="space-between">
-                          <Text as="span" tone="subdued">
-                            {t("v4Mvp.recommended.estimateTime")}
-                          </Text>
-                          <Text as="span" variant="headingMd">
-                            {estimateTimeLabel(
-                              Math.max(targets.length, 1) * Math.max(modules.length, 1) * 120,
-                              t,
-                            )}
-                          </Text>
-                        </InlineStack>
-                        {taskEstimate.needsMoreCredits ? (
-                          <Badge tone="attention">
-                            {t("v4.createTask.estimateShort")}
-                          </Badge>
-                        ) : null}
-                        <Button
-                          variant="primary"
-                          size="large"
-                          onClick={() => void handleCreate()}
-                          loading={creating}
-                          disabled={targets.length === 0 || (modules.length === 0 && !includeLiquid)}
-                        >
-                          {t("v4.createTask.confirmAction")}
-                        </Button>
-                      </BlockStack>
-                    </Card>
-                  </div>
-                </BlockStack>
-              ) : null}
-            </BlockStack>
-          </Card>
-        </div>
+            {taskEstimate.needsMoreCredits ? (
+              <Badge tone="attention">{t("v4.createTask.estimateShort")}</Badge>
+            ) : null}
+            <Text as="p" tone="subdued" variant="bodySm">
+              {t("v4Mvp.custom.nextStep")}
+            </Text>
+          </BlockStack>
+        </Card>
 
         <div ref={queueSectionRef}>
           <Card>
             <BlockStack gap="400">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
-                  {t("v4Mvp.queue.title")}
-                </Text>
-                <Text as="p" tone="subdued">
-                  {t("v4.tasks.title", { count: activeTaskCount })}
-                </Text>
-              </BlockStack>
+              <InlineStack align="space-between" blockAlign="center">
+                <div style={tabListStyle}>
+                  <button
+                    type="button"
+                    onClick={() => setWorkbenchTab("recommended")}
+                    style={tabButtonStyle(workbenchTab === "recommended")}
+                  >
+                    {t("v4Mvp.tabs.recommended", { count: recommendations.length })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWorkbenchTab("queue")}
+                    style={tabButtonStyle(workbenchTab === "queue")}
+                  >
+                    {t("v4Mvp.tabs.queue", { count: activeTaskCount })}
+                  </button>
+                </div>
 
-              {jobsLoading ? (
+                {workbenchTab === "recommended" ? (
+                  <InlineStack gap="200">
+                    {displayedLastScan ? (
+                      <Text as="span" tone="subdued" variant="bodySm">
+                        {t("v4Mvp.scan.lastScanShort", {
+                          time: formatDateTime(displayedLastScan),
+                        })}
+                      </Text>
+                    ) : null}
+                    <Button
+                      variant="primary"
+                      onClick={() => void refreshCoverage(true)}
+                      loading={scanLoading}
+                    >
+                      {t("v4Mvp.scan.rescan")}
+                    </Button>
+                  </InlineStack>
+                ) : (
+                  <Button
+                    onClick={() => void refreshAll()}
+                    loading={coverageLoading || jobsLoading || quotaLoading}
+                  >
+                    {t("v4Mvp.scan.refreshAll")}
+                  </Button>
+                )}
+              </InlineStack>
+
+              {workbenchTab === "recommended" ? (
+                <BlockStack gap="300">
+                  {scanSummary ? (
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      {scanSummary}
+                    </Text>
+                  ) : null}
+                  {recommendations.length > 0 ? (
+                    recommendations.map((item) => (
+                      <RecommendationCard
+                        key={item.id}
+                        title={item.title}
+                        locale={item.locale}
+                        reasons={item.reasons}
+                        targets={item.targets}
+                        modules={item.modules}
+                        pendingItems={item.pendingItems}
+                        estimatedCredits={recommendationEstimates[item.id] ?? null}
+                        estimatedTime={estimateTimeLabel(item.pendingItems, t)}
+                        tone={item.tone}
+                        onTranslate={() => void handleRecommendationTranslate(item)}
+                        onAdjust={() => applyRecommendation(item)}
+                      />
+                    ))
+                  ) : (
+                    <div style={emptyStateStyle}>
+                      <BlockStack gap="300">
+                        <BlockStack gap="100">
+                          <Text as="h3" variant="headingMd" alignment="center">
+                            {t("v4Mvp.recommended.emptyTitle")}
+                          </Text>
+                          <Text as="p" tone="subdued" alignment="center">
+                            {t("v4Mvp.recommended.emptyDescription")}
+                          </Text>
+                        </BlockStack>
+                        <InlineStack align="center">
+                          <Button
+                            variant="primary"
+                            size="large"
+                            onClick={() =>
+                              navigate(
+                                buildCustomTranslationPath({
+                                  targets: customTargets,
+                                  modules: customModules,
+                                }),
+                              )
+                            }
+                          >
+                            {t("v4Mvp.custom.translate")}
+                          </Button>
+                        </InlineStack>
+                      </BlockStack>
+                    </div>
+                  )}
+                </BlockStack>
+              ) : jobsLoading ? (
                 <Text as="p" tone="subdued">
                   {t("v4.coverage.refreshing")}
                 </Text>
@@ -946,24 +858,28 @@ function MetricCard({
 
 function RecommendationCard({
   title,
-  reason,
+  locale,
+  reasons,
   targets,
   modules,
   pendingItems,
   estimatedCredits,
   estimatedTime,
   tone,
-  onApply,
+  onTranslate,
+  onAdjust,
 }: {
   title: string;
-  reason: string;
+  locale: string;
+  reasons: string[];
   targets: string[];
   modules: string[];
   pendingItems: number;
   estimatedCredits: number | null;
   estimatedTime: string;
   tone: "success" | "attention" | "info";
-  onApply: () => void;
+  onTranslate: () => void;
+  onAdjust: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -972,16 +888,26 @@ function RecommendationCard({
       <BlockStack gap="300">
         <InlineStack align="space-between" blockAlign="start">
           <BlockStack gap="150">
-            <Text as="h3" variant="headingSm">
-              {title}
-            </Text>
-            <Text as="p" tone="subdued" variant="bodySm">
-              {reason}
-            </Text>
+            <InlineStack gap="200" blockAlign="center" wrap>
+              <Text as="h3" variant="headingSm">
+                {title}
+              </Text>
+              <Badge tone={tone}>{localeRegionCode(locale)}</Badge>
+            </InlineStack>
+            <BlockStack gap="100">
+              {reasons.map((reason) => (
+                <Text key={reason} as="p" tone="subdued" variant="bodySm">
+                  {reason}
+                </Text>
+              ))}
+            </BlockStack>
           </BlockStack>
-          <Button variant="primary" onClick={onApply}>
-            {t("v4Mvp.recommended.apply")}
-          </Button>
+          <InlineStack gap="200">
+            <Button onClick={onAdjust}>{t("v4Mvp.recommended.adjust")}</Button>
+            <Button variant="primary" onClick={onTranslate}>
+              {t("v4Mvp.recommended.translate")}
+            </Button>
+          </InlineStack>
         </InlineStack>
 
         <InlineStack gap="400" wrap>
@@ -1041,6 +967,25 @@ function RecommendationCard({
         </BlockStack>
       </BlockStack>
     </Card>
+  );
+}
+
+function TaskMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div style={taskMetaItemStyle}>
+      <Text as="p" tone="subdued" variant="bodySm">
+        {label}
+      </Text>
+      <Text as="p" variant="headingMd">
+        {value}
+      </Text>
+    </div>
   );
 }
 
@@ -1142,27 +1087,47 @@ const metricsGridStyle = {
   gap: "16px",
 } satisfies CSSProperties;
 
-const recommendationGridStyle = {
+const taskMetaRowStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-  gap: "16px",
-} satisfies CSSProperties;
-
-const checkboxGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
   gap: "12px",
 } satisfies CSSProperties;
 
-const checkboxCardStyle = {
+const taskMetaItemStyle = {
   padding: "12px 14px",
-  border: "1px solid rgba(138, 142, 145, 0.24)",
+  border: "1px solid rgba(138, 142, 145, 0.18)",
   borderRadius: "12px",
-  background: "#ffffff",
+  background: "rgba(246, 246, 247, 0.72)",
 } satisfies CSSProperties;
 
-const advancedGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-  gap: "16px",
+const tabListStyle = {
+  display: "inline-flex",
+  gap: "8px",
+  padding: "4px",
+  borderRadius: "999px",
+  background: "rgba(246, 246, 247, 0.95)",
+  border: "1px solid rgba(138, 142, 145, 0.18)",
 } satisfies CSSProperties;
+
+const emptyStateStyle = {
+  minHeight: "240px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "24px 16px",
+} satisfies CSSProperties;
+
+function tabButtonStyle(active: boolean): CSSProperties {
+  return {
+    appearance: "none",
+    border: "none",
+    background: active ? "#111827" : "transparent",
+    color: active ? "#ffffff" : "#4b5563",
+    borderRadius: "999px",
+    padding: "8px 14px",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
+}
