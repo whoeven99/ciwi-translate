@@ -34,7 +34,10 @@ import type { TranslationJobProgressSummary } from "~/server/translateV4/progres
 import {
   DEFAULT_MODULE_KEYS,
 } from "~/routes/app.translate-v4/constants";
-import { buildUntranslatedRatioByLocale } from "~/routes/app.translate-v4/useCreateTaskEstimate";
+import {
+  buildUntranslatedRatioByLocale,
+  formatEstimateCredits,
+} from "~/routes/app.translate-v4/useCreateTaskEstimate";
 import {
   formatV4CreateTasksMessage,
   getV4ModuleLabel,
