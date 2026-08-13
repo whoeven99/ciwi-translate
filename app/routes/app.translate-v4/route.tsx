@@ -85,7 +85,6 @@ const EMPTY_COVERAGE: CoverageSummary = {
 };
 async function readJsonResponse<T = any>(res: Response): Promise<T> {
   const text = await res.text();
-  const text = await res.text();
   if (!text.trim()) {
     throw new Error(`Empty response body (${res.status})`);
   }
