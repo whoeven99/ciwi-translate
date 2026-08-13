@@ -827,7 +827,8 @@ redirect records.
  `LiquidRule(status=PENDING, source=auto, afterTranslation="")`，**不在 Web
  进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
  `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
- 过滤）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
+ 过滤，含 `looksLikeHtmlMarkupFragment`：拦 `loading="lazy"` / `width=`+`height=`
+ 等 img 属性碎片）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
  shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
  名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
  Redis 日聚合 `tsf:auto_liquid:deny:req|texts|shops:{utcYmd}`（8d TTL）。
@@ -858,7 +859,8 @@ redirect records.
  `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
- 慢删 `source='auto'`（绝不碰 manual）。管理页
+ 慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 HTML 属性碎片类
+ auto+PENDING。claim PENDING 时也会跳过并删除这类碎片，避免拿去翻译。管理页
  `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
 
 - **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
