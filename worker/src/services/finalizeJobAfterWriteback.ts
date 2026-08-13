@@ -14,17 +14,35 @@ import { computeModuleCount } from "./itemsCount.js";
 import { recordJobUsageSnapshot } from "./recordJobUsageSnapshot.js";
 import { upsertLocaleCoverage } from "./localeCoverageTsf.js";
 import { getOfflineAccessTokenFromTsf } from "./tsfDb.js";
+import { areAllUserErrorsTooManyTranslationKeys } from "./shopifyFetch.js";
 import {
   V4_MESSAGE_QUOTA_INSUFFICIENT_PARTIAL,
   V4_MESSAGE_WRITEBACK_ALL_FAILED,
 } from "./userFacingMessages.js";
 
+export type WritebackFailedResource = {
+  resourceId: string;
+  userErrors?: Array<{ field: string; message: string }>;
+};
+
 export type FinalizeAfterWritebackInput = {
   writebackDone: number;
   writebackFailed: number;
+  failedResources?: WritebackFailedResource[];
   metrics?: TranslationV4Job["metrics"];
   stageTimings?: StageTimings | null;
 };
+
+function shouldTreatWritebackFailuresAsKeyLimitSuccess(
+  writebackFailed: number,
+  failedResources: WritebackFailedResource[] | undefined,
+): boolean {
+  if (writebackFailed <= 0 || !failedResources?.length) return false;
+  if (failedResources.length !== writebackFailed) return false;
+  return failedResources.every((resource) =>
+    areAllUserErrorsTooManyTranslationKeys(resource.userErrors ?? []),
+  );
+}
 
 /** 写回结束后直接收尾：COMPLETED / PAUSED / FAILED（不再进入校验）。 */
 export async function finalizeJobAfterWriteback(
@@ -33,16 +51,32 @@ export async function finalizeJobAfterWriteback(
 ): Promise<void> {
   const { shopName, id: jobId } = job;
   const latestJob = await getJob(shopName, jobId);
+
+  let writebackDone = input.writebackDone;
+  let writebackFailed = input.writebackFailed;
+  if (
+    shouldTreatWritebackFailuresAsKeyLimitSuccess(
+      writebackFailed,
+      input.failedResources,
+    )
+  ) {
+    writebackDone += writebackFailed;
+    writebackFailed = 0;
+    console.log(
+      `[finalize] job=${jobId} key-limit writeback failures treated as success count=${input.failedResources!.length}`,
+    );
+  }
+
   const mergedMetrics = {
     ...(latestJob?.metrics ?? job.metrics),
     ...(input.metrics ?? {}),
-    writebackDone: input.writebackDone,
-    writebackFailed: input.writebackFailed,
+    writebackDone,
+    writebackFailed,
   };
 
   const initTotal = mergedMetrics.initTotal ?? job.metrics?.initTotal ?? 0;
   const nothingToTranslate = initTotal === 0;
-  const wroteAnything = nothingToTranslate || input.writebackDone > 0;
+  const wroteAnything = nothingToTranslate || writebackDone > 0;
 
   const tTotal = mergedMetrics.translateTotal ?? 0;
   const tAttempted =
@@ -143,6 +177,6 @@ export async function finalizeJobAfterWriteback(
   );
 
   console.log(
-    `[finalize] job=${jobId} status=${finalStatus} written=${input.writebackDone} failed=${input.writebackFailed}`,
+    `[finalize] job=${jobId} status=${finalStatus} written=${writebackDone} failed=${writebackFailed}`,
   );
 }

@@ -823,11 +823,25 @@ async function registerTranslationsBatch(
 
 const LOG_BATCH = "[writeback-batch]";
 
+export function isTooManyTranslationKeysMessage(
+  message: string | undefined | null,
+): boolean {
+  return /too many translation keys|too_many_keys/i.test(message ?? "");
+}
+
 function isTooManyTranslationKeysError(
   userErrors: Array<{ field: string; message: string }>,
 ): boolean {
-  return userErrors.some((err) =>
-    /too many translation keys|too_many_keys/i.test(err.message ?? ""),
+  return userErrors.some((err) => isTooManyTranslationKeysMessage(err.message));
+}
+
+/** Every userError must be Shopify key-limit (for writeback finalize). */
+export function areAllUserErrorsTooManyTranslationKeys(
+  userErrors: Array<{ field: string; message: string }>,
+): boolean {
+  return (
+    userErrors.length > 0 &&
+    userErrors.every((err) => isTooManyTranslationKeysMessage(err.message))
   );
 }
 

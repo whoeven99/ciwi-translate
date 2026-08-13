@@ -183,6 +183,7 @@ type TranslatedItem = {
 type FailedResource = {
   resourceId: string;
   translations: TranslationInput[];
+  userErrors?: Array<{ field: string; message: string }>;
 };
 
 async function persistWritebackCheckpoint(
@@ -332,7 +333,11 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
         writebackDone++;
       } else {
         writebackFailed++;
-        failedResources.push({ resourceId: resource.resourceId, translations });
+        failedResources.push({
+          resourceId: resource.resourceId,
+          translations,
+          userErrors: result.userErrors,
+        });
         console.warn(
           `[writeback] resource ${resource.resourceId} errors:`,
           result.userErrors,
@@ -474,6 +479,7 @@ async function processWritebackJob(job: TranslationV4Job): Promise<void> {
     await finalizeJobAfterWriteback(job, {
       writebackDone,
       writebackFailed,
+      failedResources,
       metrics: updatedMetrics,
       stageTimings: writebackTiming,
     });
