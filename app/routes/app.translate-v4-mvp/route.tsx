@@ -14,7 +14,6 @@ import {
   Badge,
   BlockStack,
   Button,
-  Card,
   InlineStack,
   Modal,
   Page,
@@ -41,10 +40,11 @@ import {
 import {
   formatV4CreateTasksMessage,
   getV4ModuleLabel,
-  getV4StatusLabel,
   translateV4Message,
 } from "~/routes/app.translate-v4/v4I18n";
+import { TaskQueueSection } from "~/routes/app.translate-v4/components/TaskQueueSection";
 import { PageHeaderBar } from "~/routes/app.translate-v4/components/SummaryAndHeader";
+import { v4CardStyle, v4Colors, v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
 import { localeRegionCode, localeShortName } from "~/routes/app.translate-v4/localeDisplay";
 import {
   createTranslateV4Tasks,
@@ -447,8 +447,11 @@ export default function TranslateV4MvpRoute() {
   }, [recommendations, untranslatedRatioByLocale]);
 
   const currentJobs = useMemo(() => jobs.filter((job) => !job.isTerminal), [jobs]);
-  const historyJobs = useMemo(() => jobs.filter((job) => job.isTerminal), [jobs]);
   const activeTaskCount = currentJobs.length;
+  const translateSlotBusy = useMemo(
+    () => jobs.some((job) => job.status === "TRANSLATING" || job.isStopping),
+    [jobs],
+  );
   const displayedLastScan = lastManualScanAt ?? latestAutoScanAt(coverage.locales);
 
   const createTasksWithConfig = useCallback(async ({
@@ -529,12 +532,14 @@ export default function TranslateV4MvpRoute() {
           message.error(
             data.error ? translateV4Message(data.error, t) : t("v4.actionFailed"),
           );
-          return;
+          return false;
         }
         await Promise.all([refreshTasks(), refreshQuota()]);
+        return true;
       } catch (err) {
         console.error("[translate-v4-mvp] task action failed:", err);
         message.error(t("v4.actionFailedRetry"));
+        return false;
       }
     },
     [refreshQuota, refreshTasks, shop, t],
@@ -543,135 +548,141 @@ export default function TranslateV4MvpRoute() {
   return (
     <Page>
       <TitleBar title={t("v4.title")} />
-      <BlockStack gap="500">
-        <PageHeaderBar
-          credits={normalizedQuota?.remaining ?? null}
-          planType={planType}
-        />
+      <div style={v4ContentStyle}>
+        <BlockStack gap="500">
+          <PageHeaderBar
+            credits={normalizedQuota?.remaining ?? null}
+            planType={planType}
+          />
 
-        <Card>
-          <BlockStack gap="300">
-            <InlineStack align="space-between" blockAlign="start">
+          <div style={summaryHeroCardStyle}>
+            <BlockStack gap="350">
+              <InlineStack align="space-between" blockAlign="start">
+                <BlockStack gap="100">
+                  <Text as="span" variant="bodySm" tone="subdued">
+                    {t("v4Mvp.coverageCard.title")}
+                  </Text>
+                  <Text as="h2" variant="headingLg">
+                    {t("v4Mvp.coverageCard.description", {
+                      translated: coverage.translatedItems,
+                      total: coverage.totalItems,
+                    })}
+                  </Text>
+                </BlockStack>
+                <div style={sectionActionWrapStyle}>
+                  <Button onClick={() => setCoverageDetailOpen(true)}>
+                    {t("v4Mvp.coverageCard.viewDetails")}
+                  </Button>
+                </div>
+              </InlineStack>
+
+              <div style={summaryHeroFooterStyle}>
+                <div style={summaryValueBlockStyle}>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    {t("v4.translationProgress")}
+                  </Text>
+                  <div style={summaryPercentRowStyle}>
+                    <Text as="p" variant="heading2xl">
+                      {coverageLoading && coverage.locales.length === 0
+                        ? "—"
+                        : `${coverage.overallPercent ?? 0}%`}
+                    </Text>
+                    <span style={summaryCoveragePillStyle}>
+                      {`${t("v4Mvp.recommended.priority")} · ${recommendations.length}`}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={summaryMetaCardStyle}>
+                  <BlockStack gap="050">
+                    <Text as="p" tone="subdued" variant="bodySm" alignment="end">
+                      {t("v4Mvp.coverageCard.lastScanLabel")}
+                    </Text>
+                    <Text as="p" variant="bodyMd">
+                      {displayedLastScan
+                        ? formatDateTime(displayedLastScan) ?? "—"
+                        : t("v4Mvp.scan.never")}
+                    </Text>
+                  </BlockStack>
+                </div>
+              </div>
+            </BlockStack>
+          </div>
+
+          <div style={batchEntryCardStyle}>
+            <InlineStack align="space-between" blockAlign="center">
               <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
-                  {t("v4Mvp.coverageCard.title")}
-                </Text>
-                <Text as="p" tone="subdued">
-                  {t("v4Mvp.coverageCard.description", {
-                    translated: coverage.translatedItems,
-                    total: coverage.totalItems,
-                  })}
-                </Text>
-              </BlockStack>
-              <Button onClick={() => setCoverageDetailOpen(true)}>
-                {t("v4Mvp.coverageCard.viewDetails")}
-              </Button>
-            </InlineStack>
-
-            <InlineStack align="space-between" blockAlign="end">
-              <BlockStack gap="050">
-                <Text as="p" tone="subdued" variant="bodySm">
-                  {t("v4.translationProgress")}
-                </Text>
-                <Text as="p" variant="heading2xl">
-                  {coverageLoading && coverage.locales.length === 0
-                    ? "—"
-                    : `${coverage.overallPercent ?? 0}%`}
-                </Text>
-              </BlockStack>
-              <BlockStack gap="050">
-                <Text as="p" tone="subdued" variant="bodySm" alignment="end">
-                  {t("v4Mvp.coverageCard.lastScanLabel")}
-                </Text>
-                <Text as="p" variant="bodyMd">
-                  {displayedLastScan
-                    ? formatDateTime(displayedLastScan) ?? "—"
-                    : t("v4Mvp.scan.never")}
-                </Text>
-              </BlockStack>
-            </InlineStack>
-          </BlockStack>
-        </Card>
-
-        <Card>
-          <BlockStack gap="400">
-            <InlineStack align="space-between" blockAlign="start">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
+                <Text as="span" variant="bodySm" tone="subdued">
                   {t("v4Mvp.custom.title")}
                 </Text>
-                <Text as="p" tone="subdued">
+                <Text as="p" variant="headingMd">
                   {t("v4Mvp.custom.description")}
                 </Text>
               </BlockStack>
-              <Button
-                variant="primary"
-                onClick={() => navigate(buildCustomTranslationPath({
-                  targets: customTargets,
-                  modules: customModules,
-                }))}
-              >
-                {t("v4Mvp.custom.translate")}
-              </Button>
+              <div style={sectionActionWrapStyle}>
+                <Button
+                  variant="primary"
+                  onClick={() => navigate(buildCustomTranslationPath({
+                    targets: customTargets,
+                    modules: customModules,
+                  }))}
+                >
+                  {t("v4Mvp.custom.translate")}
+                </Button>
+              </div>
             </InlineStack>
-          </BlockStack>
-        </Card>
+          </div>
 
-        <div ref={queueSectionRef}>
-          <Card>
+          <div ref={queueSectionRef} style={workbenchShellStyle}>
             <BlockStack gap="400">
-              <InlineStack align="space-between" blockAlign="center">
-                <div style={tabListStyle}>
-                  <button
-                    type="button"
-                    onClick={() => setWorkbenchTab("recommended")}
-                    style={tabButtonStyle(workbenchTab === "recommended")}
-                  >
-                    {t("v4Mvp.tabs.recommended", { count: recommendations.length })}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWorkbenchTab("queue")}
-                    style={tabButtonStyle(workbenchTab === "queue")}
-                  >
-                    {t("v4Mvp.tabs.queue", { count: activeTaskCount })}
-                  </button>
-                </div>
-
-                {workbenchTab === "recommended" ? (
-                  <InlineStack gap="200">
-                    {displayedLastScan ? (
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        {t("v4Mvp.scan.lastScanShort", {
-                          time: formatDateTime(displayedLastScan),
-                        })}
-                      </Text>
-                    ) : null}
-                    <Button
-                      variant="primary"
-                      onClick={() => void refreshCoverage(true)}
-                      loading={scanLoading}
+              <div style={workbenchHeaderStyle}>
+                <InlineStack align="space-between" blockAlign="center">
+                  <div style={tabListStyle}>
+                    <button
+                      type="button"
+                      onClick={() => setWorkbenchTab("recommended")}
+                      style={tabButtonStyle(workbenchTab === "recommended")}
                     >
-                      {t("v4Mvp.scan.rescan")}
-                    </Button>
-                  </InlineStack>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => navigate("/app/translate-v4-history")}
-                    style={historyLinkStyle}
-                  >
-                    {t("v4.tasks.openHistory", { count: historyJobs.length })}
-                  </button>
-                )}
-              </InlineStack>
+                      {t("v4Mvp.tabs.recommended", { count: recommendations.length })}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWorkbenchTab("queue")}
+                      style={tabButtonStyle(workbenchTab === "queue")}
+                    >
+                      {t("v4Mvp.tabs.queue", { count: activeTaskCount })}
+                    </button>
+                  </div>
+
+                  {workbenchTab === "recommended" ? (
+                    <InlineStack gap="200">
+                      {displayedLastScan ? (
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          {t("v4Mvp.scan.lastScanShort", {
+                            time: formatDateTime(displayedLastScan),
+                          })}
+                        </Text>
+                      ) : null}
+                      <Button
+                        variant="primary"
+                        onClick={() => void refreshCoverage(true)}
+                        loading={scanLoading}
+                      >
+                        {t("v4Mvp.scan.rescan")}
+                      </Button>
+                    </InlineStack>
+                  ) : null}
+                </InlineStack>
+              </div>
 
               {workbenchTab === "recommended" ? (
                 <BlockStack gap="300">
                   {scanSummary ? (
-                    <Text as="p" tone="subdued" variant="bodySm">
-                      {scanSummary}
-                    </Text>
+                    <div style={scanSummaryStyle}>
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        {scanSummary}
+                      </Text>
+                    </div>
                   ) : null}
                   {recommendations.length > 0 ? (
                     recommendations.map((item) => (
@@ -691,59 +702,50 @@ export default function TranslateV4MvpRoute() {
                     ))
                   ) : (
                     <div style={emptyStateStyle}>
-                      <BlockStack gap="300">
-                        <BlockStack gap="100">
-                          <Text as="h3" variant="headingMd" alignment="center">
-                            {t("v4Mvp.recommended.emptyTitle")}
-                          </Text>
-                          <Text as="p" tone="subdued" alignment="center">
-                            {t("v4Mvp.recommended.emptyDescription")}
-                          </Text>
+                      <div style={emptyStateInnerStyle}>
+                        <BlockStack gap="300">
+                          <BlockStack gap="100">
+                            <Text as="h3" variant="headingMd" alignment="center">
+                              {t("v4Mvp.recommended.emptyTitle")}
+                            </Text>
+                            <Text as="p" tone="subdued" alignment="center">
+                              {t("v4Mvp.recommended.emptyDescription")}
+                            </Text>
+                          </BlockStack>
+                          <InlineStack align="center">
+                            <Button
+                              variant="primary"
+                              size="large"
+                              onClick={() =>
+                                navigate(
+                                  buildCustomTranslationPath({
+                                    targets: customTargets,
+                                    modules: customModules,
+                                  }),
+                                )
+                              }
+                            >
+                              {t("v4Mvp.custom.translate")}
+                            </Button>
+                          </InlineStack>
                         </BlockStack>
-                        <InlineStack align="center">
-                          <Button
-                            variant="primary"
-                            size="large"
-                            onClick={() =>
-                              navigate(
-                                buildCustomTranslationPath({
-                                  targets: customTargets,
-                                  modules: customModules,
-                                }),
-                              )
-                            }
-                          >
-                            {t("v4Mvp.custom.translate")}
-                          </Button>
-                        </InlineStack>
-                      </BlockStack>
+                      </div>
                     </div>
                   )}
                 </BlockStack>
-              ) : jobsLoading ? (
-                <Text as="p" tone="subdued">
-                  {t("v4.coverage.refreshing")}
-                </Text>
-              ) : currentJobs.length === 0 ? (
-                <Text as="p" tone="subdued">
-                  {t("v4Mvp.queue.empty")}
-                </Text>
               ) : (
-                <BlockStack gap="300">
-                  {currentJobs.map((job) => (
-                    <JobCard
-                      key={job.taskId}
-                      job={job}
-                      t={t}
-                      onAction={handleTaskAction}
-                    />
-                  ))}
-                </BlockStack>
+                <TaskQueueSection
+                  jobs={jobs}
+                  translateSlotBusy={translateSlotBusy}
+                  loading={jobsLoading}
+                  onBuyCredits={() => navigate("/app/pricing")}
+                  onAction={handleTaskAction}
+                />
               )}
             </BlockStack>
-          </Card>
-        </div>
-      </BlockStack>
+          </div>
+        </BlockStack>
+      </div>
       <Modal
         open={coverageDetailOpen}
         onClose={() => setCoverageDetailOpen(false)}
@@ -751,47 +753,78 @@ export default function TranslateV4MvpRoute() {
         size="large"
       >
         <Modal.Section>
-          <BlockStack gap="300">
-            <Text as="p" tone="subdued">
-              {t("v4Mvp.coverageModal.description")}
-            </Text>
-            <BlockStack gap="200">
-              {coverage.locales.length > 0 ? (
-                [...coverage.locales]
-                  .sort((a, b) => (a.percent ?? 0) - (b.percent ?? 0))
-                  .map((locale) => (
-                    <div key={locale.locale} style={coverageRowStyle}>
-                      <InlineStack align="space-between" blockAlign="center">
-                        <BlockStack gap="050">
-                          <InlineStack gap="150" blockAlign="center">
-                            <Text as="p" variant="bodyMd">
-                              {localeShortName(locale.locale, locale.label)}
-                            </Text>
-                            <Badge tone={(locale.percent ?? 0) >= 90 ? "success" : "attention"}>
-                              {localeRegionCode(locale.locale)}
-                            </Badge>
-                          </InlineStack>
-                          <Text as="p" tone="subdued" variant="bodySm">
-                            {t("v4Mvp.coverageModal.progressText", {
-                              translated: locale.translated,
-                              total: locale.total,
-                            })}
-                          </Text>
-                        </BlockStack>
-                        <Text as="p" variant="headingMd">
-                          {`${locale.percent ?? 0}%`}
-                        </Text>
-                      </InlineStack>
-                      <ProgressBar progress={locale.percent ?? 0} size="small" tone="primary" />
+          <div style={coverageModalShellStyle}>
+            <BlockStack gap="350">
+              <div style={coverageModalHeroStyle}>
+                <BlockStack gap="150">
+                  <Text as="p" tone="subdued">
+                    {t("v4Mvp.coverageModal.description")}
+                  </Text>
+                  <InlineStack gap="200" wrap>
+                    <div style={coverageModalStatStyle}>
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        {t("v4.translationProgress")}
+                      </Text>
+                      <Text as="p" variant="headingLg">
+                        {coverageLoading && coverage.locales.length === 0
+                          ? "—"
+                          : `${coverage.overallPercent ?? 0}%`}
+                      </Text>
                     </div>
-                  ))
-              ) : (
-                <Text as="p" tone="subdued">
-                  {t("v4Mvp.coverageModal.empty")}
-                </Text>
-              )}
+                    <div style={coverageModalStatStyle}>
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        {t("v4Mvp.coverageCard.lastScanLabel")}
+                      </Text>
+                      <Text as="p" variant="headingMd">
+                        {displayedLastScan
+                          ? formatDateTime(displayedLastScan) ?? "—"
+                          : t("v4Mvp.scan.never")}
+                      </Text>
+                    </div>
+                  </InlineStack>
+                </BlockStack>
+              </div>
+
+              <BlockStack gap="200">
+                {coverage.locales.length > 0 ? (
+                  [...coverage.locales]
+                    .sort((a, b) => (a.percent ?? 0) - (b.percent ?? 0))
+                    .map((locale) => (
+                      <div key={locale.locale} style={coverageRowStyle}>
+                        <InlineStack align="space-between" blockAlign="center">
+                          <BlockStack gap="050">
+                            <InlineStack gap="150" blockAlign="center" wrap>
+                              <Text as="p" variant="bodyMd">
+                                {localeShortName(locale.locale, locale.label)}
+                              </Text>
+                              <Badge tone={(locale.percent ?? 0) >= 90 ? "success" : "attention"}>
+                                {localeRegionCode(locale.locale)}
+                              </Badge>
+                            </InlineStack>
+                            <Text as="p" tone="subdued" variant="bodySm">
+                              {t("v4Mvp.coverageModal.progressText", {
+                                translated: locale.translated,
+                                total: locale.total,
+                              })}
+                            </Text>
+                          </BlockStack>
+                          <Text as="p" variant="headingMd">
+                            {`${locale.percent ?? 0}%`}
+                          </Text>
+                        </InlineStack>
+                        <ProgressBar progress={locale.percent ?? 0} size="small" tone="primary" />
+                      </div>
+                    ))
+                ) : (
+                  <div style={coverageModalEmptyStyle}>
+                    <Text as="p" tone="subdued">
+                      {t("v4Mvp.coverageModal.empty")}
+                    </Text>
+                  </div>
+                )}
+              </BlockStack>
             </BlockStack>
-          </BlockStack>
+          </div>
         </Modal.Section>
       </Modal>
     </Page>
@@ -822,180 +855,120 @@ function RecommendationCard({
   onTranslate: () => void;
 }) {
   const { t } = useTranslation();
+  const toneStyles = recommendationToneStyles(tone);
 
   return (
-    <Card>
-      <BlockStack gap="300">
-        <InlineStack align="space-between" blockAlign="start">
-          <BlockStack gap="150">
-            <InlineStack gap="200" blockAlign="center" wrap>
-              <Text as="h3" variant="headingSm">
-                {title}
-              </Text>
+    <div style={recommendationCardStyle(tone)}>
+      <BlockStack gap="350">
+        <InlineStack align="space-between" blockAlign="start" wrap={false}>
+          <BlockStack gap="200">
+            <InlineStack gap="150" blockAlign="center" wrap>
+              <span style={recommendationTonePillStyle(toneStyles)}>
+                {t("v4Mvp.recommended.priority")}
+              </span>
               <Badge tone={tone}>{localeRegionCode(locale)}</Badge>
             </InlineStack>
             <BlockStack gap="100">
-              {reasons.map((reason) => (
-                <Text key={reason} as="p" tone="subdued" variant="bodySm">
-                  {reason}
-                </Text>
-              ))}
+              <Text as="h3" variant="headingMd">
+                {title}
+              </Text>
+              <Text as="p" tone="subdued" variant="bodySm">
+                {reasons[0]}
+              </Text>
             </BlockStack>
           </BlockStack>
-          <Button variant="primary" onClick={onTranslate}>
-            {t("v4Mvp.recommended.translate")}
-          </Button>
+          <div style={recommendationActionWrapStyle}>
+            <Button variant="primary" onClick={onTranslate}>
+              {t("v4Mvp.recommended.translate")}
+            </Button>
+          </div>
         </InlineStack>
 
-        <InlineStack gap="400" wrap>
-          <InlineStack gap="100" blockAlign="center">
-            <Text as="span" tone="subdued" variant="bodySm">
-              {t("v4Mvp.recommended.pendingItems")}
-            </Text>
-            <Text as="span" variant="bodyMd">
-              {pendingItems.toLocaleString()}
-            </Text>
-          </InlineStack>
-          <InlineStack gap="100" blockAlign="center">
-            <Text as="span" tone="subdued" variant="bodySm">
-              {t("v4.createTask.confirmCreditsRequired")}
-            </Text>
-            <Text as="span" variant="bodyMd">
-              {estimatedCredits != null ? formatEstimateCredits(estimatedCredits) : "—"}
-            </Text>
-          </InlineStack>
-          <InlineStack gap="100" blockAlign="center">
-            <Text as="span" tone="subdued" variant="bodySm">
-              {t("v4Mvp.recommended.estimateTime")}
-            </Text>
-            <Text as="span" variant="bodyMd">
-              {estimatedTime}
-            </Text>
-          </InlineStack>
-        </InlineStack>
+        {reasons.length > 1 ? (
+          <div style={recommendationReasonListStyle}>
+            <BlockStack gap="100">
+              {reasons.slice(1).map((reason) => (
+                <InlineStack key={reason} gap="150" blockAlign="start" wrap={false}>
+                  <span style={recommendationReasonDotStyle(toneStyles)} />
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    {reason}
+                  </Text>
+                </InlineStack>
+              ))}
+            </BlockStack>
+          </div>
+        ) : null}
 
-        <BlockStack gap="150">
-          <Text as="p" tone="subdued" variant="bodySm">
-            {t("v4Mvp.recommended.targets")}
-          </Text>
-          <InlineStack gap="150" wrap>
-            {targets.map((target) => (
-              <Badge key={target} tone="info">
-                {`${localeShortName(target)} (${localeRegionCode(target)})`}
-              </Badge>
-            ))}
-          </InlineStack>
-        </BlockStack>
+        <div style={recommendationMetricsGridStyle}>
+          <MetricStat
+            label={t("v4Mvp.recommended.pendingItems")}
+            value={pendingItems.toLocaleString()}
+          />
+          <MetricStat
+            label={t("v4.createTask.confirmCreditsRequired")}
+            value={
+              estimatedCredits != null ? formatEstimateCredits(estimatedCredits) : "—"
+            }
+          />
+          <MetricStat
+            label={t("v4Mvp.recommended.estimateTime")}
+            value={estimatedTime}
+          />
+        </div>
 
-        <BlockStack gap="150">
-          <Text as="p" tone="subdued" variant="bodySm">
-            {t("v4Mvp.recommended.modules")}
-          </Text>
-          <InlineStack gap="150" wrap>
-            {modules.slice(0, 4).map((moduleKey) => (
-              <Badge key={moduleKey} tone="info">
-                {getV4ModuleLabel(moduleKey, t)}
-              </Badge>
-            ))}
-            {modules.length > 4 ? (
-              <Badge tone="info">{`+${modules.length - 4}`}</Badge>
-            ) : null}
-          </InlineStack>
-        </BlockStack>
+        <div style={recommendationMetaGridStyle}>
+          <div style={recommendationMetaSectionStyle}>
+            <Text as="p" tone="subdued" variant="bodySm">
+              {t("v4Mvp.recommended.targets")}
+            </Text>
+            <InlineStack gap="150" wrap>
+              {targets.map((target) => (
+                <span key={target} style={recommendationChipStyle}>
+                  {`${localeShortName(target)} (${localeRegionCode(target)})`}
+                </span>
+              ))}
+            </InlineStack>
+          </div>
+
+          <div style={recommendationMetaSectionStyle}>
+            <Text as="p" tone="subdued" variant="bodySm">
+              {t("v4Mvp.recommended.modules")}
+            </Text>
+            <InlineStack gap="150" wrap>
+              {modules.slice(0, 4).map((moduleKey) => (
+                <span key={moduleKey} style={recommendationChipStyle}>
+                  {getV4ModuleLabel(moduleKey, t)}
+                </span>
+              ))}
+              {modules.length > 4 ? (
+                <span style={recommendationChipStyle}>{`+${modules.length - 4}`}</span>
+              ) : null}
+            </InlineStack>
+          </div>
+        </div>
       </BlockStack>
-    </Card>
+    </div>
   );
 }
 
-function JobCard({
-  job,
-  t,
-  onAction,
+function MetricStat({
+  label,
+  value,
 }: {
-  job: TranslationJobProgressSummary;
-  t: ReturnType<typeof useTranslation>["t"];
-  onAction: (
-    taskId: string,
-    actionType: "pause" | "resume" | "cancel" | "delete",
-  ) => void;
+  label: string;
+  value: string;
 }) {
-  const statusLabel = job.isStopping
-    ? t("v4.pausing")
-    : getV4StatusLabel(job.status, t, job.metrics, job.errorMessage);
-  const canPause = job.status === "TRANSLATE_QUEUED" || job.status === "TRANSLATING";
-  const canResume = job.status === "PAUSED" || job.status === "FAILED";
-  const canDelete = job.isTerminal || job.status === "PAUSED";
-
   return (
-    <Card>
-      <BlockStack gap="300">
-        <InlineStack align="space-between" blockAlign="start">
-          <BlockStack gap="100">
-            <InlineStack gap="200" blockAlign="center" wrap>
-              <Text as="h3" variant="headingSm">
-                {localeRegionCode(job.source)} → {localeRegionCode(job.target)}
-              </Text>
-              <Badge tone={job.isTerminal ? "info" : "attention"}>{statusLabel}</Badge>
-            </InlineStack>
-            <Text as="p" tone="subdued" variant="bodySm">
-              {t("v4Mvp.queue.createdAt", { time: formatDateTime(job.createdAt) ?? "—" })}
-              {" · "}
-              {t("v4Mvp.queue.updatedAt", { time: formatDateTime(job.updatedAt) ?? "—" })}
-            </Text>
-          </BlockStack>
-          <InlineStack gap="200" wrap>
-            {canPause ? (
-              <Button size="slim" onClick={() => onAction(job.taskId, "pause")}>
-                {t("v4.tasks.pause")}
-              </Button>
-            ) : null}
-            {canResume ? (
-              <Button size="slim" onClick={() => onAction(job.taskId, "resume")}>
-                {t("v4.tasks.resume")}
-              </Button>
-            ) : null}
-            {!job.isTerminal ? (
-              <Button size="slim" onClick={() => onAction(job.taskId, "cancel")}>
-                {t("Cancel")}
-              </Button>
-            ) : null}
-            {canDelete ? (
-              <Button size="slim" onClick={() => onAction(job.taskId, "delete")}>
-                {t("Delete")}
-              </Button>
-            ) : null}
-          </InlineStack>
-        </InlineStack>
-
-        {job.progressPercent != null ? (
-          <BlockStack gap="100">
-            <InlineStack align="space-between">
-              <Text as="span" tone="subdued" variant="bodySm">
-                {t("v4Mvp.queue.progress")}
-              </Text>
-              <Text as="span" variant="bodySm">
-                {job.progressPercent}%
-              </Text>
-            </InlineStack>
-            <ProgressBar progress={job.progressPercent} size="small" tone="primary" />
-          </BlockStack>
-        ) : null}
-
-        <InlineStack gap="150" wrap>
-          {job.modules.map((moduleKey) => (
-            <Badge key={moduleKey} tone="info">
-              {getV4ModuleLabel(moduleKey, t)}
-            </Badge>
-          ))}
-        </InlineStack>
-
-        {job.errorMessage ? (
-          <Text as="p" tone="critical" variant="bodySm">
-            {translateV4Message(job.errorMessage, t)}
-          </Text>
-        ) : null}
+    <div style={recommendationMetricCardStyle}>
+      <BlockStack gap="050">
+        <Text as="p" tone="subdued" variant="bodySm">
+          {label}
+        </Text>
+        <Text as="p" variant="headingMd">
+          {value}
+        </Text>
       </BlockStack>
-    </Card>
+    </div>
   );
 }
 
@@ -1004,8 +977,9 @@ const tabListStyle = {
   gap: "8px",
   padding: "4px",
   borderRadius: "999px",
-  background: "rgba(246, 246, 247, 0.95)",
-  border: "1px solid rgba(138, 142, 145, 0.18)",
+  background: "rgba(246, 248, 252, 0.96)",
+  border: `1px solid ${v4Colors.cardBorder}`,
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
 } satisfies CSSProperties;
 
 const emptyStateStyle = {
@@ -1016,39 +990,270 @@ const emptyStateStyle = {
   padding: "24px 16px",
 } satisfies CSSProperties;
 
-const historyLinkStyle = {
-  appearance: "none",
-  border: "none",
-  background: "transparent",
-  padding: 0,
-  color: "#6b7280",
-  fontSize: "13px",
-  lineHeight: "20px",
-  fontWeight: 500,
-  cursor: "pointer",
-  fontFamily: "inherit",
-  textDecoration: "underline",
-  textUnderlineOffset: "2px",
-} satisfies CSSProperties;
-
 const coverageRowStyle = {
   padding: "14px 16px",
-  border: "1px solid rgba(138, 142, 145, 0.18)",
+  border: `1px solid ${v4Colors.cardBorder}`,
+  borderRadius: "14px",
+  background: "#ffffff",
+  boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)",
+} satisfies CSSProperties;
+
+const coverageModalShellStyle = {
+  padding: "4px 2px 2px",
+} satisfies CSSProperties;
+
+const coverageModalHeroStyle = {
+  ...v4CardStyle,
+  padding: "16px 18px",
+  background: v4Colors.summaryBg,
+  boxShadow: "var(--app-shadow-card)",
+} satisfies CSSProperties;
+
+const coverageModalStatStyle = {
+  minWidth: "180px",
+  padding: "12px 14px",
+  borderRadius: "14px",
+  background: "rgba(255,255,255,0.74)",
+  border: `1px solid ${v4Colors.cardBorder}`,
+} satisfies CSSProperties;
+
+const coverageModalEmptyStyle = {
+  padding: "28px 18px",
+  borderRadius: "14px",
+  background: "rgba(247,248,250,0.96)",
+  border: `1px dashed ${v4Colors.cardBorder}`,
+} satisfies CSSProperties;
+
+const summaryHeroCardStyle = {
+  ...v4CardStyle,
+  padding: "22px 24px",
+  background: v4Colors.summaryBg,
+  boxShadow: "var(--app-shadow-card-strong)",
+} satisfies CSSProperties;
+
+const sectionActionWrapStyle = {
+  flexShrink: 0,
+  paddingLeft: "12px",
+} satisfies CSSProperties;
+
+const summaryHeroFooterStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-end",
+  gap: "16px",
+  flexWrap: "wrap",
+} satisfies CSSProperties;
+
+const summaryValueBlockStyle = {
+  minWidth: 0,
+  flex: "1 1 320px",
+} satisfies CSSProperties;
+
+const summaryPercentRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "12px",
+  flexWrap: "wrap",
+} satisfies CSSProperties;
+
+const summaryCoveragePillStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: "28px",
+  padding: "4px 12px",
+  borderRadius: "999px",
+  background: "rgba(255,255,255,0.72)",
+  border: `1px solid ${v4Colors.cardBorder}`,
+  color: v4Colors.textMuted,
+  fontSize: "12px",
+  fontWeight: 600,
+  lineHeight: "18px",
+} satisfies CSSProperties;
+
+const summaryMetaCardStyle = {
+  padding: "12px 14px",
+  borderRadius: "14px",
+  background: "rgba(255,255,255,0.72)",
+  border: `1px solid ${v4Colors.cardBorder}`,
+  minWidth: "180px",
+} satisfies CSSProperties;
+
+const batchEntryCardStyle = {
+  ...v4CardStyle,
+  padding: "18px 20px",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(247,248,250,0.96) 100%)",
+  boxShadow: "var(--app-shadow-card)",
+} satisfies CSSProperties;
+
+const workbenchShellStyle = {
+  ...v4CardStyle,
+  padding: "18px",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(250,251,253,0.98) 100%)",
+  boxShadow: "var(--app-shadow-card-strong)",
+} satisfies CSSProperties;
+
+const workbenchHeaderStyle = {
+  paddingBottom: "4px",
+  borderBottom: `1px solid ${v4Colors.divider}`,
+} satisfies CSSProperties;
+
+const scanSummaryStyle = {
+  padding: "12px 14px",
+  borderRadius: "12px",
+  background: "rgba(240, 244, 255, 0.72)",
+  border: `1px solid ${v4Colors.cardBorder}`,
+} satisfies CSSProperties;
+
+const emptyStateInnerStyle = {
+  width: "100%",
+  maxWidth: "540px",
+  padding: "28px 24px",
+  borderRadius: "16px",
+  border: `1px dashed ${v4Colors.cardBorder}`,
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(247,248,250,0.96) 100%)",
+} satisfies CSSProperties;
+
+function recommendationToneStyles(tone: "success" | "attention" | "info") {
+  if (tone === "success") {
+    return {
+      border: "rgba(29, 154, 127, 0.18)",
+      background:
+        "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(239, 252, 247, 0.96) 100%)",
+      accent: "#1d9a7f",
+      accentSoft: "rgba(29, 154, 127, 0.10)",
+    };
+  }
+
+  if (tone === "attention") {
+    return {
+      border: "rgba(217, 119, 6, 0.18)",
+      background:
+        "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(255, 249, 235, 0.96) 100%)",
+      accent: "#b45309",
+      accentSoft: "rgba(245, 158, 11, 0.12)",
+    };
+  }
+
+  return {
+    border: "rgba(37, 99, 235, 0.18)",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(239, 246, 255, 0.96) 100%)",
+    accent: "#2563eb",
+    accentSoft: "rgba(59, 130, 246, 0.10)",
+  };
+}
+
+function recommendationCardStyle(
+  tone: "success" | "attention" | "info",
+): CSSProperties {
+  const styles = recommendationToneStyles(tone);
+  return {
+    padding: "18px 18px 16px",
+    borderRadius: "16px",
+    border: `1px solid ${styles.border}`,
+    background: styles.background,
+    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
+    position: "relative",
+    overflow: "hidden",
+  };
+}
+
+function recommendationTonePillStyle(styles: {
+  accent: string;
+  accentSoft: string;
+}): CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "4px 10px",
+    borderRadius: "999px",
+    background: styles.accentSoft,
+    color: styles.accent,
+    fontSize: "12px",
+    fontWeight: 700,
+    lineHeight: "16px",
+  };
+}
+
+const recommendationActionWrapStyle = {
+  flexShrink: 0,
+  paddingLeft: "12px",
+} satisfies CSSProperties;
+
+const recommendationReasonListStyle = {
+  padding: "12px 14px",
+  borderRadius: "12px",
+  background: "rgba(255, 255, 255, 0.72)",
+  border: "1px solid rgba(138, 142, 145, 0.14)",
+} satisfies CSSProperties;
+
+function recommendationReasonDotStyle(styles: {
+  accent: string;
+}): CSSProperties {
+  return {
+    width: "6px",
+    height: "6px",
+    marginTop: "7px",
+    borderRadius: "999px",
+    background: styles.accent,
+    flexShrink: 0,
+  };
+}
+
+const recommendationMetricsGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+  gap: "12px",
+} satisfies CSSProperties;
+
+const recommendationMetricCardStyle = {
+  padding: "12px 14px",
   borderRadius: "12px",
   background: "#ffffff",
+  border: "1px solid rgba(138, 142, 145, 0.16)",
+} satisfies CSSProperties;
+
+const recommendationMetaGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: "12px",
+} satisfies CSSProperties;
+
+const recommendationMetaSectionStyle = {
+  display: "grid",
+  gap: "8px",
+} satisfies CSSProperties;
+
+const recommendationChipStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: "28px",
+  padding: "4px 10px",
+  borderRadius: "999px",
+  background: "rgba(255, 255, 255, 0.78)",
+  border: "1px solid rgba(138, 142, 145, 0.18)",
+  color: "#374151",
+  fontSize: "12px",
+  fontWeight: 600,
+  lineHeight: "18px",
 } satisfies CSSProperties;
 
 function tabButtonStyle(active: boolean): CSSProperties {
   return {
     appearance: "none",
     border: "none",
-    background: active ? "#111827" : "transparent",
-    color: active ? "#ffffff" : "#4b5563",
+    background: active ? v4Colors.text : "transparent",
+    color: active ? "#ffffff" : v4Colors.textMuted,
     borderRadius: "999px",
     padding: "8px 14px",
     fontSize: "13px",
     fontWeight: 600,
     cursor: "pointer",
     fontFamily: "inherit",
+    boxShadow: active ? "0 8px 20px rgba(15, 23, 42, 0.12)" : "none",
+    transition: "all 0.18s ease",
   };
 }
