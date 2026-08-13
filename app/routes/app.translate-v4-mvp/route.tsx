@@ -25,10 +25,7 @@ import { message } from "~/ui/message";
 import { authenticate } from "~/shopify.server";
 import type { RootState } from "~/store";
 import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
-import type {
-  CoverageSummary,
-  LocaleCoverageRow,
-} from "~/server/translateV4/coverage.server";
+import type { CoverageSummary } from "~/server/translateV4/coverage.server";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import {
   DEFAULT_MODULE_KEYS,
@@ -39,7 +36,6 @@ import {
 } from "~/routes/app.translate-v4/useCreateTaskEstimate";
 import {
   formatV4CreateTasksMessage,
-  getV4ModuleLabel,
   translateV4Message,
 } from "~/routes/app.translate-v4/v4I18n";
 import { TaskQueueSection } from "~/routes/app.translate-v4/components/TaskQueueSection";
@@ -101,29 +97,6 @@ async function readJsonResponse<T = unknown>(res: Response): Promise<T> {
     throw new Error(`Empty response body (${res.status})`);
   }
   return JSON.parse(text) as T;
-}
-
-function formatDateTime(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString(undefined, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-function latestAutoScanAt(locales: LocaleCoverageRow[]): string | null {
-  const timestamps = locales
-    .map((row) => row.lastAutoUpdateAt)
-    .filter((value): value is string => Boolean(value))
-    .map((value) => new Date(value).getTime())
-    .filter((value) => Number.isFinite(value));
-  if (!timestamps.length) return null;
-  return new Date(Math.max(...timestamps)).toISOString();
 }
 
 function estimateTimeLabel(workload: number, t: ReturnType<typeof useTranslation>["t"]) {
@@ -278,7 +251,6 @@ export default function TranslateV4MvpRoute() {
   const [jobs, setJobs] = useState<TranslationJobProgressSummary[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [quota, setQuota] = useState<ShopQuota | null>(null);
-  const [lastManualScanAt, setLastManualScanAt] = useState<string | null>(null);
   const [scanSummary, setScanSummary] = useState<string | null>(null);
   const [changedLocaleCodes, setChangedLocaleCodes] = useState<string[]>([]);
   const [scanLoading, setScanLoading] = useState(false);
@@ -375,7 +347,6 @@ export default function TranslateV4MvpRoute() {
         }
 
         if (latestSummary) {
-          setLastManualScanAt(new Date().toISOString());
           setChangedLocaleCodes(findChangedLocaleCodes(before, latestSummary));
           setScanSummary(buildScanSummary(before, latestSummary, t));
         } else {
@@ -452,7 +423,6 @@ export default function TranslateV4MvpRoute() {
     () => jobs.some((job) => job.status === "TRANSLATING" || job.isStopping),
     [jobs],
   );
-  const displayedLastScan = lastManualScanAt ?? latestAutoScanAt(coverage.locales);
 
   const createTasksWithConfig = useCallback(async ({
     nextTargets,
@@ -558,17 +528,7 @@ export default function TranslateV4MvpRoute() {
           <div style={summaryHeroCardStyle}>
             <BlockStack gap="350">
               <InlineStack align="space-between" blockAlign="start">
-                <BlockStack gap="100">
-                  <Text as="span" variant="bodySm" tone="subdued">
-                    {t("v4Mvp.coverageCard.title")}
-                  </Text>
-                  <Text as="h2" variant="headingLg">
-                    {t("v4Mvp.coverageCard.description", {
-                      translated: coverage.translatedItems,
-                      total: coverage.totalItems,
-                    })}
-                  </Text>
-                </BlockStack>
+                <div />
                 <div style={sectionActionWrapStyle}>
                   <Button onClick={() => setCoverageDetailOpen(true)}>
                     {t("v4Mvp.coverageCard.viewDetails")}
@@ -581,29 +541,11 @@ export default function TranslateV4MvpRoute() {
                   <Text as="p" tone="subdued" variant="bodySm">
                     {t("v4.translationProgress")}
                   </Text>
-                  <div style={summaryPercentRowStyle}>
-                    <Text as="p" variant="heading2xl">
-                      {coverageLoading && coverage.locales.length === 0
-                        ? "—"
-                        : `${coverage.overallPercent ?? 0}%`}
-                    </Text>
-                    <span style={summaryCoveragePillStyle}>
-                      {`${t("v4Mvp.recommended.priority")} · ${recommendations.length}`}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={summaryMetaCardStyle}>
-                  <BlockStack gap="050">
-                    <Text as="p" tone="subdued" variant="bodySm" alignment="end">
-                      {t("v4Mvp.coverageCard.lastScanLabel")}
-                    </Text>
-                    <Text as="p" variant="bodyMd">
-                      {displayedLastScan
-                        ? formatDateTime(displayedLastScan) ?? "—"
-                        : t("v4Mvp.scan.never")}
-                    </Text>
-                  </BlockStack>
+                  <Text as="p" variant="heading2xl">
+                    {coverageLoading && coverage.locales.length === 0
+                      ? "—"
+                      : `${coverage.overallPercent ?? 0}%`}
+                  </Text>
                 </div>
               </div>
             </BlockStack>
@@ -656,13 +598,6 @@ export default function TranslateV4MvpRoute() {
 
                   {workbenchTab === "recommended" ? (
                     <InlineStack gap="200">
-                      {displayedLastScan ? (
-                        <Text as="span" tone="subdued" variant="bodySm">
-                          {t("v4Mvp.scan.lastScanShort", {
-                            time: formatDateTime(displayedLastScan),
-                          })}
-                        </Text>
-                      ) : null}
                       <Button
                         variant="primary"
                         onClick={() => void refreshCoverage(true)}
@@ -689,14 +624,10 @@ export default function TranslateV4MvpRoute() {
                       <RecommendationCard
                         key={item.id}
                         title={item.title}
-                        locale={item.locale}
                         reasons={item.reasons}
-                        targets={item.targets}
-                        modules={item.modules}
                         pendingItems={item.pendingItems}
                         estimatedCredits={recommendationEstimates[item.id] ?? null}
                         estimatedTime={estimateTimeLabel(item.pendingItems, t)}
-                        tone={item.tone}
                         onTranslate={() => void handleRecommendationTranslate(item)}
                       />
                     ))
@@ -757,31 +688,16 @@ export default function TranslateV4MvpRoute() {
             <BlockStack gap="350">
               <div style={coverageModalHeroStyle}>
                 <BlockStack gap="150">
-                  <Text as="p" tone="subdued">
-                    {t("v4Mvp.coverageModal.description")}
-                  </Text>
-                  <InlineStack gap="200" wrap>
-                    <div style={coverageModalStatStyle}>
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {t("v4.translationProgress")}
-                      </Text>
-                      <Text as="p" variant="headingLg">
-                        {coverageLoading && coverage.locales.length === 0
-                          ? "—"
-                          : `${coverage.overallPercent ?? 0}%`}
-                      </Text>
-                    </div>
-                    <div style={coverageModalStatStyle}>
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {t("v4Mvp.coverageCard.lastScanLabel")}
-                      </Text>
-                      <Text as="p" variant="headingMd">
-                        {displayedLastScan
-                          ? formatDateTime(displayedLastScan) ?? "—"
-                          : t("v4Mvp.scan.never")}
-                      </Text>
-                    </div>
-                  </InlineStack>
+                  <div style={coverageModalStatStyle}>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      {t("v4.translationProgress")}
+                    </Text>
+                    <Text as="p" variant="headingLg">
+                      {coverageLoading && coverage.locales.length === 0
+                        ? "—"
+                        : `${coverage.overallPercent ?? 0}%`}
+                    </Text>
+                  </div>
                 </BlockStack>
               </div>
 
@@ -833,48 +749,48 @@ export default function TranslateV4MvpRoute() {
 
 function RecommendationCard({
   title,
-  locale,
   reasons,
-  targets,
-  modules,
   pendingItems,
   estimatedCredits,
   estimatedTime,
-  tone,
   onTranslate,
 }: {
   title: string;
-  locale: string;
   reasons: string[];
-  targets: string[];
-  modules: string[];
   pendingItems: number;
   estimatedCredits: number | null;
   estimatedTime: string;
-  tone: "success" | "attention" | "info";
   onTranslate: () => void;
 }) {
   const { t } = useTranslation();
-  const toneStyles = recommendationToneStyles(tone);
+  const sourceUpdatedReason = t("v4Mvp.recommended.reasonChanged");
+  const hasSourceUpdated = reasons.includes(sourceUpdatedReason);
+  const primaryReason = reasons.find((reason) => reason !== sourceUpdatedReason) ?? null;
 
   return (
-    <div style={recommendationCardStyle(tone)}>
+    <div style={recommendationCardStyle}>
       <BlockStack gap="350">
         <InlineStack align="space-between" blockAlign="start" wrap={false}>
           <BlockStack gap="200">
             <InlineStack gap="150" blockAlign="center" wrap>
-              <span style={recommendationTonePillStyle(toneStyles)}>
+              <span style={recommendationTonePillStyle}>
                 {t("v4Mvp.recommended.priority")}
               </span>
-              <Badge tone={tone}>{localeRegionCode(locale)}</Badge>
+              {hasSourceUpdated ? (
+                <span style={recommendationSourcePillStyle}>
+                  {t("v4Mvp.recommended.sourceUpdated")}
+                </span>
+              ) : null}
             </InlineStack>
             <BlockStack gap="100">
               <Text as="h3" variant="headingMd">
                 {title}
               </Text>
-              <Text as="p" tone="subdued" variant="bodySm">
-                {reasons[0]}
-              </Text>
+              {primaryReason ? (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  {primaryReason}
+                </Text>
+              ) : null}
             </BlockStack>
           </BlockStack>
           <div style={recommendationActionWrapStyle}>
@@ -883,21 +799,6 @@ function RecommendationCard({
             </Button>
           </div>
         </InlineStack>
-
-        {reasons.length > 1 ? (
-          <div style={recommendationReasonListStyle}>
-            <BlockStack gap="100">
-              {reasons.slice(1).map((reason) => (
-                <InlineStack key={reason} gap="150" blockAlign="start" wrap={false}>
-                  <span style={recommendationReasonDotStyle(toneStyles)} />
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    {reason}
-                  </Text>
-                </InlineStack>
-              ))}
-            </BlockStack>
-          </div>
-        ) : null}
 
         <div style={recommendationMetricsGridStyle}>
           <MetricStat
@@ -914,37 +815,6 @@ function RecommendationCard({
             label={t("v4Mvp.recommended.estimateTime")}
             value={estimatedTime}
           />
-        </div>
-
-        <div style={recommendationMetaGridStyle}>
-          <div style={recommendationMetaSectionStyle}>
-            <Text as="p" tone="subdued" variant="bodySm">
-              {t("v4Mvp.recommended.targets")}
-            </Text>
-            <InlineStack gap="150" wrap>
-              {targets.map((target) => (
-                <span key={target} style={recommendationChipStyle}>
-                  {`${localeShortName(target)} (${localeRegionCode(target)})`}
-                </span>
-              ))}
-            </InlineStack>
-          </div>
-
-          <div style={recommendationMetaSectionStyle}>
-            <Text as="p" tone="subdued" variant="bodySm">
-              {t("v4Mvp.recommended.modules")}
-            </Text>
-            <InlineStack gap="150" wrap>
-              {modules.slice(0, 4).map((moduleKey) => (
-                <span key={moduleKey} style={recommendationChipStyle}>
-                  {getV4ModuleLabel(moduleKey, t)}
-                </span>
-              ))}
-              {modules.length > 4 ? (
-                <span style={recommendationChipStyle}>{`+${modules.length - 4}`}</span>
-              ) : null}
-            </InlineStack>
-          </div>
         </div>
       </BlockStack>
     </div>
@@ -1049,35 +919,6 @@ const summaryValueBlockStyle = {
   flex: "1 1 320px",
 } satisfies CSSProperties;
 
-const summaryPercentRowStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  flexWrap: "wrap",
-} satisfies CSSProperties;
-
-const summaryCoveragePillStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  minHeight: "28px",
-  padding: "4px 12px",
-  borderRadius: "999px",
-  background: "rgba(255,255,255,0.72)",
-  border: `1px solid ${v4Colors.cardBorder}`,
-  color: v4Colors.textMuted,
-  fontSize: "12px",
-  fontWeight: 600,
-  lineHeight: "18px",
-} satisfies CSSProperties;
-
-const summaryMetaCardStyle = {
-  padding: "12px 14px",
-  borderRadius: "14px",
-  background: "rgba(255,255,255,0.72)",
-  border: `1px solid ${v4Colors.cardBorder}`,
-  minWidth: "180px",
-} satisfies CSSProperties;
-
 const batchEntryCardStyle = {
   ...v4CardStyle,
   padding: "18px 20px",
@@ -1116,92 +957,52 @@ const emptyStateInnerStyle = {
     "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(247,248,250,0.96) 100%)",
 } satisfies CSSProperties;
 
-function recommendationToneStyles(tone: "success" | "attention" | "info") {
-  if (tone === "success") {
-    return {
-      border: "rgba(29, 154, 127, 0.18)",
-      background:
-        "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(239, 252, 247, 0.96) 100%)",
-      accent: "#1d9a7f",
-      accentSoft: "rgba(29, 154, 127, 0.10)",
-    };
-  }
+const recommendationBlueStyles = {
+  border: "rgba(37, 99, 235, 0.18)",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(239, 246, 255, 0.96) 100%)",
+  accent: "#2563eb",
+  accentSoft: "rgba(59, 130, 246, 0.10)",
+} as const;
 
-  if (tone === "attention") {
-    return {
-      border: "rgba(217, 119, 6, 0.18)",
-      background:
-        "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(255, 249, 235, 0.96) 100%)",
-      accent: "#b45309",
-      accentSoft: "rgba(245, 158, 11, 0.12)",
-    };
-  }
+const recommendationCardStyle: CSSProperties = {
+  padding: "18px 18px 16px",
+  borderRadius: "16px",
+  border: `1px solid ${recommendationBlueStyles.border}`,
+  background: recommendationBlueStyles.background,
+  boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
+  position: "relative",
+  overflow: "hidden",
+};
 
-  return {
-    border: "rgba(37, 99, 235, 0.18)",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(239, 246, 255, 0.96) 100%)",
-    accent: "#2563eb",
-    accentSoft: "rgba(59, 130, 246, 0.10)",
-  };
-}
+const recommendationTonePillStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "4px 10px",
+  borderRadius: "999px",
+  background: recommendationBlueStyles.accentSoft,
+  color: recommendationBlueStyles.accent,
+  fontSize: "12px",
+  fontWeight: 700,
+  lineHeight: "16px",
+} satisfies CSSProperties;
 
-function recommendationCardStyle(
-  tone: "success" | "attention" | "info",
-): CSSProperties {
-  const styles = recommendationToneStyles(tone);
-  return {
-    padding: "18px 18px 16px",
-    borderRadius: "16px",
-    border: `1px solid ${styles.border}`,
-    background: styles.background,
-    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
-    position: "relative",
-    overflow: "hidden",
-  };
-}
-
-function recommendationTonePillStyle(styles: {
-  accent: string;
-  accentSoft: string;
-}): CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "4px 10px",
-    borderRadius: "999px",
-    background: styles.accentSoft,
-    color: styles.accent,
-    fontSize: "12px",
-    fontWeight: 700,
-    lineHeight: "16px",
-  };
-}
+const recommendationSourcePillStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "4px 10px",
+  borderRadius: "999px",
+  background: "rgba(37, 99, 235, 0.08)",
+  color: recommendationBlueStyles.accent,
+  fontSize: "12px",
+  fontWeight: 600,
+  lineHeight: "16px",
+} satisfies CSSProperties;
 
 const recommendationActionWrapStyle = {
   flexShrink: 0,
   paddingLeft: "12px",
 } satisfies CSSProperties;
-
-const recommendationReasonListStyle = {
-  padding: "12px 14px",
-  borderRadius: "12px",
-  background: "rgba(255, 255, 255, 0.72)",
-  border: "1px solid rgba(138, 142, 145, 0.14)",
-} satisfies CSSProperties;
-
-function recommendationReasonDotStyle(styles: {
-  accent: string;
-}): CSSProperties {
-  return {
-    width: "6px",
-    height: "6px",
-    marginTop: "7px",
-    borderRadius: "999px",
-    background: styles.accent,
-    flexShrink: 0,
-  };
-}
 
 const recommendationMetricsGridStyle = {
   display: "grid",
@@ -1214,31 +1015,6 @@ const recommendationMetricCardStyle = {
   borderRadius: "12px",
   background: "#ffffff",
   border: "1px solid rgba(138, 142, 145, 0.16)",
-} satisfies CSSProperties;
-
-const recommendationMetaGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-  gap: "12px",
-} satisfies CSSProperties;
-
-const recommendationMetaSectionStyle = {
-  display: "grid",
-  gap: "8px",
-} satisfies CSSProperties;
-
-const recommendationChipStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  minHeight: "28px",
-  padding: "4px 10px",
-  borderRadius: "999px",
-  background: "rgba(255, 255, 255, 0.78)",
-  border: "1px solid rgba(138, 142, 145, 0.18)",
-  color: "#374151",
-  fontSize: "12px",
-  fontWeight: 600,
-  lineHeight: "18px",
 } satisfies CSSProperties;
 
 function tabButtonStyle(active: boolean): CSSProperties {

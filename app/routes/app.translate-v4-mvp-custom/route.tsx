@@ -2,12 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { useSelector } from "react-redux";
-import { BlockStack, Page, Text } from "@shopify/polaris";
+import { BlockStack, Button, InlineStack, Page, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import { message } from "~/ui/message";
 import { authenticate } from "~/shopify.server";
-import type { RootState } from "~/store";
 import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
 import type { CoverageSummary } from "~/server/translateV4/coverage.server";
 import {
@@ -21,9 +19,8 @@ import {
 } from "~/routes/app.translate-v4/useCreateTaskEstimate";
 import { formatV4CreateTasksMessage } from "~/routes/app.translate-v4/v4I18n";
 import { localeRegionCode } from "~/routes/app.translate-v4/localeDisplay";
-import { PageHeaderBar } from "~/routes/app.translate-v4/components/SummaryAndHeader";
 import { CreateTaskCard } from "~/routes/app.translate-v4/components/CreateTaskCard";
-import { v4CardStyle, v4Colors, v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
+import { v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
 import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
@@ -87,7 +84,6 @@ export default function TranslateV4MvpCustomRoute() {
   const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const plan = useSelector((state: RootState) => state.userConfig.plan);
 
   const targetOptions = useMemo(
     () =>
@@ -138,7 +134,6 @@ export default function TranslateV4MvpCustomRoute() {
     parseBooleanParam(searchParams.get("includeLiquid")),
   );
 
-  const planType = plan?.type?.trim() || null;
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
   const createDisabledMessage =
     normalizedQuota == null ? t("v4.create.quotaUnavailable") : null;
@@ -238,64 +233,46 @@ export default function TranslateV4MvpCustomRoute() {
   ]);
 
   return (
-    <Page
-      backAction={{ content: t("v4Mvp.customPage.back"), onAction: () => navigate("/app/translate-v4-mvp") }}
-    >
-      <TitleBar title={t("v4.title")} />
+    <Page>
+      <TitleBar title={t("v4Mvp.customPage.title")} />
       <div style={v4ContentStyle}>
         <BlockStack gap="500">
-          <PageHeaderBar credits={normalizedQuota?.remaining ?? null} planType={planType} />
-
-          <div style={customHeroCardStyle}>
-            <BlockStack gap="100">
-              <Text as="span" variant="bodySm" tone="subdued">
+          <BlockStack gap="200">
+            <InlineStack gap="300" blockAlign="center">
+              <Button onClick={() => navigate("/app/translate-v4-mvp")}>
+                {t("v4Mvp.customPage.back")}
+              </Button>
+              <Text as="h1" variant="headingLg">
                 {t("v4Mvp.customPage.title")}
               </Text>
-              <Text as="h2" variant="headingLg">
-                {t("v4Mvp.customPage.subtitle")}
-              </Text>
-            </BlockStack>
-          </div>
+            </InlineStack>
+            <Text as="p" tone="subdued" variant="bodyMd">
+              {t("v4Mvp.customPage.subtitle")}
+            </Text>
+          </BlockStack>
 
-          <div style={customShellStyle}>
-            <CreateTaskCard
-              targetOptions={targetOptions}
-              targets={targets}
-              onTargetsChange={setTargets}
-              modules={modules}
-              onModulesChange={setModules}
-              creating={creating}
-              createDisabled={normalizedQuota == null}
-              disabledMessage={createDisabledMessage}
-              onCreate={() => void handleCreate()}
-              aiModel={aiModel}
-              onAiModelChange={setAiModel}
-              isCover={isCover}
-              onIsCoverChange={setIsCover}
-              isHandle={isHandle}
-              onIsHandleChange={setIsHandle}
-              includeLiquid={includeLiquid}
-              onIncludeLiquidChange={setIncludeLiquid}
-              estimate={taskEstimate}
-            />
-          </div>
+          <CreateTaskCard
+            targetOptions={targetOptions}
+            targets={targets}
+            onTargetsChange={setTargets}
+            modules={modules}
+            onModulesChange={setModules}
+            creating={creating}
+            createDisabled={normalizedQuota == null}
+            disabledMessage={createDisabledMessage}
+            onCreate={() => void handleCreate()}
+            aiModel={aiModel}
+            onAiModelChange={setAiModel}
+            isCover={isCover}
+            onIsCoverChange={setIsCover}
+            isHandle={isHandle}
+            onIsHandleChange={setIsHandle}
+            includeLiquid={includeLiquid}
+            onIncludeLiquidChange={setIncludeLiquid}
+            estimate={taskEstimate}
+          />
         </BlockStack>
       </div>
     </Page>
   );
 }
-
-const customHeroCardStyle = {
-  ...v4CardStyle,
-  padding: "22px 24px",
-  background: v4Colors.summaryBg,
-  boxShadow: "var(--app-shadow-card-strong)",
-} as const;
-
-const customShellStyle = {
-  ...v4CardStyle,
-  padding: "18px",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(250,251,253,0.98) 100%)",
-  boxShadow: "var(--app-shadow-card-strong)",
-} as const;
