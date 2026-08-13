@@ -526,19 +526,10 @@ export default function TranslateV4MvpRoute() {
           />
 
           <div style={summaryHeroCardStyle}>
-            <BlockStack gap="350">
-              <InlineStack align="space-between" blockAlign="start">
-                <div />
-                <div style={sectionActionWrapStyle}>
-                  <Button onClick={() => setCoverageDetailOpen(true)}>
-                    {t("v4Mvp.coverageCard.viewDetails")}
-                  </Button>
-                </div>
-              </InlineStack>
-
-              <div style={summaryHeroFooterStyle}>
+            <div style={summaryHeroHeaderStyle}>
+              <InlineStack align="space-between" blockAlign="start" wrap={false}>
                 <div style={summaryValueBlockStyle}>
-                  <Text as="p" tone="subdued" variant="bodySm">
+                  <Text as="p" tone="subdued" variant="bodyMd">
                     {t("v4.translationProgress")}
                   </Text>
                   <Text as="p" variant="heading2xl">
@@ -547,8 +538,13 @@ export default function TranslateV4MvpRoute() {
                       : `${coverage.overallPercent ?? 0}%`}
                   </Text>
                 </div>
-              </div>
-            </BlockStack>
+                <div style={sectionActionWrapStyle}>
+                  <Button onClick={() => setCoverageDetailOpen(true)}>
+                    {t("v4Mvp.coverageCard.viewDetails")}
+                  </Button>
+                </div>
+              </InlineStack>
+            </div>
           </div>
 
           <div style={batchEntryCardStyle}>
@@ -769,10 +765,10 @@ function RecommendationCard({
 
   return (
     <div style={recommendationCardStyle}>
-      <BlockStack gap="350">
+      <BlockStack gap="400">
         <InlineStack align="space-between" blockAlign="start" wrap={false}>
-          <BlockStack gap="200">
-            <InlineStack gap="150" blockAlign="center" wrap>
+          <BlockStack gap="250">
+            <InlineStack gap="200" blockAlign="center" wrap>
               <span style={recommendationTonePillStyle}>
                 {t("v4Mvp.recommended.priority")}
               </span>
@@ -782,12 +778,12 @@ function RecommendationCard({
                 </span>
               ) : null}
             </InlineStack>
-            <BlockStack gap="100">
-              <Text as="h3" variant="headingMd">
+            <BlockStack gap="150">
+              <Text as="h3" variant="headingLg">
                 {title}
               </Text>
               {primaryReason ? (
-                <Text as="p" tone="subdued" variant="bodySm">
+                <Text as="p" tone="subdued" variant="bodyMd">
                   {primaryReason}
                 </Text>
               ) : null}
@@ -830,11 +826,11 @@ function MetricStat({
 }) {
   return (
     <div style={recommendationMetricCardStyle}>
-      <BlockStack gap="050">
-        <Text as="p" tone="subdued" variant="bodySm">
+      <BlockStack gap="100">
+        <Text as="p" tone="subdued" variant="bodyMd">
           {label}
         </Text>
-        <Text as="p" variant="headingMd">
+        <Text as="p" variant="headingLg">
           {value}
         </Text>
       </BlockStack>
@@ -896,27 +892,29 @@ const coverageModalEmptyStyle = {
 
 const summaryHeroCardStyle = {
   ...v4CardStyle,
-  padding: "22px 24px",
+  padding: "24px 26px",
   background: v4Colors.summaryBg,
   boxShadow: "var(--app-shadow-card-strong)",
 } satisfies CSSProperties;
 
 const sectionActionWrapStyle = {
   flexShrink: 0,
-  paddingLeft: "12px",
+  paddingLeft: "16px",
 } satisfies CSSProperties;
 
-const summaryHeroFooterStyle = {
+const summaryHeroHeaderStyle = {
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "flex-end",
-  gap: "16px",
+  alignItems: "flex-start",
+  gap: "24px",
   flexWrap: "wrap",
 } satisfies CSSProperties;
 
 const summaryValueBlockStyle = {
   minWidth: 0,
   flex: "1 1 320px",
+  display: "grid",
+  gap: "8px",
 } satisfies CSSProperties;
 
 const batchEntryCardStyle = {
@@ -966,7 +964,7 @@ const recommendationBlueStyles = {
 } as const;
 
 const recommendationCardStyle: CSSProperties = {
-  padding: "18px 18px 16px",
+  padding: "22px 22px 20px",
   borderRadius: "16px",
   border: `1px solid ${recommendationBlueStyles.border}`,
   background: recommendationBlueStyles.background,
@@ -978,40 +976,40 @@ const recommendationCardStyle: CSSProperties = {
 const recommendationTonePillStyle = {
   display: "inline-flex",
   alignItems: "center",
-  padding: "4px 10px",
+  padding: "6px 12px",
   borderRadius: "999px",
   background: recommendationBlueStyles.accentSoft,
   color: recommendationBlueStyles.accent,
-  fontSize: "12px",
+  fontSize: "13px",
   fontWeight: 700,
-  lineHeight: "16px",
+  lineHeight: "18px",
 } satisfies CSSProperties;
 
 const recommendationSourcePillStyle = {
   display: "inline-flex",
   alignItems: "center",
-  padding: "4px 10px",
+  padding: "6px 12px",
   borderRadius: "999px",
   background: "rgba(37, 99, 235, 0.08)",
   color: recommendationBlueStyles.accent,
-  fontSize: "12px",
+  fontSize: "13px",
   fontWeight: 600,
-  lineHeight: "16px",
+  lineHeight: "18px",
 } satisfies CSSProperties;
 
 const recommendationActionWrapStyle = {
   flexShrink: 0,
-  paddingLeft: "12px",
+  paddingLeft: "20px",
 } satisfies CSSProperties;
 
 const recommendationMetricsGridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-  gap: "12px",
+  gap: "16px",
 } satisfies CSSProperties;
 
 const recommendationMetricCardStyle = {
-  padding: "12px 14px",
+  padding: "16px 18px",
   borderRadius: "12px",
   background: "#ffffff",
   border: "1px solid rgba(138, 142, 145, 0.16)",
