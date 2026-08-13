@@ -9,12 +9,14 @@ import {
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
+import { useSelector } from "react-redux";
 import {
   Badge,
   BlockStack,
   Button,
   Card,
   InlineStack,
+  Modal,
   Page,
   ProgressBar,
   Text,
@@ -22,6 +24,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { message } from "~/ui/message";
 import { authenticate } from "~/shopify.server";
+import type { RootState } from "~/store";
 import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
 import type {
   CoverageSummary,
@@ -31,22 +34,15 @@ import type { TranslationJobProgressSummary } from "~/server/translateV4/progres
 import {
   DEFAULT_MODULE_KEYS,
 } from "~/routes/app.translate-v4/constants";
-import {
-  buildUntranslatedRatioByLocale,
-  formatEstimateCredits,
-  useCreateTaskEstimate,
-} from "~/routes/app.translate-v4/useCreateTaskEstimate";
+import { buildUntranslatedRatioByLocale } from "~/routes/app.translate-v4/useCreateTaskEstimate";
 import {
   formatV4CreateTasksMessage,
   getV4ModuleLabel,
   getV4StatusLabel,
   translateV4Message,
 } from "~/routes/app.translate-v4/v4I18n";
-import {
-  formatCredits,
-  localeRegionCode,
-  localeShortName,
-} from "~/routes/app.translate-v4/localeDisplay";
+import { PageHeaderBar } from "~/routes/app.translate-v4/components/SummaryAndHeader";
+import { localeRegionCode, localeShortName } from "~/routes/app.translate-v4/localeDisplay";
 import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
@@ -265,6 +261,7 @@ export default function TranslateV4MvpRoute() {
   const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const plan = useSelector((state: RootState) => state.userConfig.plan);
   const queueSectionRef = useRef<HTMLDivElement | null>(null);
 
   const targetOptions = useMemo(
@@ -278,7 +275,6 @@ export default function TranslateV4MvpRoute() {
   const [jobs, setJobs] = useState<TranslationJobProgressSummary[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [quota, setQuota] = useState<ShopQuota | null>(null);
-  const [quotaLoading, setQuotaLoading] = useState(true);
   const [lastManualScanAt, setLastManualScanAt] = useState<string | null>(null);
   const [scanSummary, setScanSummary] = useState<string | null>(null);
   const [changedLocaleCodes, setChangedLocaleCodes] = useState<string[]>([]);
@@ -286,7 +282,9 @@ export default function TranslateV4MvpRoute() {
   const [workbenchTab, setWorkbenchTab] = useState<"recommended" | "queue">(
     searchParams.get("tab") === "queue" ? "queue" : "recommended",
   );
+  const [coverageDetailOpen, setCoverageDetailOpen] = useState(false);
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
+  const planType = plan?.type?.trim() || null;
 
   const customTargets = useMemo(
     () =>
@@ -295,20 +293,11 @@ export default function TranslateV4MvpRoute() {
   );
   const customModules = DEFAULT_MODULE_KEYS;
 
-  const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
   const untranslatedRatioByLocale = useMemo(
     () => buildUntranslatedRatioByLocale(coverage.locales),
     [coverage.locales],
   );
-
-  const taskEstimate = useCreateTaskEstimate({
-    modules: customModules,
-    targets: customTargets,
-    isCover: false,
-    includeLiquid: false,
-    untranslatedRatioByLocale,
-    remainingCredits: normalizedQuota?.remaining ?? null,
-  });
+  const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
 
   const recommendations = useMemo(
     () => buildRecommendations(coverage, jobs, changedLocaleCodes, t),
@@ -338,19 +327,16 @@ export default function TranslateV4MvpRoute() {
   }, [shop]);
 
   const refreshQuota = useCallback(async () => {
-    setQuotaLoading(true);
     try {
       const res = await fetch(
         `/api/translate-v4/quota?shopName=${encodeURIComponent(shop)}`,
       );
       const data = await readJsonResponse<{ ok?: boolean; quota?: ShopQuota | null }>(res);
       if (data.ok) {
-        setQuota(normalizeShopQuota(data.quota ?? null));
+        setQuota(data.quota ?? null);
       }
     } catch (err) {
       console.error("[translate-v4-mvp] refresh quota failed:", err);
-    } finally {
-      setQuotaLoading(false);
     }
   }, [shop]);
 
@@ -457,18 +443,10 @@ export default function TranslateV4MvpRoute() {
     };
   }, [recommendations, untranslatedRatioByLocale]);
 
-  const pendingItems = Math.max(coverage.totalItems - coverage.translatedItems, 0);
-  const activeTaskCount = jobs.filter((job) => !job.isTerminal).length;
+  const currentJobs = useMemo(() => jobs.filter((job) => !job.isTerminal), [jobs]);
+  const historyJobs = useMemo(() => jobs.filter((job) => job.isTerminal), [jobs]);
+  const activeTaskCount = currentJobs.length;
   const displayedLastScan = lastManualScanAt ?? latestAutoScanAt(coverage.locales);
-
-  const applyRecommendation = useCallback((item: Recommendation) => {
-    navigate(
-      buildCustomTranslationPath({
-        targets: item.targets,
-        modules: item.modules,
-      }),
-    );
-  }, [navigate]);
 
   const createTasksWithConfig = useCallback(async ({
     nextTargets,
@@ -532,14 +510,6 @@ export default function TranslateV4MvpRoute() {
     });
   }, [createTasksWithConfig]);
 
-  const selectedSummary = useMemo(
-    () => ({
-      targetCount: customTargets.length,
-      moduleCount: customModules.length,
-    }),
-    [customModules.length, customTargets.length],
-  );
-
   const handleTaskAction = useCallback(
     async (
       taskId: string,
@@ -569,133 +539,78 @@ export default function TranslateV4MvpRoute() {
 
   return (
     <Page>
-      <TitleBar title={t("v4Mvp.title")} />
+      <TitleBar title={t("v4.title")} />
       <BlockStack gap="500">
+        <PageHeaderBar
+          credits={normalizedQuota?.remaining ?? null}
+          planType={planType}
+        />
+
         <Card>
           <BlockStack gap="300">
-            <BlockStack gap="100">
-              <InlineStack gap="200" blockAlign="center">
-                <Text as="h1" variant="headingLg">
-                  {t("v4Mvp.title")}
+            <InlineStack align="space-between" blockAlign="start">
+              <BlockStack gap="100">
+                <Text as="h2" variant="headingMd">
+                  {t("v4Mvp.coverageCard.title")}
                 </Text>
-                <Badge tone="info">{t("v4Mvp.previewBadge")}</Badge>
-              </InlineStack>
-              <Text as="p" tone="subdued">
-                {t("v4Mvp.subtitle")}
-              </Text>
-            </BlockStack>
+                <Text as="p" tone="subdued">
+                  {t("v4Mvp.coverageCard.description", {
+                    translated: coverage.translatedItems,
+                    total: coverage.totalItems,
+                  })}
+                </Text>
+              </BlockStack>
+              <Button onClick={() => setCoverageDetailOpen(true)}>
+                {t("v4Mvp.coverageCard.viewDetails")}
+              </Button>
+            </InlineStack>
+
+            <InlineStack align="space-between" blockAlign="end">
+              <BlockStack gap="050">
+                <Text as="p" tone="subdued" variant="bodySm">
+                  {t("v4.translationProgress")}
+                </Text>
+                <Text as="p" variant="heading2xl">
+                  {coverageLoading && coverage.locales.length === 0
+                    ? "—"
+                    : `${coverage.overallPercent ?? 0}%`}
+                </Text>
+              </BlockStack>
+              <BlockStack gap="050">
+                <Text as="p" tone="subdued" variant="bodySm" alignment="end">
+                  {t("v4Mvp.coverageCard.lastScanLabel")}
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  {displayedLastScan
+                    ? formatDateTime(displayedLastScan) ?? "—"
+                    : t("v4Mvp.scan.never")}
+                </Text>
+              </BlockStack>
+            </InlineStack>
           </BlockStack>
         </Card>
-
-        <div style={metricsGridStyle}>
-          <MetricCard
-            title={t("v4.translationProgress")}
-            value={
-              coverageLoading && coverage.locales.length === 0
-                ? "—"
-                : `${coverage.overallPercent ?? 0}%`
-            }
-            detail={t("v4Mvp.overview.progress", {
-              translated: coverage.translatedItems,
-              total: coverage.totalItems,
-            })}
-          />
-          <MetricCard
-            title={t("v4Mvp.overview.pendingWork")}
-            value={pendingItems.toLocaleString()}
-            detail={t("v4.pendingItems")}
-          />
-          <MetricCard
-            title={t("v4.availableCredits")}
-            value={
-              quotaLoading
-                ? "—"
-                : normalizedQuota
-                  ? formatCredits(normalizedQuota.remaining)
-                  : "—"
-            }
-            detail={
-              taskEstimate.estimatedCredits != null
-                ? t("v4.createTask.confirmEstimatedCredits", {
-                    credits: formatEstimateCredits(taskEstimate.estimatedCredits),
-                  })
-                : t("v4.createTask.estimateSelectFirst")
-            }
-          />
-          <MetricCard
-            title={t("v4Mvp.overview.activeTasks")}
-            value={activeTaskCount.toLocaleString()}
-            detail={
-              displayedLastScan
-                ? t("v4Mvp.overview.lastScan", {
-                    time: formatDateTime(displayedLastScan),
-                  })
-                : t("v4Mvp.scan.never")
-            }
-          />
-        </div>
 
         <Card>
           <BlockStack gap="400">
             <InlineStack align="space-between" blockAlign="start">
               <BlockStack gap="100">
-                <InlineStack gap="200" blockAlign="center">
-                  <Text as="h2" variant="headingMd">
-                    {t("v4Mvp.custom.title")}
-                  </Text>
-                  <Badge tone="info">{t("v4Mvp.custom.badge")}</Badge>
-                </InlineStack>
+                <Text as="h2" variant="headingMd">
+                  {t("v4Mvp.custom.title")}
+                </Text>
                 <Text as="p" tone="subdued">
                   {t("v4Mvp.custom.description")}
                 </Text>
               </BlockStack>
-              <InlineStack gap="200">
-                <Button
-                  variant="primary"
-                  onClick={() => navigate(buildCustomTranslationPath({
-                    targets: customTargets,
-                    modules: customModules,
-                  }))}
-                >
-                  {t("v4Mvp.custom.translate")}
-                </Button>
-              </InlineStack>
+              <Button
+                variant="primary"
+                onClick={() => navigate(buildCustomTranslationPath({
+                  targets: customTargets,
+                  modules: customModules,
+                }))}
+              >
+                {t("v4Mvp.custom.translate")}
+              </Button>
             </InlineStack>
-
-            <div style={taskMetaRowStyle}>
-              <TaskMeta
-                label={t("v4Mvp.custom.selectedTargets")}
-                value={String(selectedSummary.targetCount)}
-              />
-              <TaskMeta
-                label={t("v4Mvp.custom.selectedModules")}
-                value={String(selectedSummary.moduleCount)}
-              />
-              <TaskMeta
-                label={t("v4.createTask.confirmCreditsRequired")}
-                value={
-                  taskEstimate.loading
-                    ? "…"
-                    : taskEstimate.estimatedCredits != null
-                      ? formatEstimateCredits(taskEstimate.estimatedCredits)
-                      : "—"
-                }
-              />
-              <TaskMeta
-                label={t("v4Mvp.recommended.estimateTime")}
-                value={estimateTimeLabel(
-                  Math.max(customTargets.length, 1) * Math.max(customModules.length, 1) * 120,
-                  t,
-                )}
-              />
-            </div>
-
-            {taskEstimate.needsMoreCredits ? (
-              <Badge tone="attention">{t("v4.createTask.estimateShort")}</Badge>
-            ) : null}
-            <Text as="p" tone="subdued" variant="bodySm">
-              {t("v4Mvp.custom.nextStep")}
-            </Text>
           </BlockStack>
         </Card>
 
@@ -738,12 +653,13 @@ export default function TranslateV4MvpRoute() {
                     </Button>
                   </InlineStack>
                 ) : (
-                  <Button
-                    onClick={() => void refreshAll()}
-                    loading={coverageLoading || jobsLoading || quotaLoading}
+                  <button
+                    type="button"
+                    onClick={() => navigate("/app/translate-v4-history")}
+                    style={historyLinkStyle}
                   >
-                    {t("v4Mvp.scan.refreshAll")}
-                  </Button>
+                    {t("v4.tasks.openHistory", { count: historyJobs.length })}
+                  </button>
                 )}
               </InlineStack>
 
@@ -768,7 +684,6 @@ export default function TranslateV4MvpRoute() {
                         estimatedTime={estimateTimeLabel(item.pendingItems, t)}
                         tone={item.tone}
                         onTranslate={() => void handleRecommendationTranslate(item)}
-                        onAdjust={() => applyRecommendation(item)}
                       />
                     ))
                   ) : (
@@ -806,13 +721,13 @@ export default function TranslateV4MvpRoute() {
                 <Text as="p" tone="subdued">
                   {t("v4.coverage.refreshing")}
                 </Text>
-              ) : jobs.length === 0 ? (
+              ) : currentJobs.length === 0 ? (
                 <Text as="p" tone="subdued">
                   {t("v4Mvp.queue.empty")}
                 </Text>
               ) : (
                 <BlockStack gap="300">
-                  {jobs.map((job) => (
+                  {currentJobs.map((job) => (
                     <JobCard
                       key={job.taskId}
                       job={job}
@@ -826,33 +741,57 @@ export default function TranslateV4MvpRoute() {
           </Card>
         </div>
       </BlockStack>
+      <Modal
+        open={coverageDetailOpen}
+        onClose={() => setCoverageDetailOpen(false)}
+        title={t("v4Mvp.coverageModal.title")}
+        size="large"
+      >
+        <Modal.Section>
+          <BlockStack gap="300">
+            <Text as="p" tone="subdued">
+              {t("v4Mvp.coverageModal.description")}
+            </Text>
+            <BlockStack gap="200">
+              {coverage.locales.length > 0 ? (
+                [...coverage.locales]
+                  .sort((a, b) => (a.percent ?? 0) - (b.percent ?? 0))
+                  .map((locale) => (
+                    <div key={locale.locale} style={coverageRowStyle}>
+                      <InlineStack align="space-between" blockAlign="center">
+                        <BlockStack gap="050">
+                          <InlineStack gap="150" blockAlign="center">
+                            <Text as="p" variant="bodyMd">
+                              {localeShortName(locale.locale, locale.label)}
+                            </Text>
+                            <Badge tone={(locale.percent ?? 0) >= 90 ? "success" : "attention"}>
+                              {localeRegionCode(locale.locale)}
+                            </Badge>
+                          </InlineStack>
+                          <Text as="p" tone="subdued" variant="bodySm">
+                            {t("v4Mvp.coverageModal.progressText", {
+                              translated: locale.translated,
+                              total: locale.total,
+                            })}
+                          </Text>
+                        </BlockStack>
+                        <Text as="p" variant="headingMd">
+                          {`${locale.percent ?? 0}%`}
+                        </Text>
+                      </InlineStack>
+                      <ProgressBar progress={locale.percent ?? 0} size="small" tone="primary" />
+                    </div>
+                  ))
+              ) : (
+                <Text as="p" tone="subdued">
+                  {t("v4Mvp.coverageModal.empty")}
+                </Text>
+              )}
+            </BlockStack>
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
     </Page>
-  );
-}
-
-function MetricCard({
-  title,
-  value,
-  detail,
-}: {
-  title: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <Card>
-      <BlockStack gap="200">
-        <Text as="p" tone="subdued" variant="bodySm">
-          {title}
-        </Text>
-        <Text as="p" variant="headingXl">
-          {value}
-        </Text>
-        <Text as="p" tone="subdued" variant="bodySm">
-          {detail}
-        </Text>
-      </BlockStack>
-    </Card>
   );
 }
 
@@ -867,7 +806,6 @@ function RecommendationCard({
   estimatedTime,
   tone,
   onTranslate,
-  onAdjust,
 }: {
   title: string;
   locale: string;
@@ -879,7 +817,6 @@ function RecommendationCard({
   estimatedTime: string;
   tone: "success" | "attention" | "info";
   onTranslate: () => void;
-  onAdjust: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -902,12 +839,9 @@ function RecommendationCard({
               ))}
             </BlockStack>
           </BlockStack>
-          <InlineStack gap="200">
-            <Button onClick={onAdjust}>{t("v4Mvp.recommended.adjust")}</Button>
-            <Button variant="primary" onClick={onTranslate}>
-              {t("v4Mvp.recommended.translate")}
-            </Button>
-          </InlineStack>
+          <Button variant="primary" onClick={onTranslate}>
+            {t("v4Mvp.recommended.translate")}
+          </Button>
         </InlineStack>
 
         <InlineStack gap="400" wrap>
@@ -967,25 +901,6 @@ function RecommendationCard({
         </BlockStack>
       </BlockStack>
     </Card>
-  );
-}
-
-function TaskMeta({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div style={taskMetaItemStyle}>
-      <Text as="p" tone="subdued" variant="bodySm">
-        {label}
-      </Text>
-      <Text as="p" variant="headingMd">
-        {value}
-      </Text>
-    </div>
   );
 }
 
@@ -1081,25 +996,6 @@ function JobCard({
   );
 }
 
-const metricsGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: "16px",
-} satisfies CSSProperties;
-
-const taskMetaRowStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-  gap: "12px",
-} satisfies CSSProperties;
-
-const taskMetaItemStyle = {
-  padding: "12px 14px",
-  border: "1px solid rgba(138, 142, 145, 0.18)",
-  borderRadius: "12px",
-  background: "rgba(246, 246, 247, 0.72)",
-} satisfies CSSProperties;
-
 const tabListStyle = {
   display: "inline-flex",
   gap: "8px",
@@ -1115,6 +1011,28 @@ const emptyStateStyle = {
   alignItems: "center",
   justifyContent: "center",
   padding: "24px 16px",
+} satisfies CSSProperties;
+
+const historyLinkStyle = {
+  appearance: "none",
+  border: "none",
+  background: "transparent",
+  padding: 0,
+  color: "#6b7280",
+  fontSize: "13px",
+  lineHeight: "20px",
+  fontWeight: 500,
+  cursor: "pointer",
+  fontFamily: "inherit",
+  textDecoration: "underline",
+  textUnderlineOffset: "2px",
+} satisfies CSSProperties;
+
+const coverageRowStyle = {
+  padding: "14px 16px",
+  border: "1px solid rgba(138, 142, 145, 0.18)",
+  borderRadius: "12px",
+  background: "#ffffff",
 } satisfies CSSProperties;
 
 function tabButtonStyle(active: boolean): CSSProperties {
