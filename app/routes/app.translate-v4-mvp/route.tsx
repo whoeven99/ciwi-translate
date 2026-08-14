@@ -112,6 +112,10 @@ function estimateTimeLabel(workload: number, t: ReturnType<typeof useTranslation
   return t("v4Mvp.time.xlong");
 }
 
+function formatMvpEstimateCredits(n: number): string {
+  return `${formatEstimateCredits(n)} Credit`;
+}
+
 function extractYoutubeVideoId(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -1088,7 +1092,7 @@ function RecommendationCard({
           <MetricStat
             label={t("v4.createTask.confirmCreditsRequired")}
             value={
-              estimatedCredits != null ? formatEstimateCredits(estimatedCredits) : "—"
+              estimatedCredits != null ? formatMvpEstimateCredits(estimatedCredits) : "—"
             }
           />
           <MetricStat
