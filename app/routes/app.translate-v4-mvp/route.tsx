@@ -235,8 +235,8 @@ function getCoverageRating(
 function summaryProgressCircleStyle(percent: number | null, accent: string, track: string) {
   const safePercent = Math.max(0, Math.min(percent ?? 0, 100));
   return {
-    width: "98px",
-    height: "98px",
+    width: "72px",
+    height: "72px",
     borderRadius: "999px",
     background: `conic-gradient(${accent} 0deg ${safePercent * 3.6}deg, ${track} ${safePercent * 3.6}deg 360deg)`,
     display: "flex",
@@ -1135,11 +1135,7 @@ function MetricStat({
 const tabListStyle = {
   display: "inline-flex",
   gap: "8px",
-  padding: "4px",
-  borderRadius: "999px",
-  background: "rgba(246, 248, 252, 0.96)",
-  border: `1px solid ${v4Colors.cardBorder}`,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+  padding: "0",
 } satisfies CSSProperties;
 
 const emptyStateStyle = {
@@ -1193,7 +1189,7 @@ const summaryHeroGridStyle = {
 
 const summaryHeroCardStyle = {
   ...v4CardStyle,
-  padding: "12px 16px",
+  padding: "8px 12px",
   background: v4Colors.summaryBg,
   boxShadow: "var(--app-shadow-card-strong)",
   minHeight: "100%",
@@ -1221,7 +1217,7 @@ const sectionActionWrapStyle = {
 const summaryHeroLayoutStyle = {
   display: "flex",
   alignItems: "center",
-  gap: "12px",
+  gap: "10px",
   flexWrap: "wrap",
 } satisfies CSSProperties;
 
@@ -1229,7 +1225,7 @@ const summaryContentStyle = {
   minWidth: 0,
   flex: "1 1 220px",
   display: "grid",
-  gap: "8px",
+  gap: "4px",
 } satisfies CSSProperties;
 
 const summaryProgressWrapStyle = {
@@ -1240,21 +1236,21 @@ const summaryProgressWrapStyle = {
 } satisfies CSSProperties;
 
 const summaryProgressCircleInnerStyle = {
-  width: "74px",
-  height: "74px",
+  width: "54px",
+  height: "54px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.96)",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
   display: "grid",
   alignContent: "center",
   justifyItems: "center",
-  gap: "4px",
+  gap: "2px",
   textAlign: "center",
-  padding: "12px",
+  padding: "8px",
 } satisfies CSSProperties;
 
 const summaryProgressPercentStyle = {
-  fontSize: "20px",
+  fontSize: "16px",
   lineHeight: 1,
   fontWeight: 700,
   letterSpacing: "-0.03em",
@@ -1278,7 +1274,7 @@ function summaryProgressLabelStyle(accent: string): CSSProperties {
 const videoPreviewCardInnerStyle = {
   display: "grid",
   gridTemplateColumns: "minmax(0, 2fr) minmax(120px, 0.5fr)",
-  minHeight: "138px",
+  minHeight: "78px",
   height: "100%",
   alignItems: "stretch",
 } satisfies CSSProperties;
@@ -1326,8 +1322,8 @@ const videoPreviewPlayWrapStyle = {
 } satisfies CSSProperties;
 
 const videoPreviewPlayButtonStyle = {
-  width: "40px",
-  height: "40px",
+  width: "32px",
+  height: "32px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.9)",
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.16)",
@@ -1339,9 +1335,9 @@ const videoPreviewPlayButtonStyle = {
 const videoPreviewPlayIconStyle = {
   width: 0,
   height: 0,
-  borderTop: "7px solid transparent",
-  borderBottom: "7px solid transparent",
-  borderLeft: `11px solid ${v4Colors.text}`,
+  borderTop: "5px solid transparent",
+  borderBottom: "5px solid transparent",
+  borderLeft: `8px solid ${v4Colors.text}`,
   marginLeft: "2px",
 } satisfies CSSProperties;
 
@@ -1360,12 +1356,12 @@ const videoPreviewContentStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "flex-start",
-  padding: "12px 12px 12px 16px",
+  padding: "8px 10px 8px 12px",
 } satisfies CSSProperties;
 
 const videoPreviewTitleStyle = {
   color: v4Colors.text,
-  maxWidth: "160px",
+  maxWidth: "120px",
   textAlign: "left",
   width: "100%",
 } satisfies CSSProperties;
@@ -1409,9 +1405,9 @@ const emptyStateInnerStyle = {
 } satisfies CSSProperties;
 
 const recommendationBlueStyles = {
-  border: "rgba(37, 99, 235, 0.18)",
+  border: "rgb(169 169 169 / 18%)",
   background:
-    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(239, 246, 255, 0.96) 100%)",
+    "linear-gradient(180deg, rgb(255, 255, 255) 0%, rgb(255 239 239 / 18%) 100%)",
   accent: "#2563eb",
   accentSoft: "rgba(59, 130, 246, 0.10)",
 } as const;
@@ -1454,14 +1450,15 @@ const recommendationMetricCardStyle = {
   borderRadius: "12px",
   background: "#ffffff",
   border: "1px solid rgba(138, 142, 145, 0.16)",
+  boxShadow: "0 1px 0 rgba(255,255,255,0.8)",
 } satisfies CSSProperties;
 
 function tabButtonStyle(active: boolean): CSSProperties {
   return {
     appearance: "none",
     border: "none",
-    background: active ? v4Colors.text : "transparent",
-    color: active ? "#ffffff" : v4Colors.textMuted,
+    background: active ? "#ffffff" : "transparent",
+    color: active ? "#005bd3" : v4Colors.textMuted,
     borderRadius: "999px",
     padding: "8px 14px",
     fontSize: "13px",
