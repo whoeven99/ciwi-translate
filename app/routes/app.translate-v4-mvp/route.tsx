@@ -235,8 +235,8 @@ function getCoverageRating(
 function summaryProgressCircleStyle(percent: number | null, accent: string, track: string) {
   const safePercent = Math.max(0, Math.min(percent ?? 0, 100));
   return {
-    width: "72px",
-    height: "72px",
+    width: "100px",
+    height: "100px",
     borderRadius: "999px",
     background: `conic-gradient(${accent} 0deg ${safePercent * 3.6}deg, ${track} ${safePercent * 3.6}deg 360deg)`,
     display: "flex",
@@ -1188,8 +1188,8 @@ const summaryHeroCardStyle = {
   padding: "10px 14px",
   background: v4Colors.summaryBg,
   boxShadow: "var(--app-shadow-card-strong)",
-  minHeight: "100%",
-  flex: "0.95 1 360px",
+  minHeight: "60%",
+  flex: "0.95 1 450px",
   minWidth: "320px",
 } satisfies CSSProperties;
 
@@ -1201,10 +1201,11 @@ const videoPreviewLayerStyle = {
   textDecoration: "none",
   background: "#0f172a",
   boxShadow: "var(--app-shadow-card-strong)",
-  flex: "1.35 1 460px",
-  minWidth: "360px",
+  flex: "1.35 1 10px",
+  minWidth: "150px",
   minHeight: "100%",
   display: "block",
+  width: "322px",
 } satisfies CSSProperties;
 
 const sectionActionWrapStyle = {
@@ -1222,7 +1223,9 @@ const summaryHeroLayoutStyle = {
 const summaryContentStyle = {
   minWidth: 0,
   display: "grid",
-  gap: "6px",
+  gap: "26px",
+  width: "400px",
+  paddingLeft: "30px",
 } satisfies CSSProperties;
 
 const summaryProgressWrapStyle = {
@@ -1247,7 +1250,7 @@ const summaryProgressCircleInnerStyle = {
 } satisfies CSSProperties;
 
 const summaryProgressPercentStyle = {
-  fontSize: "18px",
+  fontSize: "20px",
   lineHeight: 1,
   fontWeight: 700,
   letterSpacing: "-0.03em",
@@ -1271,8 +1274,8 @@ function summaryProgressLabelStyle(accent: string): CSSProperties {
 const videoPreviewSurfaceStyle = {
   position: "relative",
   width: "100%",
-  height: "100%",
-  minHeight: "112px",
+  height: "80%",
+  minHeight: "100px",
   overflow: "hidden",
   background: "#0f172a",
 } satisfies CSSProperties;
@@ -1291,6 +1294,7 @@ const videoPreviewOverlayStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  paddingBottom: "10px",
   background:
     "linear-gradient(180deg, rgba(15,23,42,0.08) 0%, rgba(15,23,42,0.24) 100%)",
 } satisfies CSSProperties;
@@ -1304,6 +1308,7 @@ const videoPreviewPlayButtonStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  transform: "translateY(-4px)",
 } satisfies CSSProperties;
 
 const videoPreviewPlayIconStyle = {
@@ -1318,14 +1323,16 @@ const videoPreviewPlayIconStyle = {
 const videoPreviewCaptionStyle = {
   position: "absolute",
   inset: "auto 0 0 0",
-  padding: "20px 16px 12px",
+  padding: "14px 16px 10px",
   background:
-    "linear-gradient(180deg, rgba(15,23,42,0) 0%, rgba(15,23,42,0.78) 100%)",
+    "linear-gradient(180deg, rgba(15, 23, 42, 0) 0%, rgb(77 77 77 / 78%) 100%)",
 } satisfies CSSProperties;
 
 const videoPreviewCaptionTextStyle = {
   color: "#ffffff",
   fontWeight: 600,
+  fontSize: "14px",
+  lineHeight: "20px",
   textShadow: "0 1px 2px rgba(15, 23, 42, 0.24)",
 } satisfies CSSProperties;
 
