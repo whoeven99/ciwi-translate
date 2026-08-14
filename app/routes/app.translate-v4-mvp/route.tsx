@@ -30,6 +30,7 @@ import type { TranslationJobProgressSummary } from "~/server/translateV4/progres
 import {
   DEFAULT_MODULE_KEYS,
 } from "~/routes/app.translate-v4/constants";
+import { CreateTaskQuotaGateModal } from "~/routes/app.translate-v4/components/CreateTaskQuotaGateModal";
 import {
   buildUntranslatedRatioByLocale,
   formatEstimateCredits,
@@ -46,7 +47,10 @@ import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
+import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import { normalizeShopQuota, type ShopQuota } from "~/lib/translationQuota";
+import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
+import { buildCreateTaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
 
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -154,6 +158,64 @@ function coverageTone(percent: number | null): "success" | "attention" | "info" 
   return "attention";
 }
 
+function getCoverageRating(
+  percent: number | null,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  if (percent == null) {
+    return {
+      label: t("v4.coverage.notScanned"),
+      accent: "#94a3b8",
+      track: "rgba(148, 163, 184, 0.18)",
+    };
+  }
+
+  if (percent >= 100) {
+    return {
+      label: t("v4Mvp.coverageCard.ratingAmazing"),
+      accent: "#2563eb",
+      track: "rgba(37, 99, 235, 0.16)",
+    };
+  }
+
+  if (percent >= 80) {
+    return {
+      label: t("v4Mvp.coverageCard.ratingExcellent"),
+      accent: "#2563eb",
+      track: "rgba(37, 99, 235, 0.16)",
+    };
+  }
+
+  if (percent >= 60) {
+    return {
+      label: t("v4Mvp.coverageCard.ratingQualified"),
+      accent: "#2563eb",
+      track: "rgba(37, 99, 235, 0.16)",
+    };
+  }
+
+  return {
+    label: t("v4.coverage.needsImprovement"),
+    accent: "#2563eb",
+    track: "rgba(37, 99, 235, 0.16)",
+  };
+}
+
+function summaryProgressCircleStyle(percent: number | null, accent: string, track: string) {
+  const safePercent = Math.max(0, Math.min(percent ?? 0, 100));
+  return {
+    width: "164px",
+    height: "164px",
+    borderRadius: "999px",
+    background: `conic-gradient(${accent} 0deg ${safePercent * 3.6}deg, ${track} ${safePercent * 3.6}deg 360deg)`,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.65)",
+    flexShrink: 0,
+  } satisfies CSSProperties;
+}
+
 function buildCustomTranslationPath({
   targets,
   modules,
@@ -238,6 +300,7 @@ export default function TranslateV4MvpRoute() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const plan = useSelector((state: RootState) => state.userConfig.plan);
+  const isNew = useSelector((state: RootState) => state.userConfig.isNew);
   const queueSectionRef = useRef<HTMLDivElement | null>(null);
 
   const targetOptions = useMemo(
@@ -258,6 +321,9 @@ export default function TranslateV4MvpRoute() {
     searchParams.get("tab") === "queue" ? "queue" : "recommended",
   );
   const [coverageDetailOpen, setCoverageDetailOpen] = useState(false);
+  const [createQuotaGateOpen, setCreateQuotaGateOpen] = useState<"trial" | "pricing" | null>(
+    null,
+  );
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
   const planType = plan?.type?.trim() || null;
 
@@ -272,12 +338,28 @@ export default function TranslateV4MvpRoute() {
     () => buildUntranslatedRatioByLocale(coverage.locales),
     [coverage.locales],
   );
+  const coverageRating = useMemo(
+    () => getCoverageRating(coverage.overallPercent, t),
+    [coverage.overallPercent, t],
+  );
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
+  const remainingCredits = normalizedQuota?.remaining ?? null;
+  const createShouldGateByCredits = shouldBlockCreateTaskByCredits({
+    remainingCredits,
+  });
+  const createQuotaGatePending = createShouldGateByCredits && isNew == null;
+  const createQuotaGateMode: "trial" | "pricing" | null =
+    createShouldGateByCredits && isNew != null
+      ? isNew
+        ? "trial"
+        : "pricing"
+      : null;
 
   const recommendations = useMemo(
     () => buildRecommendations(coverage, jobs, changedLocaleCodes, t),
     [changedLocaleCodes, coverage, jobs, t],
   );
+  const [submittingRecommendationIds, setSubmittingRecommendationIds] = useState<string[]>([]);
   const [recommendationEstimates, setRecommendationEstimates] = useState<
     Record<string, number | null>
   >({});
@@ -423,6 +505,10 @@ export default function TranslateV4MvpRoute() {
     () => jobs.some((job) => job.status === "TRANSLATING" || job.isStopping),
     [jobs],
   );
+  const visibleRecommendations = useMemo(
+    () => recommendations.filter((item) => !submittingRecommendationIds.includes(item.id)),
+    [recommendations, submittingRecommendationIds],
+  );
 
   const createTasksWithConfig = useCallback(async ({
     nextTargets,
@@ -462,12 +548,15 @@ export default function TranslateV4MvpRoute() {
             block: "start",
           });
         }, 120);
+        return true;
       } else {
         message.error(formatV4CreateTasksMessage(result, t, localeRegionCode));
+        return false;
       }
     } catch (err) {
       console.error("[translate-v4-mvp] create tasks failed:", err);
       message.error(t("v4.createFailedRetry"));
+      return false;
     }
   }, [
     primaryLocale,
@@ -479,12 +568,101 @@ export default function TranslateV4MvpRoute() {
     targetOptions,
   ]);
 
+  const jobsRef = useRef<TranslationJobProgressSummary[]>([]);
+  const previousActiveTaskIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
+
+  useEffect(() => {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = () => {
+      if (disposed) return;
+
+      const hasActive = jobsRef.current.some((job) => !job.isTerminal);
+      timer = setTimeout(() => {
+        if (!hasActive) {
+          poll();
+          return;
+        }
+
+        void Promise.all([refreshTasks(), refreshQuota()]).finally(() => {
+          poll();
+        });
+      }, hasActive ? 4_000 : 10_000);
+    };
+
+    poll();
+
+    return () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [refreshQuota, refreshTasks]);
+
+  useEffect(() => {
+    const previousIds = previousActiveTaskIdsRef.current;
+    const nextIds = currentJobs.map((job) => job.taskId);
+    const finishedTaskDetected =
+      previousIds.length > 0 && previousIds.some((taskId) => !nextIds.includes(taskId));
+
+    previousActiveTaskIdsRef.current = nextIds;
+
+    if (!finishedTaskDetected) return;
+    void refreshCoverage(true);
+  }, [currentJobs, refreshCoverage]);
+
   const handleRecommendationTranslate = useCallback(async (item: Recommendation) => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+
+    if (createQuotaGateMode !== null) {
+      setCreateQuotaGateOpen(createQuotaGateMode);
+      return;
+    }
+
+    if (remainingCredits == null) {
+      message.info(t("v4.create.quotaUnavailable"));
+      return;
+    }
+
+    const estimatedCredits = recommendationEstimates[item.id] ?? null;
+    if (estimatedCredits != null && estimatedCredits > remainingCredits) {
+      openCreditsPurchaseModal(
+        buildCreateTaskCreditsPurchaseContext({
+          estimatedCredits,
+          currentRemainingCredits: remainingCredits,
+          targetsCount: item.targets.length,
+          modulesCount: item.modules.length,
+        }),
+      );
+      return;
+    }
+
+    setSubmittingRecommendationIds((current) =>
+      current.includes(item.id) ? current : [...current, item.id],
+    );
+
     await createTasksWithConfig({
       nextTargets: item.targets,
       nextModules: item.modules,
     });
-  }, [createTasksWithConfig]);
+    setSubmittingRecommendationIds((current) => current.filter((id) => id !== item.id));
+  }, [
+    createQuotaGateMode,
+    createQuotaGatePending,
+    createTasksWithConfig,
+    recommendationEstimates,
+    remainingCredits,
+    t,
+  ]);
 
   const handleTaskAction = useCallback(
     async (
@@ -530,16 +708,37 @@ export default function TranslateV4MvpRoute() {
               <InlineStack align="space-between" blockAlign="start" wrap={false}>
                 <div style={summaryValueBlockStyle}>
                   <Text as="p" tone="subdued" variant="bodyMd">
-                    {t("v4.translationProgress")}
+                    {t("v4Mvp.coverageCard.title")}
                   </Text>
-                  <Text as="p" variant="heading2xl">
-                    {coverageLoading && coverage.locales.length === 0
-                      ? "—"
-                      : `${coverage.overallPercent ?? 0}%`}
-                  </Text>
+                  <div style={summaryProgressWrapStyle}>
+                    <div
+                      style={summaryProgressCircleStyle(
+                        coverageLoading && coverage.locales.length === 0
+                          ? null
+                          : coverage.overallPercent,
+                        coverageRating.accent,
+                        coverageRating.track,
+                      )}
+                    >
+                      <div style={summaryProgressCircleInnerStyle}>
+                        <Text as="p" variant="heading2xl" style={summaryProgressPercentStyle}>
+                          {coverageLoading && coverage.locales.length === 0
+                            ? "—"
+                            : `${coverage.overallPercent ?? 0}%`}
+                        </Text>
+                        <Text
+                          as="p"
+                          variant="bodyMd"
+                          style={summaryProgressLabelStyle(coverageRating.accent)}
+                        >
+                          {coverageRating.label}
+                        </Text>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div style={sectionActionWrapStyle}>
-                  <Button onClick={() => setCoverageDetailOpen(true)}>
+                  <Button variant="secondary" onClick={() => setCoverageDetailOpen(true)}>
                     {t("v4Mvp.coverageCard.viewDetails")}
                   </Button>
                 </div>
@@ -581,7 +780,7 @@ export default function TranslateV4MvpRoute() {
                       onClick={() => setWorkbenchTab("recommended")}
                       style={tabButtonStyle(workbenchTab === "recommended")}
                     >
-                      {t("v4Mvp.tabs.recommended", { count: recommendations.length })}
+                        {t("v4Mvp.tabs.recommended", { count: visibleRecommendations.length })}
                     </button>
                     <button
                       type="button"
@@ -595,7 +794,7 @@ export default function TranslateV4MvpRoute() {
                   {workbenchTab === "recommended" ? (
                     <InlineStack gap="200">
                       <Button
-                        variant="primary"
+                        variant="secondary"
                         onClick={() => void refreshCoverage(true)}
                         loading={scanLoading}
                       >
@@ -615,8 +814,8 @@ export default function TranslateV4MvpRoute() {
                       </Text>
                     </div>
                   ) : null}
-                  {recommendations.length > 0 ? (
-                    recommendations.map((item) => (
+                  {visibleRecommendations.length > 0 ? (
+                    visibleRecommendations.map((item) => (
                       <RecommendationCard
                         key={item.id}
                         title={item.title}
@@ -624,6 +823,7 @@ export default function TranslateV4MvpRoute() {
                         pendingItems={item.pendingItems}
                         estimatedCredits={recommendationEstimates[item.id] ?? null}
                         estimatedTime={estimateTimeLabel(item.pendingItems, t)}
+                        loading={submittingRecommendationIds.includes(item.id)}
                         onTranslate={() => void handleRecommendationTranslate(item)}
                       />
                     ))
@@ -739,6 +939,11 @@ export default function TranslateV4MvpRoute() {
           </div>
         </Modal.Section>
       </Modal>
+      <CreateTaskQuotaGateModal
+        open={createQuotaGateOpen !== null}
+        mode={createQuotaGateOpen ?? "pricing"}
+        onClose={() => setCreateQuotaGateOpen(null)}
+      />
     </Page>
   );
 }
@@ -749,6 +954,7 @@ function RecommendationCard({
   pendingItems,
   estimatedCredits,
   estimatedTime,
+  loading = false,
   onTranslate,
 }: {
   title: string;
@@ -756,6 +962,7 @@ function RecommendationCard({
   pendingItems: number;
   estimatedCredits: number | null;
   estimatedTime: string;
+  loading?: boolean;
   onTranslate: () => void;
 }) {
   const { t } = useTranslation();
@@ -790,7 +997,7 @@ function RecommendationCard({
             </BlockStack>
           </BlockStack>
           <div style={recommendationActionWrapStyle}>
-            <Button variant="primary" onClick={onTranslate}>
+            <Button variant="secondary" loading={loading} onClick={onTranslate}>
               {t("v4Mvp.recommended.translate")}
             </Button>
           </div>
@@ -914,8 +1121,43 @@ const summaryValueBlockStyle = {
   minWidth: 0,
   flex: "1 1 320px",
   display: "grid",
-  gap: "8px",
+  gap: "14px",
 } satisfies CSSProperties;
+
+const summaryProgressWrapStyle = {
+  display: "flex",
+  alignItems: "flex-start",
+} satisfies CSSProperties;
+
+const summaryProgressCircleInnerStyle = {
+  width: "128px",
+  height: "128px",
+  borderRadius: "999px",
+  background: "rgba(255,255,255,0.96)",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+  display: "grid",
+  alignContent: "center",
+  justifyItems: "center",
+  gap: "6px",
+  textAlign: "center",
+  padding: "16px",
+} satisfies CSSProperties;
+
+const summaryProgressPercentStyle = {
+  fontSize: "34px",
+  lineHeight: 1,
+  fontWeight: 700,
+  letterSpacing: "-0.03em",
+} satisfies CSSProperties;
+
+function summaryProgressLabelStyle(accent: string): CSSProperties {
+  return {
+    color: accent,
+    fontSize: "15px",
+    lineHeight: "20px",
+    fontWeight: 600,
+  };
+}
 
 const batchEntryCardStyle = {
   ...v4CardStyle,
