@@ -797,29 +797,31 @@ export default function TranslateV4MvpRoute() {
               style={videoPreviewCardStyle}
             >
               <div style={videoPreviewCardInnerStyle}>
-                <div style={videoPreviewSurfaceStyle}>
-                  {summaryVideoThumbnailUrl ? (
-                    <img
-                      alt={t("v4Mvp.videoCard.title")}
-                      src={summaryVideoThumbnailUrl}
-                      style={videoPreviewImageStyle}
-                    />
-                  ) : (
-                    <div style={videoPreviewFallbackStyle}>
-                      <Badge tone="attention">{t("v4Mvp.videoCard.unavailable")}</Badge>
-                    </div>
-                  )}
-                  <div style={videoPreviewOverlayStyle}>
-                    <div style={videoPreviewPlayWrapStyle}>
-                      <div style={videoPreviewPlayButtonStyle}>
-                        <div style={videoPreviewPlayIconStyle} />
+                <div style={videoPreviewMediaStyle}>
+                  <div style={videoPreviewSurfaceStyle}>
+                    {summaryVideoThumbnailUrl ? (
+                      <img
+                        alt={t("v4Mvp.videoCard.title")}
+                        src={summaryVideoThumbnailUrl}
+                        style={videoPreviewImageStyle}
+                      />
+                    ) : (
+                      <div style={videoPreviewFallbackStyle}>
+                        <Badge tone="attention">{t("v4Mvp.videoCard.unavailable")}</Badge>
+                      </div>
+                    )}
+                    <div style={videoPreviewOverlayStyle}>
+                      <div style={videoPreviewPlayWrapStyle}>
+                        <div style={videoPreviewPlayButtonStyle}>
+                          <div style={videoPreviewPlayIconStyle} />
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 <div style={videoPreviewContentStyle}>
-                  <Text as="p" variant="headingMd">
+                  <Text as="p" variant="headingMd" style={videoPreviewTitleStyle}>
                     {t("v4Mvp.videoCard.tutorialTitle")}
                   </Text>
                 </div>
@@ -1201,8 +1203,10 @@ const videoPreviewCardStyle = {
   boxShadow: "var(--app-shadow-card-strong)",
   minHeight: "100%",
   display: "block",
+  height: "100%",
   color: "inherit",
   textDecoration: "none",
+  overflow: "hidden",
 } satisfies CSSProperties;
 
 const sectionActionWrapStyle = {
@@ -1267,24 +1271,27 @@ function summaryProgressLabelStyle(accent: string): CSSProperties {
   };
 }
 
-const videoPreviewSurfaceStyle = {
-  position: "relative",
-  width: "188px",
-  minWidth: "188px",
-  aspectRatio: "16 / 9",
-  borderRadius: "16px 0 0 16px",
-  overflow: "hidden",
-  background: "#0f172a",
-  borderRight: `1px solid ${v4Colors.cardBorder}`,
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.10)",
-} satisfies CSSProperties;
-
 const videoPreviewCardInnerStyle = {
   display: "flex",
   alignItems: "stretch",
-  gap: "0",
+  minHeight: "168px",
+  height: "100%",
+} satisfies CSSProperties;
+
+const videoPreviewMediaStyle = {
+  flex: "1.45 1 0",
   minWidth: 0,
-  flexWrap: "wrap",
+} satisfies CSSProperties;
+
+const videoPreviewSurfaceStyle = {
+  position: "relative",
+  width: "100%",
+  height: "100%",
+  minHeight: "168px",
+  borderRadius: "16px 0 0 16px",
+  overflow: "hidden",
+  background: "#0f172a",
+  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.10)",
 } satisfies CSSProperties;
 
 const videoPreviewImageStyle = {
@@ -1297,17 +1304,19 @@ const videoPreviewImageStyle = {
 const videoPreviewOverlayStyle = {
   position: "absolute",
   inset: 0,
-  display: "grid",
-  alignContent: "center",
-  justifyItems: "center",
-  padding: "14px",
-  textAlign: "center",
-  background: "linear-gradient(180deg, rgba(15,23,42,0.16) 0%, rgba(15,23,42,0.58) 100%)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "18px",
+  background:
+    "linear-gradient(180deg, rgba(15,23,42,0.16) 0%, rgba(15,23,42,0.52) 100%)",
 } satisfies CSSProperties;
 
 const videoPreviewPlayWrapStyle = {
   display: "flex",
   justifyContent: "center",
+  alignItems: "center",
+  flexShrink: 0,
 } satisfies CSSProperties;
 
 const videoPreviewPlayButtonStyle = {
@@ -1342,11 +1351,17 @@ const videoPreviewFallbackStyle = {
 
 const videoPreviewContentStyle = {
   minWidth: 0,
-  flex: "1 1 160px",
-  display: "grid",
-  alignContent: "center",
-  gap: "8px",
-  padding: "14px 16px",
+  flex: "0.78 1 0",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "flex-start",
+  padding: "20px 24px 20px 28px",
+} satisfies CSSProperties;
+
+const videoPreviewTitleStyle = {
+  color: v4Colors.text,
+  maxWidth: "240px",
+  textAlign: "left",
 } satisfies CSSProperties;
 
 const batchEntryCardStyle = {
