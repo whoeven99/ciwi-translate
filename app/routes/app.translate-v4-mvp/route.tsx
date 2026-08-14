@@ -795,34 +795,29 @@ export default function TranslateV4MvpRoute() {
               href={SUMMARY_VIDEO_URL}
               target="_blank"
               rel="noreferrer"
-              style={videoPreviewCardStyle}
+              style={videoPreviewLayerStyle}
             >
-              <div style={videoPreviewCardInnerStyle}>
-                <div style={videoPreviewMediaStyle}>
-                  <div style={videoPreviewSurfaceStyle}>
-                    {summaryVideoThumbnailUrl ? (
-                      <img
-                        alt={t("v4Mvp.videoCard.title")}
-                        src={summaryVideoThumbnailUrl}
-                        style={videoPreviewImageStyle}
-                      />
-                    ) : (
-                      <div style={videoPreviewFallbackStyle}>
-                        <Badge tone="attention">{t("v4Mvp.videoCard.unavailable")}</Badge>
-                      </div>
-                    )}
-                    <div style={videoPreviewOverlayStyle}>
-                      <div style={videoPreviewPlayWrapStyle}>
-                        <div style={videoPreviewPlayButtonStyle}>
-                          <div style={videoPreviewPlayIconStyle} />
-                        </div>
-                      </div>
-                    </div>
+              <div style={videoPreviewSurfaceStyle}>
+                {summaryVideoThumbnailUrl ? (
+                  <img
+                    alt={t("v4Mvp.videoCard.title")}
+                    src={summaryVideoThumbnailUrl}
+                    style={videoPreviewImageStyle}
+                  />
+                ) : (
+                  <div style={videoPreviewFallbackStyle}>
+                    <Badge tone="attention">{t("v4Mvp.videoCard.unavailable")}</Badge>
+                  </div>
+                )}
+
+                <div style={videoPreviewOverlayStyle}>
+                  <div style={videoPreviewPlayButtonStyle}>
+                    <div style={videoPreviewPlayIconStyle} />
                   </div>
                 </div>
 
-                <div style={videoPreviewContentStyle}>
-                  <Text as="p" variant="headingMd" style={videoPreviewTitleStyle}>
+                <div style={videoPreviewCaptionStyle}>
+                  <Text as="p" variant="bodyMd" style={videoPreviewCaptionTextStyle}>
                     {t("v4Mvp.videoCard.tutorialTitle")}
                   </Text>
                 </div>
@@ -1181,32 +1176,35 @@ const coverageModalEmptyStyle = {
 } satisfies CSSProperties;
 
 const summaryHeroGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  display: "flex",
+  flexWrap: "wrap",
   gap: "18px",
   alignItems: "stretch",
+  width: "100%",
 } satisfies CSSProperties;
 
 const summaryHeroCardStyle = {
   ...v4CardStyle,
-  padding: "8px 12px",
+  padding: "10px 14px",
   background: v4Colors.summaryBg,
   boxShadow: "var(--app-shadow-card-strong)",
   minHeight: "100%",
+  flex: "0.95 1 360px",
+  minWidth: "320px",
 } satisfies CSSProperties;
 
-const videoPreviewCardStyle = {
+const videoPreviewLayerStyle = {
   ...v4CardStyle,
   padding: "0",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(247,248,250,0.96) 100%)",
-  boxShadow: "var(--app-shadow-card-strong)",
-  minHeight: "100%",
-  display: "block",
-  height: "100%",
+  overflow: "hidden",
   color: "inherit",
   textDecoration: "none",
-  overflow: "hidden",
+  background: "#0f172a",
+  boxShadow: "var(--app-shadow-card-strong)",
+  flex: "1.35 1 460px",
+  minWidth: "360px",
+  minHeight: "100%",
+  display: "block",
 } satisfies CSSProperties;
 
 const sectionActionWrapStyle = {
@@ -1215,17 +1213,16 @@ const sectionActionWrapStyle = {
 } satisfies CSSProperties;
 
 const summaryHeroLayoutStyle = {
-  display: "flex",
+  display: "grid",
+  gridTemplateColumns: "auto minmax(0, 1fr)",
   alignItems: "center",
-  gap: "10px",
-  flexWrap: "wrap",
+  gap: "14px",
 } satisfies CSSProperties;
 
 const summaryContentStyle = {
   minWidth: 0,
-  flex: "1 1 220px",
   display: "grid",
-  gap: "4px",
+  gap: "6px",
 } satisfies CSSProperties;
 
 const summaryProgressWrapStyle = {
@@ -1250,7 +1247,7 @@ const summaryProgressCircleInnerStyle = {
 } satisfies CSSProperties;
 
 const summaryProgressPercentStyle = {
-  fontSize: "16px",
+  fontSize: "18px",
   lineHeight: 1,
   fontWeight: 700,
   letterSpacing: "-0.03em",
@@ -1259,7 +1256,7 @@ const summaryProgressPercentStyle = {
 const summaryButtonWrapStyle = {
   display: "flex",
   alignItems: "center",
-  paddingTop: "0",
+  paddingTop: "2px",
 } satisfies CSSProperties;
 
 function summaryProgressLabelStyle(accent: string): CSSProperties {
@@ -1271,34 +1268,19 @@ function summaryProgressLabelStyle(accent: string): CSSProperties {
   };
 }
 
-const videoPreviewCardInnerStyle = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 2fr) minmax(120px, 0.5fr)",
-  minHeight: "78px",
-  height: "100%",
-  alignItems: "stretch",
-} satisfies CSSProperties;
-
-const videoPreviewMediaStyle = {
-  minWidth: 0,
-  height: "100%",
-} satisfies CSSProperties;
-
 const videoPreviewSurfaceStyle = {
   position: "relative",
   width: "100%",
   height: "100%",
-  minHeight: "100%",
-  borderRadius: "16px 0 0 16px",
+  minHeight: "112px",
   overflow: "hidden",
   background: "#0f172a",
-  borderRight: `1px solid ${v4Colors.cardBorder}`,
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.10)",
 } satisfies CSSProperties;
 
 const videoPreviewImageStyle = {
   width: "100%",
   height: "100%",
+  minHeight: "112px",
   display: "block",
   objectFit: "cover",
 } satisfies CSSProperties;
@@ -1309,21 +1291,13 @@ const videoPreviewOverlayStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "12px",
   background:
-    "linear-gradient(180deg, rgba(15,23,42,0.16) 0%, rgba(15,23,42,0.52) 100%)",
-} satisfies CSSProperties;
-
-const videoPreviewPlayWrapStyle = {
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  flexShrink: 0,
+    "linear-gradient(180deg, rgba(15,23,42,0.08) 0%, rgba(15,23,42,0.24) 100%)",
 } satisfies CSSProperties;
 
 const videoPreviewPlayButtonStyle = {
-  width: "32px",
-  height: "32px",
+  width: "42px",
+  height: "42px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.9)",
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.16)",
@@ -1335,35 +1309,35 @@ const videoPreviewPlayButtonStyle = {
 const videoPreviewPlayIconStyle = {
   width: 0,
   height: 0,
-  borderTop: "5px solid transparent",
-  borderBottom: "5px solid transparent",
-  borderLeft: `8px solid ${v4Colors.text}`,
+  borderTop: "6px solid transparent",
+  borderBottom: "6px solid transparent",
+  borderLeft: `10px solid ${v4Colors.text}`,
   marginLeft: "2px",
+} satisfies CSSProperties;
+
+const videoPreviewCaptionStyle = {
+  position: "absolute",
+  inset: "auto 0 0 0",
+  padding: "20px 16px 12px",
+  background:
+    "linear-gradient(180deg, rgba(15,23,42,0) 0%, rgba(15,23,42,0.78) 100%)",
+} satisfies CSSProperties;
+
+const videoPreviewCaptionTextStyle = {
+  color: "#ffffff",
+  fontWeight: 600,
+  textShadow: "0 1px 2px rgba(15, 23, 42, 0.24)",
 } satisfies CSSProperties;
 
 const videoPreviewFallbackStyle = {
   width: "100%",
   height: "100%",
+  minHeight: "112px",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   background:
     "linear-gradient(180deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.96) 100%)",
-} satisfies CSSProperties;
-
-const videoPreviewContentStyle = {
-  minWidth: 0,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "flex-start",
-  padding: "8px 10px 8px 12px",
-} satisfies CSSProperties;
-
-const videoPreviewTitleStyle = {
-  color: v4Colors.text,
-  maxWidth: "120px",
-  textAlign: "left",
-  width: "100%",
 } satisfies CSSProperties;
 
 const batchEntryCardStyle = {
