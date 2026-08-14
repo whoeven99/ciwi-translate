@@ -938,6 +938,16 @@ export default function TranslateV4MvpRoute() {
                               {t("v4Mvp.custom.translate")}
                             </Button>
                           </InlineStack>
+                          <InlineStack align="center">
+                            <Button
+                              variant="secondary"
+                              size="large"
+                              onClick={() => void refreshCoverage(true)}
+                              loading={scanLoading}
+                            >
+                              {t("v4Mvp.scan.scanStore")}
+                            </Button>
+                          </InlineStack>
                         </BlockStack>
                       </div>
                     </div>
@@ -1272,25 +1282,27 @@ function summaryProgressLabelStyle(accent: string): CSSProperties {
 }
 
 const videoPreviewCardInnerStyle = {
-  display: "flex",
-  alignItems: "stretch",
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.75fr) minmax(170px, 0.72fr)",
   minHeight: "168px",
   height: "100%",
+  alignItems: "stretch",
 } satisfies CSSProperties;
 
 const videoPreviewMediaStyle = {
-  flex: "1.45 1 0",
   minWidth: 0,
+  height: "100%",
 } satisfies CSSProperties;
 
 const videoPreviewSurfaceStyle = {
   position: "relative",
   width: "100%",
   height: "100%",
-  minHeight: "168px",
+  minHeight: "100%",
   borderRadius: "16px 0 0 16px",
   overflow: "hidden",
   background: "#0f172a",
+  borderRight: `1px solid ${v4Colors.cardBorder}`,
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.10)",
 } satisfies CSSProperties;
 
@@ -1351,17 +1363,17 @@ const videoPreviewFallbackStyle = {
 
 const videoPreviewContentStyle = {
   minWidth: 0,
-  flex: "0.78 1 0",
   display: "flex",
   alignItems: "center",
   justifyContent: "flex-start",
-  padding: "20px 24px 20px 28px",
+  padding: "20px 18px 20px 22px",
 } satisfies CSSProperties;
 
 const videoPreviewTitleStyle = {
   color: v4Colors.text,
-  maxWidth: "240px",
+  maxWidth: "210px",
   textAlign: "left",
+  width: "100%",
 } satisfies CSSProperties;
 
 const batchEntryCardStyle = {
