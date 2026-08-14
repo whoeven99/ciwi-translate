@@ -60,6 +60,8 @@ const EMPTY_COVERAGE: CoverageSummary = {
   locales: [],
 };
 
+const SUMMARY_VIDEO_URL = "https://www.youtube.com/watch?v=AJ0RZkCQMd0&t=9s";
+
 type Recommendation = {
   id: string;
   title: string;
@@ -108,6 +110,30 @@ function estimateTimeLabel(workload: number, t: ReturnType<typeof useTranslation
   if (workload <= 1_000) return t("v4Mvp.time.medium");
   if (workload <= 4_000) return t("v4Mvp.time.long");
   return t("v4Mvp.time.xlong");
+}
+
+function extractYoutubeVideoId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    let videoId = "";
+
+    if (host === "youtube.com" || host === "m.youtube.com") {
+      videoId = parsed.searchParams.get("v") ?? "";
+    } else if (host === "youtu.be") {
+      videoId = parsed.pathname.replace("/", "");
+    }
+
+    return videoId || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildYoutubeThumbnailUrl(url: string): string | null {
+  const videoId = extractYoutubeVideoId(url);
+  if (!videoId) return null;
+  return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 }
 
 function buildScanSummary(
@@ -341,6 +367,10 @@ export default function TranslateV4MvpRoute() {
   const coverageRating = useMemo(
     () => getCoverageRating(coverage.overallPercent, t),
     [coverage.overallPercent, t],
+  );
+  const summaryVideoThumbnailUrl = useMemo(
+    () => buildYoutubeThumbnailUrl(SUMMARY_VIDEO_URL),
+    [],
   );
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
   const remainingCredits = normalizedQuota?.remaining ?? null;
@@ -703,46 +733,103 @@ export default function TranslateV4MvpRoute() {
             planType={planType}
           />
 
-          <div style={summaryHeroCardStyle}>
-            <div style={summaryHeroHeaderStyle}>
-              <InlineStack align="space-between" blockAlign="start" wrap={false}>
-                <div style={summaryValueBlockStyle}>
-                  <Text as="p" tone="subdued" variant="bodyMd">
-                    {t("v4Mvp.coverageCard.title")}
-                  </Text>
-                  <div style={summaryProgressWrapStyle}>
-                    <div
-                      style={summaryProgressCircleStyle(
-                        coverageLoading && coverage.locales.length === 0
-                          ? null
-                          : coverage.overallPercent,
-                        coverageRating.accent,
-                        coverageRating.track,
-                      )}
-                    >
-                      <div style={summaryProgressCircleInnerStyle}>
-                        <Text as="p" variant="heading2xl" style={summaryProgressPercentStyle}>
-                          {coverageLoading && coverage.locales.length === 0
-                            ? "—"
-                            : `${coverage.overallPercent ?? 0}%`}
-                        </Text>
-                        <Text
-                          as="p"
-                          variant="bodyMd"
-                          style={summaryProgressLabelStyle(coverageRating.accent)}
-                        >
-                          {coverageRating.label}
-                        </Text>
+          <div style={summaryHeroGridStyle}>
+            <div style={summaryHeroCardStyle}>
+              <div style={summaryHeroHeaderStyle}>
+                <InlineStack align="space-between" blockAlign="start" wrap={false}>
+                  <div style={summaryValueBlockStyle}>
+                    <Text as="p" tone="subdued" variant="bodyMd">
+                      {t("v4Mvp.coverageCard.title")}
+                    </Text>
+                    <div style={summaryProgressWrapStyle}>
+                      <div
+                        style={summaryProgressCircleStyle(
+                          coverageLoading && coverage.locales.length === 0
+                            ? null
+                            : coverage.overallPercent,
+                          coverageRating.accent,
+                          coverageRating.track,
+                        )}
+                      >
+                        <div style={summaryProgressCircleInnerStyle}>
+                          <Text as="p" variant="heading2xl" style={summaryProgressPercentStyle}>
+                            {coverageLoading && coverage.locales.length === 0
+                              ? "—"
+                              : `${coverage.overallPercent ?? 0}%`}
+                          </Text>
+                          <Text
+                            as="p"
+                            variant="bodyMd"
+                            style={summaryProgressLabelStyle(coverageRating.accent)}
+                          >
+                            {coverageRating.label}
+                          </Text>
+                        </div>
                       </div>
                     </div>
                   </div>
+                  <div style={sectionActionWrapStyle}>
+                    <Button variant="secondary" onClick={() => setCoverageDetailOpen(true)}>
+                      {t("v4Mvp.coverageCard.viewDetails")}
+                    </Button>
+                  </div>
+                </InlineStack>
+              </div>
+            </div>
+
+            <div style={videoPreviewCardStyle}>
+              <BlockStack gap="300">
+                <InlineStack align="space-between" blockAlign="start">
+                  <BlockStack gap="100">
+                    <Text as="p" tone="subdued" variant="bodyMd">
+                      {t("v4Mvp.videoCard.title")}
+                    </Text>
+                    <Text as="p" variant="headingMd">
+                      {t("v4Mvp.videoCard.subtitle")}
+                    </Text>
+                  </BlockStack>
+                  <div style={videoPreviewActionWrapStyle}>
+                    <Button
+                      variant="secondary"
+                      url={SUMMARY_VIDEO_URL}
+                      external
+                    >
+                      {t("v4Mvp.videoCard.open")}
+                    </Button>
+                  </div>
+                </InlineStack>
+
+                <div style={videoPreviewSurfaceStyle}>
+                  {summaryVideoThumbnailUrl ? (
+                    <a
+                      href={SUMMARY_VIDEO_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={videoPreviewLinkStyle}
+                    >
+                      <img
+                        alt={t("v4Mvp.videoCard.title")}
+                        src={summaryVideoThumbnailUrl}
+                        style={videoPreviewImageStyle}
+                      />
+                      <div style={videoPreviewOverlayStyle}>
+                        <div style={videoPreviewPlayWrapStyle}>
+                          <div style={videoPreviewPlayButtonStyle}>
+                            <div style={videoPreviewPlayIconStyle} />
+                          </div>
+                        </div>
+                        <Text as="p" variant="bodyMd" fontWeight="semibold" tone="text-inverse">
+                          {t("v4Mvp.videoCard.open")}
+                        </Text>
+                      </div>
+                    </a>
+                  ) : (
+                    <div style={videoPreviewFallbackStyle}>
+                      <Badge tone="attention">{t("v4Mvp.videoCard.unavailable")}</Badge>
+                    </div>
+                  )}
                 </div>
-                <div style={sectionActionWrapStyle}>
-                  <Button variant="secondary" onClick={() => setCoverageDetailOpen(true)}>
-                    {t("v4Mvp.coverageCard.viewDetails")}
-                  </Button>
-                </div>
-              </InlineStack>
+              </BlockStack>
             </div>
           </div>
 
@@ -1097,11 +1184,33 @@ const coverageModalEmptyStyle = {
   border: `1px dashed ${v4Colors.cardBorder}`,
 } satisfies CSSProperties;
 
+const summaryHeroGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: "18px",
+  alignItems: "stretch",
+} satisfies CSSProperties;
+
 const summaryHeroCardStyle = {
   ...v4CardStyle,
   padding: "24px 26px",
   background: v4Colors.summaryBg,
   boxShadow: "var(--app-shadow-card-strong)",
+  minHeight: "100%",
+} satisfies CSSProperties;
+
+const videoPreviewCardStyle = {
+  ...v4CardStyle,
+  padding: "24px 26px",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(247,248,250,0.96) 100%)",
+  boxShadow: "var(--app-shadow-card-strong)",
+  minHeight: "100%",
+} satisfies CSSProperties;
+
+const videoPreviewActionWrapStyle = {
+  flexShrink: 0,
+  paddingLeft: "16px",
 } satisfies CSSProperties;
 
 const sectionActionWrapStyle = {
@@ -1158,6 +1267,79 @@ function summaryProgressLabelStyle(accent: string): CSSProperties {
     fontWeight: 600,
   };
 }
+
+const videoPreviewSurfaceStyle = {
+  position: "relative",
+  width: "100%",
+  aspectRatio: "16 / 9",
+  borderRadius: "18px",
+  overflow: "hidden",
+  background: "#0f172a",
+  border: `1px solid ${v4Colors.cardBorder}`,
+  boxShadow: "0 14px 32px rgba(15, 23, 42, 0.12)",
+} satisfies CSSProperties;
+
+const videoPreviewLinkStyle = {
+  position: "absolute",
+  inset: 0,
+  display: "block",
+  color: "inherit",
+  textDecoration: "none",
+} satisfies CSSProperties;
+
+const videoPreviewImageStyle = {
+  width: "100%",
+  height: "100%",
+  display: "block",
+  objectFit: "cover",
+} satisfies CSSProperties;
+
+const videoPreviewOverlayStyle = {
+  position: "absolute",
+  inset: 0,
+  display: "grid",
+  alignContent: "center",
+  justifyItems: "center",
+  gap: "14px",
+  padding: "24px",
+  textAlign: "center",
+  background: "linear-gradient(180deg, rgba(15,23,42,0.16) 0%, rgba(15,23,42,0.58) 100%)",
+} satisfies CSSProperties;
+
+const videoPreviewPlayWrapStyle = {
+  display: "flex",
+  justifyContent: "center",
+} satisfies CSSProperties;
+
+const videoPreviewPlayButtonStyle = {
+  width: "70px",
+  height: "70px",
+  borderRadius: "999px",
+  background: "rgba(255,255,255,0.9)",
+  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+} satisfies CSSProperties;
+
+const videoPreviewPlayIconStyle = {
+  width: 0,
+  height: 0,
+  borderTop: "11px solid transparent",
+  borderBottom: "11px solid transparent",
+  borderLeft: `18px solid ${v4Colors.text}`,
+  marginLeft: "4px",
+} satisfies CSSProperties;
+
+const videoPreviewFallbackStyle = {
+  width: "100%",
+  height: "100%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background:
+    "linear-gradient(180deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.96) 100%)",
+} satisfies CSSProperties;
 
 const batchEntryCardStyle = {
   ...v4CardStyle,
