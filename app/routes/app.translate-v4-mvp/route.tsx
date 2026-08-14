@@ -43,6 +43,7 @@ import { TaskQueueSection } from "~/routes/app.translate-v4/components/TaskQueue
 import { PageHeaderBar } from "~/routes/app.translate-v4/components/SummaryAndHeader";
 import { v4CardStyle, v4Colors, v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
 import { localeRegionCode, localeShortName } from "~/routes/app.translate-v4/localeDisplay";
+import { shouldPollV4Job } from "~/routes/app.translate-v4/jobFilters";
 import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
@@ -234,8 +235,8 @@ function getCoverageRating(
 function summaryProgressCircleStyle(percent: number | null, accent: string, track: string) {
   const safePercent = Math.max(0, Math.min(percent ?? 0, 100));
   return {
-    width: "116px",
-    height: "116px",
+    width: "98px",
+    height: "98px",
     borderRadius: "999px",
     background: `conic-gradient(${accent} 0deg ${safePercent * 3.6}deg, ${track} ${safePercent * 3.6}deg 360deg)`,
     display: "flex",
@@ -616,7 +617,7 @@ export default function TranslateV4MvpRoute() {
     const poll = () => {
       if (disposed) return;
 
-      const hasActive = jobsRef.current.some((job) => !job.isTerminal);
+      const hasActive = jobsRef.current.some(shouldPollV4Job);
       timer = setTimeout(() => {
         if (!hasActive) {
           poll();
@@ -1059,9 +1060,7 @@ function RecommendationCard({
   onTranslate: () => void;
 }) {
   const { t } = useTranslation();
-  const sourceUpdatedReason = t("v4Mvp.recommended.reasonChanged");
-  const hasSourceUpdated = reasons.includes(sourceUpdatedReason);
-  const primaryReason = reasons.find((reason) => reason !== sourceUpdatedReason) ?? null;
+  const primaryReason = reasons[0] ?? null;
 
   return (
     <div style={recommendationCardStyle}>
@@ -1072,11 +1071,6 @@ function RecommendationCard({
               <span style={recommendationTonePillStyle}>
                 {t("v4Mvp.recommended.priority")}
               </span>
-              {hasSourceUpdated ? (
-                <span style={recommendationSourcePillStyle}>
-                  {t("v4Mvp.recommended.sourceUpdated")}
-                </span>
-              ) : null}
             </InlineStack>
             <BlockStack gap="150">
               <Text as="h3" variant="headingLg">
@@ -1199,7 +1193,7 @@ const summaryHeroGridStyle = {
 
 const summaryHeroCardStyle = {
   ...v4CardStyle,
-  padding: "14px 18px",
+  padding: "12px 16px",
   background: v4Colors.summaryBg,
   boxShadow: "var(--app-shadow-card-strong)",
   minHeight: "100%",
@@ -1227,7 +1221,7 @@ const sectionActionWrapStyle = {
 const summaryHeroLayoutStyle = {
   display: "flex",
   alignItems: "center",
-  gap: "14px",
+  gap: "12px",
   flexWrap: "wrap",
 } satisfies CSSProperties;
 
@@ -1235,7 +1229,7 @@ const summaryContentStyle = {
   minWidth: 0,
   flex: "1 1 220px",
   display: "grid",
-  gap: "10px",
+  gap: "8px",
 } satisfies CSSProperties;
 
 const summaryProgressWrapStyle = {
@@ -1246,21 +1240,21 @@ const summaryProgressWrapStyle = {
 } satisfies CSSProperties;
 
 const summaryProgressCircleInnerStyle = {
-  width: "88px",
-  height: "88px",
+  width: "74px",
+  height: "74px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.96)",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
   display: "grid",
   alignContent: "center",
   justifyItems: "center",
-  gap: "6px",
+  gap: "4px",
   textAlign: "center",
-  padding: "16px",
+  padding: "12px",
 } satisfies CSSProperties;
 
 const summaryProgressPercentStyle = {
-  fontSize: "24px",
+  fontSize: "20px",
   lineHeight: 1,
   fontWeight: 700,
   letterSpacing: "-0.03em",
@@ -1269,22 +1263,22 @@ const summaryProgressPercentStyle = {
 const summaryButtonWrapStyle = {
   display: "flex",
   alignItems: "center",
-  paddingTop: "2px",
+  paddingTop: "0",
 } satisfies CSSProperties;
 
 function summaryProgressLabelStyle(accent: string): CSSProperties {
   return {
     color: accent,
-    fontSize: "15px",
-    lineHeight: "20px",
+    fontSize: "14px",
+    lineHeight: "18px",
     fontWeight: 600,
   };
 }
 
 const videoPreviewCardInnerStyle = {
   display: "grid",
-  gridTemplateColumns: "minmax(0, 1.75fr) minmax(170px, 0.72fr)",
-  minHeight: "168px",
+  gridTemplateColumns: "minmax(0, 2fr) minmax(120px, 0.5fr)",
+  minHeight: "138px",
   height: "100%",
   alignItems: "stretch",
 } satisfies CSSProperties;
@@ -1319,7 +1313,7 @@ const videoPreviewOverlayStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "18px",
+  padding: "12px",
   background:
     "linear-gradient(180deg, rgba(15,23,42,0.16) 0%, rgba(15,23,42,0.52) 100%)",
 } satisfies CSSProperties;
@@ -1332,8 +1326,8 @@ const videoPreviewPlayWrapStyle = {
 } satisfies CSSProperties;
 
 const videoPreviewPlayButtonStyle = {
-  width: "46px",
-  height: "46px",
+  width: "40px",
+  height: "40px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.9)",
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.16)",
@@ -1345,9 +1339,9 @@ const videoPreviewPlayButtonStyle = {
 const videoPreviewPlayIconStyle = {
   width: 0,
   height: 0,
-  borderTop: "8px solid transparent",
-  borderBottom: "8px solid transparent",
-  borderLeft: `13px solid ${v4Colors.text}`,
+  borderTop: "7px solid transparent",
+  borderBottom: "7px solid transparent",
+  borderLeft: `11px solid ${v4Colors.text}`,
   marginLeft: "2px",
 } satisfies CSSProperties;
 
@@ -1366,12 +1360,12 @@ const videoPreviewContentStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "flex-start",
-  padding: "20px 18px 20px 22px",
+  padding: "12px 12px 12px 16px",
 } satisfies CSSProperties;
 
 const videoPreviewTitleStyle = {
   color: v4Colors.text,
-  maxWidth: "210px",
+  maxWidth: "160px",
   textAlign: "left",
   width: "100%",
 } satisfies CSSProperties;
@@ -1437,22 +1431,10 @@ const recommendationTonePillStyle = {
   alignItems: "center",
   padding: "6px 12px",
   borderRadius: "999px",
-  background: recommendationBlueStyles.accentSoft,
-  color: recommendationBlueStyles.accent,
+  background: "rgba(220, 38, 38, 0.12)",
+  color: "#dc2626",
   fontSize: "13px",
   fontWeight: 700,
-  lineHeight: "18px",
-} satisfies CSSProperties;
-
-const recommendationSourcePillStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "6px 12px",
-  borderRadius: "999px",
-  background: "rgba(37, 99, 235, 0.08)",
-  color: recommendationBlueStyles.accent,
-  fontSize: "13px",
-  fontWeight: 600,
   lineHeight: "18px",
 } satisfies CSSProperties;
 

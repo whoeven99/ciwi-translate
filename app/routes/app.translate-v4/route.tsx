@@ -49,7 +49,7 @@ import { notifyTranslationStatsUpdated } from "~/lib/translationStatsSync";
 import { selectShopTargetLocales } from "~/lib/shopTargetLocales";
 import { syncShopTargetLocalesFromShopify } from "~/server/translateV4/targetLocale.server";
 import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
-import { isCurrentV4Job } from "./jobFilters";
+import { isCurrentV4Job, shouldPollV4Job } from "./jobFilters";
 import {
   finishClientLogTrace,
   startClientLogTrace,
@@ -751,7 +751,7 @@ export default function AppTranslateV4() {
 
     const poll = () => {
       if (disposed) return;
-      const hasActive = jobsRef.current.some((j) => !j.isTerminal);
+      const hasActive = jobsRef.current.some(shouldPollV4Job);
       if (!hasActive) {
         stablePollCount = 0;
         timer = setTimeout(poll, 10_000);
@@ -759,7 +759,7 @@ export default function AppTranslateV4() {
       }
 
       const signature = jobsRef.current
-        .filter((j) => !j.isTerminal)
+        .filter(shouldPollV4Job)
         .map(
           (j) =>
             `${j.taskId}:${j.status}:${j.progressPercent ?? ""}:${j.updatedAt}`,

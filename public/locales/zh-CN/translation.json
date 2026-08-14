@@ -1139,7 +1139,7 @@
   "v4Mvp.queue.createdAt": "创建于 {{time}}",
   "v4Mvp.queue.empty": "还没有任务。你可以先应用上方推荐任务，再创建第一批翻译任务。",
   "v4Mvp.queue.progress": "任务进度",
-  "v4Mvp.queue.title": "任务队列",
+  "v4Mvp.queue.title": "任务列表",
   "v4Mvp.queue.updatedAt": "更新于 {{time}}",
   "v4Mvp.recommended.adjust": "调整任务",
   "v4Mvp.recommended.applied": "已将推荐任务应用到自定义任务",
