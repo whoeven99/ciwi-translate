@@ -14,16 +14,14 @@ import { computeModuleCount } from "./itemsCount.js";
 import { recordJobUsageSnapshot } from "./recordJobUsageSnapshot.js";
 import { upsertLocaleCoverage } from "./localeCoverageTsf.js";
 import { getOfflineAccessTokenFromTsf } from "./tsfDb.js";
-import { areAllUserErrorsTooManyTranslationKeys } from "./shopifyFetch.js";
 import {
   V4_MESSAGE_QUOTA_INSUFFICIENT_PARTIAL,
   V4_MESSAGE_WRITEBACK_ALL_FAILED,
 } from "./userFacingMessages.js";
-
-export type WritebackFailedResource = {
-  resourceId: string;
-  userErrors?: Array<{ field: string; message: string }>;
-};
+import {
+  reconcileBenignWritebackFailures,
+  type WritebackFailedResource,
+} from "./writebackUserErrors.js";
 
 export type FinalizeAfterWritebackInput = {
   writebackDone: number;
@@ -33,17 +31,6 @@ export type FinalizeAfterWritebackInput = {
   stageTimings?: StageTimings | null;
 };
 
-function shouldTreatWritebackFailuresAsKeyLimitSuccess(
-  writebackFailed: number,
-  failedResources: WritebackFailedResource[] | undefined,
-): boolean {
-  if (writebackFailed <= 0 || !failedResources?.length) return false;
-  if (failedResources.length !== writebackFailed) return false;
-  return failedResources.every((resource) =>
-    areAllUserErrorsTooManyTranslationKeys(resource.userErrors ?? []),
-  );
-}
-
 /** 写回结束后直接收尾：COMPLETED / PAUSED / FAILED（不再进入校验）。 */
 export async function finalizeJobAfterWriteback(
   job: TranslationV4Job,
@@ -52,20 +39,19 @@ export async function finalizeJobAfterWriteback(
   const { shopName, id: jobId } = job;
   const latestJob = await getJob(shopName, jobId);
 
-  let writebackDone = input.writebackDone;
-  let writebackFailed = input.writebackFailed;
-  if (
-    shouldTreatWritebackFailuresAsKeyLimitSuccess(
-      writebackFailed,
-      input.failedResources,
-    )
-  ) {
-    writebackDone += writebackFailed;
-    writebackFailed = 0;
+  const reconciled = reconcileBenignWritebackFailures(
+    input.writebackDone,
+    input.writebackFailed,
+    input.failedResources,
+  );
+  if (reconciled.reconciled) {
     console.log(
-      `[finalize] job=${jobId} key-limit writeback failures treated as success count=${input.failedResources!.length}`,
+      `[finalize] job=${jobId} benign writeback failures treated as success count=${input.writebackFailed}`,
     );
   }
+
+  const writebackDone = reconciled.writebackDone;
+  const writebackFailed = reconciled.writebackFailed;
 
   const mergedMetrics = {
     ...(latestJob?.metrics ?? job.metrics),

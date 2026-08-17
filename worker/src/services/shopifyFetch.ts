@@ -3,6 +3,7 @@ import { getShopAccessToken } from "./shopAccessToken.js";
 import { shouldIncludeFieldV2 } from "@ciwi/translation-core/translation-filter";
 import { noteShopifyThrottle } from "./shopifyConcurrency.js";
 import { buildShopifyAdminGraphqlUrl } from "./shopifyAdminApiVersion.js";
+import { isTooManyTranslationKeysMessage } from "./writebackUserErrors.js";
 
 export const MODULE_TO_SHOPIFY_TYPE: Record<string, string> = {
   PRODUCT: "PRODUCT",
@@ -823,26 +824,10 @@ async function registerTranslationsBatch(
 
 const LOG_BATCH = "[writeback-batch]";
 
-export function isTooManyTranslationKeysMessage(
-  message: string | undefined | null,
-): boolean {
-  return /too many translation keys|too_many_keys/i.test(message ?? "");
-}
-
 function isTooManyTranslationKeysError(
   userErrors: Array<{ field: string; message: string }>,
 ): boolean {
   return userErrors.some((err) => isTooManyTranslationKeysMessage(err.message));
-}
-
-/** Every userError must be Shopify key-limit (for writeback finalize). */
-export function areAllUserErrorsTooManyTranslationKeys(
-  userErrors: Array<{ field: string; message: string }>,
-): boolean {
-  return (
-    userErrors.length > 0 &&
-    userErrors.every((err) => isTooManyTranslationKeysMessage(err.message))
-  );
 }
 
 function mergeTranslationRegisterResults(

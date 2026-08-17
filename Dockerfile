@@ -1,5 +1,5 @@
 # Spark-style deploy: prod deps only, build in image, fast container start (prisma generate only).
-FROM node:20-slim
+FROM node:22-slim
 
 RUN apt-get update -y \
   && apt-get install -y openssl \

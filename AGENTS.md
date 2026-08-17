@@ -88,7 +88,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `scripts/*`                                                  | Migration, audit, diagnostic, cleanup, and one-off operational scripts.                   |
 | `public/locales/*/translation.json`                          | App i18n strings (15 locales，清单在 `app/lib/appI18nLanguages.ts`)。手写 `en` + `zh-CN`，其余可用 `npm run translate` 机翻补齐。 |
 | `.github/workflows/tsf-deploy.yml`                           | Manual Shopify extension/config and Render app/worker deployment workflow.                |
-| `Dockerfile`                                                 | Render container build for the Remix app; the worker is built from `worker/`.             |
+| `Dockerfile`                                                 | Render container build for the Remix app (`node:22-slim`); the worker is built from `worker/`. |
 
 
 
@@ -523,7 +523,10 @@ metric reconciliation helpers kept aligned with `app/server/translateV4/*`.
 - `worker/src/services/tsfQuota.ts`: quota query/deduct adapter.
 - `worker/src/services/stagePool.ts`: stage concurrency (auto/manual slot pools).
 - `worker/src/services/finalizeJobAfterWriteback.ts`: post-writeback final status
-selection and Redis `items_count` refresh for completed jobs.
+selection and Redis `items_count` refresh for completed jobs. Benign Shopify
+writeback rejections (`too many translation keys`, field length validation on
+resource) are reconciled to `writebackDone` at finalize so jobs are not marked
+`WRITEBACK_ALL_FAILED` when every failure is a platform constraint (`writebackUserErrors.ts`).
 - `worker/src/services/recordJobUsageSnapshot.ts`: task-terminal usage snapshot
 into Turso `TranslateV4JobUsage` (time / tokens / units / chars; survives Cosmos
 job retention cleanup).
@@ -833,7 +836,8 @@ redirect records.
  `LiquidRule(status=PENDING, source=auto, afterTranslation="")`，**不在 Web
  进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
  `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
- 过滤）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
+ 过滤，含 `looksLikeHtmlMarkupFragment`：拦 `loading="lazy"` / `width=`+`height=`
+ 等 img 属性碎片）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
  shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
  名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
  Redis 日聚合 `tsf:auto_liquid:deny:req|texts|shops:{utcYmd}`（8d TTL）。
@@ -864,7 +868,8 @@ redirect records.
  `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
- 慢删 `source='auto'`（绝不碰 manual）。管理页
+ 慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 HTML 属性碎片类
+ auto+PENDING。claim PENDING 时也会跳过并删除这类碎片，避免拿去翻译。管理页
  `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
 
 - **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
@@ -1253,6 +1258,7 @@ For "合入PR然后发布测试环境", the script will:
 | App Proxy 401/404                | `api.storefront.$.ts`                                 | `server/storefront/auth.server.ts`, extension caller                                                    |
 | 店面数据不更新 / Turso 502       | `app/server/storefront/cache.server.ts`               | `app/config/libsqlFetch.server.ts`, `api.storefront.$.ts`, 写入方的 `invalidateStorefrontCache` 调用     |
 | Manage Translation resource page | `app/routes/app.manage_translation_.<type>/route.tsx` | `manageTranslationRoute.server.ts`, `pictureClient.ts`                                                  |
+| `/app/...&icon=data:image` 404   | `app/lib/sanitizeEmbeddedAppPath.ts`                  | `app/routes/app.$.tsx`, `app/root.tsx` ErrorBoundary                                                    |
 | Picture translation/storage      | `app/server/picture/picture.server.ts`                | `api.picture.*`, `api.translate-v4.image`, `UserPicture`, App Proxy picture branches                    |
 | Glossary                         | `app/routes/app.glossary/route.tsx`                   | `glossary.server.ts`, Worker `tsfDb.loadGlossaryRowsFromTsf` via `translationCoreRuntime.ts`            |
 | Shop profile / AI profile        | `app/routes/app.shop-profile/route.tsx`               | `server/shopScan/*`, `shopProfileContext.server.ts` / `shopProfilePrompt.server.ts`, worker shop scan   |
@@ -1263,7 +1269,7 @@ For "合入PR然后发布测试环境", the script will:
 | Public storefront locale audit   | `scripts/storefront-locale-audit.mjs`                 | Cursor browser locale discovery; local tree under `scripts/tmp/storefront-audit/`                       |
 | Translation core/filter rule     | `packages/translation-core/src/*`                     | App and Worker runtime adapters, focused builds                                                         |
 | i18n copy                        | `public/locales/en/translation.json`                  | `public/locales/zh-CN/translation.json`, other locales                                                  |
-| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml`             |
+| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`（`@shopify/shopify-app-remix` 5 / `@shopify/shopify-api` 14，需 Node ≥22）、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml` |
 | Deploy config                    | `shopify.app*.toml`                                   | `Dockerfile`, Render/GitHub Actions config                                                              |
 
 
@@ -1699,6 +1705,11 @@ logging uses beacon-style client logging instead of route `fetcher.submit`.
 - `pricing` AbortError: Remix fetcher replacement or route changes can produce
 expected aborts. Global client error reporting should ignore AbortError-like
 noise, and exposure logging should prefer `reportClientLog(..., { beacon: true })` over competing fetcher submits.
+- `/app/manage_translation&icon=data:image/png;base64,...` 404: Shopify Admin /
+  App Bridge can append the 32×32 nav icon with `&` and no `?`, so Remix treats
+  it as pathname. Recover via `sanitizeEmbeddedAppPath` (`app.$.tsx` redirect +
+  root ErrorBoundary `location.replace`). Do not add a dedicated route for the
+  junk URL. `entry.server` is too late (routing already ran).
 
 
 

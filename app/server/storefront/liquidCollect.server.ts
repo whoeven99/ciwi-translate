@@ -1,4 +1,4 @@
-import { translationRuleJudgment } from "@ciwi/translation-core/translation-filter";
+import { looksLikeHtmlMarkupFragment, translationRuleJudgment } from "@ciwi/translation-core/translation-filter";
 import prisma from "~/db.server";
 import { getOfflineSessionAccessToken } from "~/server/shop/offlineSessionToken.server";
 import { resolveShopPrimaryLocale } from "~/server/translateV4/shopLocales.server";
@@ -135,6 +135,7 @@ function looksTranslatable(text: string): boolean {
   if (URL_RE.test(t) || EMAIL_RE.test(t)) return false;
   if (NON_HUMAN_RE.test(t)) return false;
   if (t.includes("{{") || t.includes("}}") || t.includes("{%")) return false;
+  if (looksLikeHtmlMarkupFragment(t)) return false;
   if (!/\s/.test(t) && /^[a-z0-9_.-]+$/.test(t)) return false;
   return true;
 }

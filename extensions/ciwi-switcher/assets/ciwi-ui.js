@@ -2885,7 +2885,23 @@ function isAutoLiquidCandidate(text) {
   if (t.length < AUTO_LIQUID_MIN_LEN || t.length > AUTO_LIQUID_MAX_LEN) return false;
   // 至少含一个字母（含 CJK / 各语言字母），过滤纯数字 / 符号
   if (!/\p{L}/u.test(t)) return false;
+  if (looksLikeHtmlMarkupFragment(t)) return false;
   return true;
+}
+
+/**
+ * 与 translation-core `looksLikeHtmlMarkupFragment` 对齐：拦 img/source 属性碎片。
+ * 例：`}" loading="lazy" width="1536" height="2048" />`
+ */
+function looksLikeHtmlMarkupFragment(text) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  if (/\b(loading|srcset|decoding|fetchpriority)\s*=\s*["']/i.test(t)) return true;
+  const attrs = t.match(/\b[\w:-]+\s*=\s*(["'])(?:(?!\1).)*\1/g);
+  if (attrs && attrs.length >= 2) return true;
+  if (/^[}\]"'`,;]+/.test(t) && /\b[\w:-]+\s*=\s*["']/.test(t)) return true;
+  if (/\/\s*>\s*$/.test(t) && /\b[\w:-]+\s*=\s*["']/.test(t)) return true;
+  return false;
 }
 
 /**

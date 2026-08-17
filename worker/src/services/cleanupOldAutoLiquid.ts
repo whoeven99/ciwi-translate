@@ -1,5 +1,10 @@
+import { looksLikeHtmlMarkupFragment } from "@ciwi/translation-core/translation-filter";
 import { tsfExecute, hasTsfDbCredentials } from "./tsfDb.js";
 import { isShuttingDown } from "../shutdown.js";
+import {
+  forgetAutoLiquidKnown,
+  invalidateAutoLiquidTotal,
+} from "./customLiquid.js";
 
 const LOG = "[autoLiquidRetention]";
 
@@ -176,5 +181,69 @@ export async function cleanupOldAutoLiquidRules(): Promise<{ deleted: number }> 
   }
 
   console.log(`${LOG} done deleted=${deleted}/${ids.length}`);
-  return { deleted };
+
+  const junkDeleted = await cleanupJunkMarkupAutoLiquid(maxPerRun, delayMs);
+  return { deleted: deleted + junkDeleted };
+}
+
+/**
+ * 清掉采集误入的 HTML 属性碎片（不按年龄；只删 auto+PENDING）。
+ * SQL 先用 LIKE 收窄，再用 looksLikeHtmlMarkupFragment 确认。
+ */
+async function cleanupJunkMarkupAutoLiquid(
+  maxPerRun: number,
+  delayMs: number,
+): Promise<number> {
+  const rs = await tsfExecute({
+    sql: `SELECT id, shop, languageCode, beforeTranslation FROM LiquidRule
+          WHERE source = 'auto'
+            AND status = 'PENDING'
+            AND (
+              beforeTranslation LIKE '%loading="%'
+              OR beforeTranslation LIKE ?
+              OR beforeTranslation LIKE '%srcset=%'
+              OR beforeTranslation LIKE '%decoding=%'
+              OR beforeTranslation LIKE '%fetchpriority=%'
+              OR (
+                beforeTranslation LIKE '%width="%'
+                AND beforeTranslation LIKE '%height="%'
+                AND beforeTranslation LIKE '%/>%'
+              )
+            )
+          ORDER BY updatedAt ASC
+          LIMIT ?`,
+    args: ["%loading='%", maxPerRun],
+  });
+
+  const shopsToInvalidate = new Set<string>();
+  let deleted = 0;
+  for (const row of rs.rows) {
+    if (isShuttingDown()) break;
+    const id = String(row.id ?? "");
+    const shop = String(row.shop ?? "");
+    const locale = String(row.languageCode ?? "");
+    const text = String(row.beforeTranslation ?? "");
+    if (!id || !shop || !looksLikeHtmlMarkupFragment(text)) continue;
+    try {
+      const del = await tsfExecute({
+        sql: `DELETE FROM LiquidRule WHERE id = ? AND source = 'auto' AND status = 'PENDING'`,
+        args: [id],
+      });
+      if ((del.rowsAffected ?? 0) > 0) {
+        deleted += 1;
+        shopsToInvalidate.add(shop);
+        await forgetAutoLiquidKnown(shop, locale, text);
+      }
+    } catch (err) {
+      console.warn(`${LOG} junk delete failed id=${id}`, err);
+    }
+    if (delayMs > 0) await sleep(delayMs);
+  }
+  for (const shop of shopsToInvalidate) {
+    await invalidateAutoLiquidTotal(shop);
+  }
+  if (deleted > 0) {
+    console.log(`${LOG} junk markup deleted=${deleted}/${rs.rows.length}`);
+  }
+  return deleted;
 }

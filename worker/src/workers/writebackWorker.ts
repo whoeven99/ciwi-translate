@@ -183,7 +183,7 @@ type TranslatedItem = {
 type FailedResource = {
   resourceId: string;
   translations: TranslationInput[];
-  userErrors?: Array<{ field: string; message: string }>;
+  userErrors?: Array<{ field: string | string[]; message: string }>;
 };
 
 async function persistWritebackCheckpoint(
