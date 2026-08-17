@@ -679,6 +679,8 @@ via clock-aligned `Asia/Shanghai` `:45` (not process-local `:30`).
 Prisma/LibSQL 多行栈常被 Render 拆开且只有中间行带 `level=error`；digest
 会对残缺的 `Error occurred during query execution` 回拉同资源邻近日志，
 把 `SqliteError.message`（如 `capacity temporarily exceeded`）拼进飞书样本。
+发版噪音默认过滤：`AbortError`、Render SIGTERM 时的 `npm error *`、旧 hash
+`/assets/*` 的 `No route matches URL`（见 `IGNORE_MESSAGE_PATTERNS`）。
 - Email: `TENCENT_CLOUD_KEY_ID`, `TENCENT_CLOUD_KEY`, and template/recipient
 variables consumed by `workerEmail.ts` and TSF email helpers.
 
