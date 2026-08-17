@@ -39,8 +39,19 @@ const PRISMA_CONTEXT_WINDOW_MS = 1_500;
 /** 每个 digest 窗口最多回拉几次邻近日志，避免 Render API 限流。 */
 const MAX_PRISMA_CONTEXT_ENRICH = 8;
 
-/** 已知噪音，不计入汇总。 */
-const IGNORE_MESSAGE_PATTERNS: RegExp[] = [/AbortError/i];
+/**
+ * 已知噪音，不计入汇总。
+ * - AbortError：Remix fetcher 替换等预期中断
+ * - npm error *：Render 重新部署 SIGTERM 旧容器时的 npm 包装级联（非业务故障）
+ * - /assets/* No route matches：发版后旧 tab 仍请求上一版 hash chunk
+ */
+const IGNORE_MESSAGE_PATTERNS: RegExp[] = [
+  /AbortError/i,
+  /^npm error\b/i,
+  /No route matches URL\s+"\/assets\//i,
+  /data:\s*'Error: No route matches URL\s+"\/assets\//i,
+  /error: Error: No route matches URL\s+"\/assets\//i,
+];
 
 /**
  * Render 常把多行 Prisma/LibSQL 栈拆成多条日志，且只有中间那行
