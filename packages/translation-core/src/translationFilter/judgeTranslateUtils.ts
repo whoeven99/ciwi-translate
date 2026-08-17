@@ -13,6 +13,7 @@ import {
 } from "./constants.js";
 import { isTranslatableHtmlContent } from "../htmlTranslate.js";
 import { isHtmlContent, isJsonObject } from "./jsonUtils.js";
+import { looksLikeAutoLiquidJunk } from "./autoLiquidJunk.js";
 import { looksLikeHtmlMarkupFragment } from "./htmlMarkupFragment.js";
 import { matchesRejectRule } from "./rejectRules.js";
 
@@ -38,6 +39,10 @@ export function translationRuleJudgment(key: string, value: string): boolean {
   }
 
   if (looksLikeHtmlMarkupFragment(value)) {
+    return false;
+  }
+
+  if (key === "liquid" && looksLikeAutoLiquidJunk(value)) {
     return false;
   }
 

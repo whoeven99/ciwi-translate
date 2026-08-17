@@ -1,9 +1,9 @@
-import { looksLikeHtmlMarkupFragment } from "@ciwi/translation-core/translation-filter";
 import { tsfExecute, hasTsfDbCredentials } from "./tsfDb.js";
 import { isShuttingDown } from "../shutdown.js";
 import {
   forgetAutoLiquidKnown,
   invalidateAutoLiquidTotal,
+  isAutoLiquidCollectJunk,
 } from "./customLiquid.js";
 
 const LOG = "[autoLiquidRetention]";
@@ -182,15 +182,15 @@ export async function cleanupOldAutoLiquidRules(): Promise<{ deleted: number }> 
 
   console.log(`${LOG} done deleted=${deleted}/${ids.length}`);
 
-  const junkDeleted = await cleanupJunkMarkupAutoLiquid(maxPerRun, delayMs);
+  const junkDeleted = await cleanupJunkAutoLiquidPending(maxPerRun, delayMs);
   return { deleted: deleted + junkDeleted };
 }
 
 /**
- * 清掉采集误入的 HTML 属性碎片（不按年龄；只删 auto+PENDING）。
- * SQL 先用 LIKE 收窄，再用 looksLikeHtmlMarkupFragment 确认。
+ * 清掉采集误入的 junk（HTML 属性碎片、评价/价格/SKU 等；不按年龄；只删 auto+PENDING）。
+ * SQL 先用 LIKE 收窄，再用 isAutoLiquidCollectJunk 确认。
  */
-async function cleanupJunkMarkupAutoLiquid(
+async function cleanupJunkAutoLiquidPending(
   maxPerRun: number,
   delayMs: number,
 ): Promise<number> {
@@ -209,6 +209,17 @@ async function cleanupJunkMarkupAutoLiquid(
                 AND beforeTranslation LIKE '%height="%'
                 AND beforeTranslation LIKE '%/>%'
               )
+              OR beforeTranslation LIKE '% reviews'
+              OR beforeTranslation LIKE '%review%'
+              OR beforeTranslation LIKE '%stars:%'
+              OR beforeTranslation LIKE '%sterren:%'
+              OR beforeTranslation LIKE '%★%'
+              OR beforeTranslation LIKE '¥%'
+              OR beforeTranslation LIKE '% JPY'
+              OR beforeTranslation LIKE '% EUR'
+              OR beforeTranslation LIKE '% USD'
+              OR beforeTranslation LIKE 'SKU%'
+              OR beforeTranslation LIKE '% and later'
             )
           ORDER BY updatedAt ASC
           LIMIT ?`,
@@ -223,7 +234,7 @@ async function cleanupJunkMarkupAutoLiquid(
     const shop = String(row.shop ?? "");
     const locale = String(row.languageCode ?? "");
     const text = String(row.beforeTranslation ?? "");
-    if (!id || !shop || !looksLikeHtmlMarkupFragment(text)) continue;
+    if (!id || !shop || !isAutoLiquidCollectJunk(text)) continue;
     try {
       const del = await tsfExecute({
         sql: `DELETE FROM LiquidRule WHERE id = ? AND source = 'auto' AND status = 'PENDING'`,
@@ -243,7 +254,7 @@ async function cleanupJunkMarkupAutoLiquid(
     await invalidateAutoLiquidTotal(shop);
   }
   if (deleted > 0) {
-    console.log(`${LOG} junk markup deleted=${deleted}/${rs.rows.length}`);
+    console.log(`${LOG} junk auto-liquid deleted=${deleted}/${rs.rows.length}`);
   }
   return deleted;
 }

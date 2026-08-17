@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { looksLikeHtmlMarkupFragment } from "@ciwi/translation-core/translation-filter";
+import { looksLikeAutoLiquidJunk, looksLikeHtmlMarkupFragment } from "@ciwi/translation-core/translation-filter";
 import { tsfExecute, hasTsfDbCredentials } from "./tsfDb.js";
 import { getRedis } from "./redisV4.js";
 import type { TranslationV4Job } from "./cosmosV4.js";
@@ -28,6 +28,11 @@ async function sremAutoLiquidKnown(
 
 /** Virtual module: Turso LiquidRule pipeline (not a Shopify resource type). */
 export const CUSTOM_LIQUID_MODULE = "CUSTOM_LIQUID";
+
+/** HTML 属性碎片 + 评价/价格/SKU 等 auto-liquid junk（与 App 入库过滤对齐）。 */
+export function isAutoLiquidCollectJunk(text: string): boolean {
+  return looksLikeHtmlMarkupFragment(text) || looksLikeAutoLiquidJunk(text);
+}
 
 export type PendingLiquidRule = {
   id: string;
@@ -100,7 +105,7 @@ export async function claimPendingLiquidRules(args: {
     const id = String(r.id ?? "");
     const beforeTranslation = String(r.beforeTranslation ?? "");
     if (!id || !beforeTranslation) continue;
-    if (looksLikeHtmlMarkupFragment(beforeTranslation)) {
+    if (isAutoLiquidCollectJunk(beforeTranslation)) {
       if (String(r.source ?? "") === "auto") {
         junkAuto.push({ id, beforeTranslation });
       }
