@@ -523,7 +523,10 @@ metric reconciliation helpers kept aligned with `app/server/translateV4/*`.
 - `worker/src/services/tsfQuota.ts`: quota query/deduct adapter.
 - `worker/src/services/stagePool.ts`: stage concurrency (auto/manual slot pools).
 - `worker/src/services/finalizeJobAfterWriteback.ts`: post-writeback final status
-selection and Redis `items_count` refresh for completed jobs.
+selection and Redis `items_count` refresh for completed jobs. Benign Shopify
+writeback rejections (`too many translation keys`, field length validation on
+resource) are reconciled to `writebackDone` at finalize so jobs are not marked
+`WRITEBACK_ALL_FAILED` when every failure is a platform constraint (`writebackUserErrors.ts`).
 - `worker/src/services/recordJobUsageSnapshot.ts`: task-terminal usage snapshot
 into Turso `TranslateV4JobUsage` (time / tokens / units / chars; survives Cosmos
 job retention cleanup).
@@ -1255,6 +1258,7 @@ For "合入PR然后发布测试环境", the script will:
 | App Proxy 401/404                | `api.storefront.$.ts`                                 | `server/storefront/auth.server.ts`, extension caller                                                    |
 | 店面数据不更新 / Turso 502       | `app/server/storefront/cache.server.ts`               | `app/config/libsqlFetch.server.ts`, `api.storefront.$.ts`, 写入方的 `invalidateStorefrontCache` 调用     |
 | Manage Translation resource page | `app/routes/app.manage_translation_.<type>/route.tsx` | `manageTranslationRoute.server.ts`, `pictureClient.ts`                                                  |
+| `/app/...&icon=data:image` 404   | `app/lib/sanitizeEmbeddedAppPath.ts`                  | `app/routes/app.$.tsx`, `app/root.tsx` ErrorBoundary                                                    |
 | Picture translation/storage      | `app/server/picture/picture.server.ts`                | `api.picture.*`, `api.translate-v4.image`, `UserPicture`, App Proxy picture branches                    |
 | Glossary                         | `app/routes/app.glossary/route.tsx`                   | `glossary.server.ts`, Worker `tsfDb.loadGlossaryRowsFromTsf` via `translationCoreRuntime.ts`            |
 | Shop profile / AI profile        | `app/routes/app.shop-profile/route.tsx`               | `server/shopScan/*`, `shopProfileContext.server.ts` / `shopProfilePrompt.server.ts`, worker shop scan   |
@@ -1701,6 +1705,11 @@ logging uses beacon-style client logging instead of route `fetcher.submit`.
 - `pricing` AbortError: Remix fetcher replacement or route changes can produce
 expected aborts. Global client error reporting should ignore AbortError-like
 noise, and exposure logging should prefer `reportClientLog(..., { beacon: true })` over competing fetcher submits.
+- `/app/manage_translation&icon=data:image/png;base64,...` 404: Shopify Admin /
+  App Bridge can append the 32×32 nav icon with `&` and no `?`, so Remix treats
+  it as pathname. Recover via `sanitizeEmbeddedAppPath` (`app.$.tsx` redirect +
+  root ErrorBoundary `location.replace`). Do not add a dedicated route for the
+  junk URL. `entry.server` is too late (routing already ran).
 
 
 
