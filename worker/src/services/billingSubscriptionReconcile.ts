@@ -24,6 +24,7 @@ import {
 } from "./tsfDb.js";
 import { fetchShopContact } from "./shopEmail.js";
 import { sendSubscriptionRenewalEmail } from "./workerEmail.js";
+import { notifyLifetimeFirstSubscribeFeishu } from "./lifecycleFeishuNotify.js";
 import { buildShopifyAdminGraphqlUrl } from "./shopifyAdminApiVersion.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -528,6 +529,12 @@ async function activateOrReplaceSubscription(params: {
         }),
         now,
       ],
+    });
+    void notifyLifetimeFirstSubscribeFeishu(shop).catch((err) => {
+      console.error(
+        `[billing reconcile] first-subscribe feishu failed shop=${shop}`,
+        err,
+      );
     });
   }
 }

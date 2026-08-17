@@ -187,6 +187,11 @@ best-effort Shopify cancel when token present) before Account soft-delete and
 Session delete.
 `APP_UNINSTALLED` snapshots subscription/quota/size via
 `uninstallSnapshot.server.ts` before cleanup, then sends that text to Feishu.
+Lifetime-first install (`bound: true` Account create in `app.tsx` loader) and
+lifetime-first `BillingLog.SUBSCRIPTION_ACTIVATED` (count === 1) also send to
+the same support webhook via `lifecycleFeishuNotify.server.ts`; reinstall /
+plan change / resubscribe do not. Worker `billingSubscriptionReconcile`
+notifies only when it inserts the shop's first ACTIVATED row (webhook miss).
 Billing webhooks ACK first and process in the background
 (`APP_PURCHASES_ONE_TIME_UPDATE` / `APP_SUBSCRIPTIONS_UPDATE` are fire-and-forget
 with `.catch`; ledger writes are idempotent and failures are recovered by worker
@@ -706,18 +711,24 @@ redact billing cleanup (local cancel always; Shopify `appSubscriptionCancel`
 best-effort only on SHOP_REDACT when token present; APP_UNINSTALLED skips
 outbound cancel). Reinstall path in `ensureAccount.server.ts` also clears
 leftover `AppSubscription` when restoring a soft-deleted Account.
-- `app/server/billing/uninstallSnapshot.server.ts`: pre-cleanup snapshot for
-uninstall Feishu (plan, interval, quota, size tier via
-`shopScan/shopSizeProfile.server.ts`).
+- `app/server/billing/uninstallSnapshot.server.ts`: shop billing snapshot +
+ Feishu text for uninstall / first-install / first-subscribe (plan, interval,
+ quota, size tier via `shopScan/shopSizeProfile.server.ts`).
+- `app/server/billing/lifecycleFeishuNotify.server.ts`: lifetime-first install
+ (`bound: true`) and lifetime-first `SUBSCRIPTION_ACTIVATED` (Turso count === 1)
+ to `FEISHU_WEBHOOK_URL_SUPPORT`; same group as uninstall.
 - `app/server/billing/email/billingEmail.server.ts`: purchase/subscribe/renewal emails.
 - `app/server/billing/email/welcomeEmail.server.ts`: first-install welcome email
-(`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init).
+(`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init;
+ same `bound` gate also fires the first-install Feishu notify).
 - 收件人/后台 token：`app/server/shop/fetchShopContact.server.ts`（Shopify
 GraphQL 拉店铺联系邮箱）与 `app/server/shop/offlineSessionToken.server.ts`
 （App 侧唯一的 offline token 读取口，Turso `Session`；storefront switcher /
 liquid collect 也走它）。卸载后取不到 token 属预期，调用方需静默降级。
 - `worker/src/services/billingSubscriptionReconcile.ts`: worker-only Shopify
 subscription reconciliation (writes Turso directly; does not call TSF Web).
+If it inserts the shop's first `SUBSCRIPTION_ACTIVATED` BillingLog, it sends
+the same first-subscribe Feishu notify (`lifecycleFeishuNotify.ts`).
 Syncs `AppSubscription.currentPeriodEnd/Start` from Shopify for MONTHLY and
 ANNUAL; for ANNUAL also grants monthly credits every 30 days (max 12 per
 Shopify year) derived from `currentPeriodEnd` (never from `createdAt`).
@@ -1263,6 +1274,7 @@ For "合入PR然后发布测试环境", the script will:
 | Glossary                         | `app/routes/app.glossary/route.tsx`                   | `glossary.server.ts`, Worker `tsfDb.loadGlossaryRowsFromTsf` via `translationCoreRuntime.ts`            |
 | Shop profile / AI profile        | `app/routes/app.shop-profile/route.tsx`               | `server/shopScan/*`, `shopProfileContext.server.ts` / `shopProfilePrompt.server.ts`, worker shop scan   |
 | Support chat / notifications     | `app/components/SupportChatWidget.tsx`                | `api.support.tsx`, `supportStore.server.ts`, Feishu/SES helpers                                         |
+| 安装 / 首次订阅 / 卸载飞书       | `app/server/billing/lifecycleFeishuNotify.server.ts`  | `uninstallSnapshot.server.ts`, `app.tsx` loader, `handleBillingWebhook.server.ts`, worker `lifecycleFeishuNotify.ts` |
 | First-time onboarding            | `app/routes/app.onboarding/route.tsx`                 | `app/server/onboarding/onboarding.server.ts`, `app/routes/app._index/route.tsx`, `ShopOnboarding`      |
 | Auto translate                   | `worker/src/services/autoTranslate.ts`                | `autoScanSchedule.ts`, `ShopTargetLocale`, module catalog                                               |
 | Scheduled shop scan              | `worker/src/services/scheduledShopScan.ts`            | `autoScanSchedule.ts`, `shopScanCosmos.ts`, `shopScanWorker.ts`                                         |
