@@ -34,8 +34,14 @@ export { cleanupBillingOnUninstall } from "./subscription/cleanupOnUninstall.ser
 export {
   snapshotShopForUninstall,
   formatUninstallFeishuMessage,
+  formatInstallFeishuMessage,
+  formatFirstSubscribeFeishuMessage,
   type UninstallShopSnapshot,
 } from "./uninstallSnapshot.server";
+export {
+  scheduleFirstInstallFeishuNotify,
+  scheduleFirstSubscribeFeishuNotify,
+} from "./lifecycleFeishuNotify.server";
 export { applyTokenPackPurchase } from "./purchase/applyTokenPack.server";
 export {
   resolveBillingBinding,
