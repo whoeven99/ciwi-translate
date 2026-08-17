@@ -88,7 +88,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `scripts/*`                                                  | Migration, audit, diagnostic, cleanup, and one-off operational scripts.                   |
 | `public/locales/*/translation.json`                          | App i18n strings (15 locales，清单在 `app/lib/appI18nLanguages.ts`)。手写 `en` + `zh-CN`，其余可用 `npm run translate` 机翻补齐。 |
 | `.github/workflows/tsf-deploy.yml`                           | Manual Shopify extension/config and Render app/worker deployment workflow.                |
-| `Dockerfile`                                                 | Render container build for the Remix app; the worker is built from `worker/`.             |
+| `Dockerfile`                                                 | Render container build for the Remix app (`node:22-slim`); the worker is built from `worker/`. |
 
 
 
@@ -1265,7 +1265,7 @@ For "合入PR然后发布测试环境", the script will:
 | Public storefront locale audit   | `scripts/storefront-locale-audit.mjs`                 | Cursor browser locale discovery; local tree under `scripts/tmp/storefront-audit/`                       |
 | Translation core/filter rule     | `packages/translation-core/src/*`                     | App and Worker runtime adapters, focused builds                                                         |
 | i18n copy                        | `public/locales/en/translation.json`                  | `public/locales/zh-CN/translation.json`, other locales                                                  |
-| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml`             |
+| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`（`@shopify/shopify-app-remix` 5 / `@shopify/shopify-api` 14，需 Node ≥22）、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml` |
 | Deploy config                    | `shopify.app*.toml`                                   | `Dockerfile`, Render/GitHub Actions config                                                              |
 
 
