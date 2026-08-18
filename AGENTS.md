@@ -192,8 +192,8 @@ title is `emoji 店铺卸载 · 分群：shop`; if winback is skipped, last line
 `挽回邮件：未发（原因）`) plus optional winback SES + Feishu metadata (no email
 body; payload `email` / `customer_email`; 互斥：已付费未完成 `212617` → 剩余积分
 `212612` → 从未 COMPLETED `212616`; 额度用清理前快照; Redis
-`tsf:uninstall-email:{shop}` NX 7d 只挡 SES；duplicate 仍发卸载飞书，末行
-`挽回邮件：未发（7 天内已发过）`)。`SHOP_REDACT` does not send winback.
+`tsf:uninstall-email:{shop}` NX 7d 只挡 SES；duplicate 仍发卸载飞书且标题
+仍带分群，末行 `挽回邮件：未发（7 天内已发过）`)。`SHOP_REDACT` does not send winback.
 Lifetime-first install (`bound: true` Account create in `app.tsx` loader) and
 lifetime-first `BillingLog.SUBSCRIPTION_ACTIVATED` (count === 1) also send to
 the same support webhook via `lifecycleFeishuNotify.server.ts`; reinstall /
@@ -735,7 +735,7 @@ leftover `AppSubscription` when restoring a soft-deleted Account.
   / `212616`) + Feishu metadata (shop / recipient / segment / template / SES /
   remaining credits / subject; no email body); skip (no email / no segment /
   Redis NX duplicate) appends `挽回邮件：未发（原因）` on the snapshot message
-  (`7 天内已发过` for duplicate; SES 仍跳过，飞书照发). Scheduled from
+  (`7 天内已发过` for duplicate; SES 仍跳过，飞书照发且标题仍带分群). Scheduled from
   `APP_UNINSTALLED` in `webhooks.tsx`.
 - 收件人/后台 token：`app/server/shop/fetchShopContact.server.ts`（Shopify
 GraphQL 拉店铺联系邮箱）与 `app/server/shop/offlineSessionToken.server.ts`

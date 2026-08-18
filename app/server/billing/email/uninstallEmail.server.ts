@@ -274,16 +274,19 @@ async function deliverWinback(params: {
   });
 }
 
-async function resolveKindOrNotifySkip(params: {
+type WinbackClassification = {
+  kind: UninstallWinbackKind | null;
+  email: string | null;
+  customerName: string;
+  remainingCreditsLabel: string;
+  classifyFailed: boolean;
+};
+
+async function classifyWinback(params: {
   shop: string;
   payload: unknown;
   snapshot: UninstallShopSnapshot | null;
-}): Promise<{
-  kind: UninstallWinbackKind;
-  email: string;
-  customerName: string;
-  remainingCreditsLabel: string;
-} | null> {
+}): Promise<WinbackClassification> {
   const contact = parseUninstallWebhookContact(params.payload);
   const remainingCredits = Math.max(0, params.snapshot?.remainingCredits ?? 0);
   const remainingCreditsLabel = formatUsNumber(remainingCredits);
@@ -300,10 +303,13 @@ async function resolveKindOrNotifySkip(params: {
     return null;
   });
   if (!signals) {
-    await sendUninstallSnapshotFeishu(params.shop, params.snapshot, {
-      skipReason: "分类失败",
-    });
-    return null;
+    return {
+      kind: null,
+      email: contact.email,
+      customerName: contact.customerName,
+      remainingCreditsLabel,
+      classifyFailed: true,
+    };
   }
 
   const kind = resolveUninstallWinbackKind({ ...signals, remainingCredits });
@@ -313,49 +319,26 @@ async function resolveKindOrNotifySkip(params: {
     ...signals,
     remainingCredits,
   });
-  if (!kind) {
-    console.info(`${LOG} skip reason=no_segment shop=${params.shop}`);
-    await sendUninstallSnapshotFeishu(params.shop, params.snapshot, {
-      skipReason: "已完成翻译且无剩余积分",
-    });
-    return null;
-  }
-
-  if (!contact.email) {
-    console.warn(`${LOG} skip reason=no_recipient shop=${params.shop}`);
-    await sendUninstallSnapshotFeishu(params.shop, params.snapshot, {
-      kind,
-      skipReason: "payload 无店铺邮箱",
-    });
-    return null;
-  }
-
   return {
     kind,
     email: contact.email,
     customerName: contact.customerName,
     remainingCreditsLabel,
+    classifyFailed: false,
   };
 }
 
-async function runWinbackAfterClaim(params: {
-  shop: string;
-  payload: unknown;
-  snapshot: UninstallShopSnapshot | null;
-}): Promise<void> {
-  const resolved = await resolveKindOrNotifySkip(params);
-  if (!resolved) return;
-
-  await sendUninstallSnapshotFeishu(params.shop, params.snapshot, {
-    kind: resolved.kind,
-  });
-  await deliverWinback({
-    shop: params.shop,
-    kind: resolved.kind,
-    email: resolved.email,
-    customerName: resolved.customerName,
-    remainingCreditsLabel: resolved.remainingCreditsLabel,
-  });
+function uninstallEmailSkipReason(input: {
+  claimed: boolean;
+  classifyFailed: boolean;
+  kind: UninstallWinbackKind | null;
+  email: string | null;
+}): string | undefined {
+  if (!input.claimed) return "7 天内已发过";
+  if (input.classifyFailed) return "分类失败";
+  if (!input.kind) return "已完成翻译且无剩余积分";
+  if (!input.email) return "payload 无店铺邮箱";
+  return undefined;
 }
 
 async function sendUninstallWinbackEmail(params: {
@@ -369,28 +352,48 @@ async function sendUninstallWinbackEmail(params: {
     return;
   }
 
+  // 先分类再占坑：7 天幂等只挡 SES，卸载飞书仍带分群标题。
+  const classified = await classifyWinback({
+    shop,
+    payload: params.payload,
+    snapshot: params.snapshot,
+  }).catch((error) => {
+    console.error(`${LOG} classify failed shop=${shop}`, error);
+    return null;
+  });
   const claimed = await claimUninstallEmailSlot(shop);
   if (!claimed) {
     console.info(`${LOG} skip reason=duplicate shop=${shop}`);
-    // 幂等只挡 SES；7 天内再卸仍发卸载飞书，避免测试店反复装卸时运营侧静默。
-    await sendUninstallSnapshotFeishu(shop, params.snapshot, {
-      skipReason: "7 天内已发过",
-    });
-    return;
   }
 
-  try {
-    await runWinbackAfterClaim({
-      shop,
-      payload: params.payload,
-      snapshot: params.snapshot,
-    });
-  } catch (error) {
-    console.error(`${LOG} unhandled after claim shop=${shop}`, error);
-    await sendUninstallSnapshotFeishu(shop, params.snapshot, {
-      skipReason: "分类失败",
-    });
+  const kind = classified?.kind ?? null;
+  const skipReason = uninstallEmailSkipReason({
+    claimed,
+    classifyFailed: !classified || classified.classifyFailed,
+    kind,
+    email: classified?.email ?? null,
+  });
+
+  if (skipReason === "已完成翻译且无剩余积分") {
+    console.info(`${LOG} skip reason=no_segment shop=${shop}`);
+  } else if (skipReason === "payload 无店铺邮箱") {
+    console.warn(`${LOG} skip reason=no_recipient shop=${shop}`);
   }
+
+  await sendUninstallSnapshotFeishu(shop, params.snapshot, {
+    kind,
+    skipReason,
+  });
+
+  if (skipReason || !classified?.kind || !classified.email) return;
+
+  await deliverWinback({
+    shop,
+    kind: classified.kind,
+    email: classified.email,
+    customerName: classified.customerName,
+    remainingCreditsLabel: classified.remainingCreditsLabel,
+  });
 }
 
 /** APP_UNINSTALLED 后异步触发：卸载飞书 + 挽回邮件，不阻塞 webhook 200。 */
