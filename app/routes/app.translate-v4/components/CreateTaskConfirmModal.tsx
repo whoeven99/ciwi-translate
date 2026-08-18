@@ -14,6 +14,7 @@ import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
 import { useDetailedCreateTaskEstimate } from "../useDetailedCreateTaskEstimate";
 import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
+import { reportClientLog } from "~/utils/clientLog";
 
 type CreateTaskConfirmScenario =
   | "ready"
@@ -151,9 +152,10 @@ export function CreateTaskConfirmModal({
     : aiModel;
 
   const detailedDone = detailed.progress.status === "done";
+  const coarseEstimatedCredits = estimate?.estimatedCredits ?? null;
   const estimatedCredits = detailedDone
     ? detailed.progress.estimatedCredits
-    : (estimate?.estimatedCredits ?? null);
+    : coarseEstimatedCredits;
   const remainingCredits = detailedDone
     ? (detailed.progress.remainingCredits ?? estimate?.remainingCredits ?? null)
     : (estimate?.remainingCredits ?? null);
@@ -291,8 +293,35 @@ export function CreateTaskConfirmModal({
     planFetcher.submit(payload, { method: "POST", action: "/app/pricing" });
   };
 
+  const logConfirmStart = (action: "start_translation" | "start_partial") => {
+    void reportClientLog({
+      event: "translate_v4_confirm_start",
+      action,
+      kind: "action",
+      level: "info",
+      status: "start",
+      context: {
+        estimatedCredits: coarseEstimatedCredits,
+        usedDetailedEstimate: detailedDone,
+        detailedEstimateStatus: detailed.progress.status,
+        detailedEstimatedCredits: detailedDone
+          ? detailed.progress.estimatedCredits
+          : null,
+        remainingCredits,
+        scenario,
+        targets,
+        modules,
+        aiModel,
+        isCover,
+        isHandle,
+        includeLiquid,
+      },
+    });
+  };
+
   const handlePrimaryAction = () => {
     if (isReady) {
+      logConfirmStart("start_translation");
       onConfirmCreate();
       return;
     }
@@ -317,6 +346,7 @@ export function CreateTaskConfirmModal({
   const handleSecondaryAction = () => {
     if (isInsufficientPaid) {
       if (!canStartPartial) return;
+      logConfirmStart("start_partial");
       onConfirmCreate();
       return;
     }
