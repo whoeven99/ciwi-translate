@@ -1,21 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useFetcher } from "@remix-run/react";
-import { Page, BlockStack } from "@shopify/polaris";
+import { Page, BlockStack, Button, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import { message } from "~/ui/message";
 import { reportClientLog } from "~/utils/clientLog";
 import { createTranslateV4Tasks } from "~/lib/createTranslateV4Tasks";
 import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import { DEFAULT_AI_MODEL } from "~/routes/app.translate-v4/constants";
-import type {
-  OnboardingFastCoverageSnapshot,
-  OnboardingSummary,
-} from "../types";
+import type { OnboardingSummary } from "../types";
 import { PreparingStep, type PreparingPhase } from "./PreparingStep";
 import { RecommendationStep } from "./RecommendationStep";
-import { ActionFooter, type PrimaryCtaKind } from "./ActionFooter";
 
 type Step = "preparing" | "recommendation";
+type PrimaryCtaKind = "create" | "trial" | "upgrade" | "configure";
 
 function resolvePrimaryCta(summary: OnboardingSummary): PrimaryCtaKind {
   const hasTargets = summary.locales.suggestedTargets.length > 0;
@@ -31,18 +28,18 @@ export function OnboardingFlow({ summary }: { summary: OnboardingSummary }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const fetcher = useFetcher();
+  const [hydrated, setHydrated] = useState(false);
   const [step, setStep] = useState<Step>("preparing");
   const [phase, setPhase] = useState<PreparingPhase>("boot");
   const [creating, setCreating] = useState(false);
-  const [fastCoverage, setFastCoverage] =
-    useState<OnboardingFastCoverageSnapshot | null>(null);
-  const [coverageDone, setCoverageDone] = useState(0);
-  const [activeLabel, setActiveLabel] = useState<string | null>(null);
   const viewedRef = useRef(false);
   const prepareStartedRef = useRef(false);
 
   const primaryCta = useMemo(() => resolvePrimaryCta(summary), [summary]);
-  const plan = summary.fastCoveragePlan;
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   const track = useCallback(
     (event: string, context?: Record<string, unknown>) => {
@@ -68,24 +65,6 @@ export function OnboardingFlow({ summary }: { summary: OnboardingSummary }) {
     track("onboarding_viewed", { primaryCta });
   }, [track, primaryCta]);
 
-  const goRecommendation = useCallback(
-    (snapshot: OnboardingFastCoverageSnapshot | null) => {
-      setPhase("done");
-      setStep("recommendation");
-      track("onboarding_preparing_completed", {
-        fastCoverageComplete: snapshot?.complete ?? false,
-        fastCoveragePercent: snapshot?.percent ?? null,
-        locale: snapshot?.locale ?? plan?.locale ?? null,
-      });
-      track("onboarding_recommendation_viewed", {
-        suggestedTargets: summary.locales.suggestedTargets,
-        primaryCta,
-      });
-    },
-    [track, plan?.locale, summary.locales.suggestedTargets, primaryCta],
-  );
-
-  // Preparing：loader 数据就绪 → 快扫 1 语 × 5 模块（真进度）→ 推荐页
   useEffect(() => {
     if (step !== "preparing" || prepareStartedRef.current) return;
     prepareStartedRef.current = true;
@@ -94,68 +73,34 @@ export function OnboardingFlow({ summary }: { summary: OnboardingSummary }) {
 
     void (async () => {
       setPhase("locales");
-      // 让首屏勾选有一帧可见
-      await new Promise((r) => window.setTimeout(r, 280));
+      await new Promise((resolve) => window.setTimeout(resolve, 220));
       if (cancelled) return;
 
-      if (!plan || plan.labels.length === 0) {
-        setPhase("recommendation");
-        await new Promise((r) => window.setTimeout(r, 200));
-        if (!cancelled) goRecommendation(null);
-        return;
-      }
-
-      setPhase("coverage");
-      const doneLabels: Array<{
-        label: string;
-        translated: number;
-        total: number;
-      }> = [];
-      let latest: OnboardingFastCoverageSnapshot | null = null;
-
-      for (const label of plan.labels) {
-        if (cancelled) return;
-        setActiveLabel(label);
-        try {
-          const res = await fetch("/api/onboarding/fast-coverage", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              locale: plan.locale,
-              localeLabel: plan.localeLabel,
-              label,
-              doneLabels,
-            }),
-          });
-          const data = (await res.json().catch(() => null)) as {
-            ok?: boolean;
-            justDone?: { label: string; translated: number; total: number };
-            snapshot?: OnboardingFastCoverageSnapshot;
-          } | null;
-          if (data?.ok && data.justDone) {
-            doneLabels.push(data.justDone);
-            if (data.snapshot) {
-              latest = data.snapshot;
-              setFastCoverage(data.snapshot);
-            }
-          }
-        } catch (err) {
-          console.warn("[onboarding] fast-coverage label failed:", label, err);
-        }
-        setCoverageDone(doneLabels.length);
-      }
-
+      setPhase("market");
+      await new Promise((resolve) => window.setTimeout(resolve, 220));
       if (cancelled) return;
-      setActiveLabel(null);
+
       setPhase("recommendation");
-      await new Promise((r) => window.setTimeout(r, 200));
-      if (!cancelled) goRecommendation(latest);
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+      if (cancelled) return;
+
+      setPhase("done");
+      setStep("recommendation");
+      track("onboarding_preparing_completed", {
+        marketCount: summary.markets.length,
+        suggestedTargets: summary.locales.suggestedTargets,
+      });
+      track("onboarding_recommendation_viewed", {
+        marketCount: summary.markets.length,
+        suggestedTargets: summary.locales.suggestedTargets,
+        primaryCta,
+      });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [step, plan, goRecommendation]);
+  }, [primaryCta, step, summary.locales.suggestedTargets, summary.markets.length, track]);
 
   const postIntent = useCallback(
     (intent: "skip" | "complete" | "trial") => {
@@ -168,17 +113,12 @@ export function OnboardingFlow({ summary }: { summary: OnboardingSummary }) {
     track("onboarding_skipped");
     postIntent("skip");
     navigate("/app/translate-v4");
-  }, [track, postIntent, navigate]);
-
-  const handleCustomize = useCallback(() => {
-    track("onboarding_customize_clicked");
-    navigate("/app/translate-v4");
-  }, [track, navigate]);
+  }, [navigate, postIntent, track]);
 
   const handleConfigureLanguages = useCallback(() => {
     track("onboarding_configure_languages");
     navigate("/app/language");
-  }, [track, navigate]);
+  }, [navigate, track]);
 
   const handleTrialOrUpgrade = useCallback(() => {
     track(
@@ -188,15 +128,15 @@ export function OnboardingFlow({ summary }: { summary: OnboardingSummary }) {
     );
     postIntent("trial");
     navigate("/app/pricing");
-  }, [track, primaryCta, postIntent, navigate]);
+  }, [navigate, postIntent, primaryCta, track]);
 
   const handleCreateTask = useCallback(async () => {
     if (creating) return;
     setCreating(true);
     try {
-      const targetOptions = summary.locales.availableTargets.map((tgt) => ({
-        value: tgt.value,
-        label: tgt.label,
+      const targetOptions = summary.locales.availableTargets.map((target) => ({
+        value: target.value,
+        label: target.label,
       }));
       const result = await createTranslateV4Tasks({
         source: summary.locales.source,
@@ -227,12 +167,12 @@ export function OnboardingFlow({ summary }: { summary: OnboardingSummary }) {
       message.success(t("onboarding.action.createSuccess"));
       postIntent("complete");
       navigate("/app/translate-v4");
-    } catch (err) {
-      console.error("[onboarding] create task failed:", err);
+    } catch (error) {
+      console.error("[onboarding] create task failed:", error);
       message.error(t("onboarding.action.createFailed"));
       setCreating(false);
     }
-  }, [creating, summary, t, track, postIntent, navigate]);
+  }, [creating, navigate, postIntent, summary, t, track]);
 
   const handlePrimary = useCallback(() => {
     switch (primaryCta) {
@@ -249,39 +189,54 @@ export function OnboardingFlow({ summary }: { summary: OnboardingSummary }) {
       default:
         return;
     }
-  }, [
-    primaryCta,
-    handleCreateTask,
-    handleTrialOrUpgrade,
-    handleConfigureLanguages,
-  ]);
+  }, [handleConfigureLanguages, handleCreateTask, handleTrialOrUpgrade, primaryCta]);
+
+  if (!hydrated) {
+    return (
+      <Page>
+        <PreparingStep summary={summary} phase="boot" />
+      </Page>
+    );
+  }
 
   return (
-    <Page narrowWidth title={t("onboarding.pageTitle")}>
+    <Page>
       <BlockStack gap="500">
+        {step === "recommendation" ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto 1fr",
+              alignItems: "center",
+              gap: "12px",
+              paddingBottom: "8px",
+            }}
+          >
+            <div style={{ justifySelf: "start" }}>
+              <Button variant="plain" onClick={handleSkip}>
+                {t("onboarding.action.skip")}
+              </Button>
+            </div>
+            <Text as="h1" variant="headingLg" alignment="center">
+              {t("onboarding.pageTitle")}
+            </Text>
+            <div style={{ justifySelf: "end" }}>
+              <Button
+                variant="primary"
+                size="large"
+                loading={creating && primaryCta === "create"}
+                onClick={handlePrimary}
+              >
+                {t("onboarding.action.translateNow")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         {step === "preparing" ? (
-          <PreparingStep
-            summary={summary}
-            phase={phase}
-            coverageDone={coverageDone}
-            coverageTotal={plan?.labels.length ?? 0}
-            activeLabel={activeLabel}
-            coverageLocaleLabel={plan?.localeLabel ?? null}
-          />
+          <PreparingStep summary={summary} phase={phase} />
         ) : (
-          <>
-            <RecommendationStep
-              summary={summary}
-              fastCoverage={fastCoverage}
-            />
-            <ActionFooter
-              primaryCta={primaryCta}
-              creating={creating}
-              onPrimary={handlePrimary}
-              onCustomize={handleCustomize}
-              onSkip={handleSkip}
-            />
-          </>
+          <RecommendationStep summary={summary} />
         )}
       </BlockStack>
     </Page>

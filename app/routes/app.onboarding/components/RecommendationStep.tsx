@@ -1,21 +1,14 @@
 import {
-  Card,
+  Badge,
   BlockStack,
+  Box,
+  Card,
+  Divider,
   InlineStack,
   Text,
-  Badge,
-  List,
-  Box,
-  Divider,
-  ProgressBar,
 } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
-import type {
-  OnboardingFastCoverageSnapshot,
-  OnboardingSummary,
-} from "../types";
-import { CREATE_TASK_MODULE_LABELS } from "~/routes/app.translate-v4/constants";
-import { formatEstimateCredits } from "~/routes/app.translate-v4/useCreateTaskEstimate";
+import type { OnboardingSummary } from "../types";
 
 function LabeledCard({
   title,
@@ -37,229 +30,221 @@ function LabeledCard({
   );
 }
 
-/** A. 推荐语言 */
-function RecommendedLanguages({ summary }: { summary: OnboardingSummary }) {
+type MarketRow = {
+  key: string;
+  marketName: string;
+  marketLocales: string[];
+  matchedLocales: string[];
+  missingLocales: string[];
+  status: "matched" | "partial" | "missing" | "unknown";
+};
+
+function localeMatches(configuredLocale: string, marketLocale: string) {
+  const configured = configuredLocale.trim().toLowerCase();
+  const market = marketLocale.trim().toLowerCase();
+  if (configured === market) return true;
+  return configured.split(/[-_]/)[0] === market.split(/[-_]/)[0];
+}
+
+function buildMarketRows(summary: OnboardingSummary): MarketRow[] {
+  const configuredLocales = summary.locales.availableTargets.map((item) => item.value);
+
+  return summary.markets.map((market, index) => {
+    const marketLocales = [...new Set(market.locales)].filter(Boolean);
+    const matchedLocales = configuredLocales.filter((configuredLocale) =>
+      marketLocales.some((marketLocale) => localeMatches(configuredLocale, marketLocale)),
+    );
+    const missingLocales = marketLocales.filter(
+      (marketLocale) =>
+        !configuredLocales.some((configuredLocale) =>
+          localeMatches(configuredLocale, marketLocale),
+        ),
+    );
+
+    let status: MarketRow["status"] = "unknown";
+    if (marketLocales.length === 0) status = "unknown";
+    else if (matchedLocales.length === 0) status = "missing";
+    else if (missingLocales.length === 0) status = "matched";
+    else status = "partial";
+
+    return {
+      key: market.handle || `${market.name}-${index}`,
+      marketName: market.name,
+      marketLocales,
+      matchedLocales,
+      missingLocales,
+      status,
+    };
+  });
+}
+
+function statusTone(status: MarketRow["status"]) {
+  switch (status) {
+    case "matched":
+      return "success" as const;
+    case "partial":
+      return "attention" as const;
+    case "missing":
+      return "attention" as const;
+    default:
+      return "info" as const;
+  }
+}
+
+function MarketLocaleBadges({
+  locales,
+  labelByLocale,
+  tone = "info",
+  emptyLabel,
+}: {
+  locales: string[];
+  labelByLocale: Map<string, string>;
+  tone?: "info" | "success" | "attention";
+  emptyLabel?: string;
+}) {
   const { t } = useTranslation();
-  const labelByLocale = new Map(
-    summary.locales.availableTargets.map((tgt) => [tgt.value, tgt.label]),
-  );
-  const suggested = summary.locales.suggestedTargets;
+
+  if (locales.length === 0) {
+    return (
+      <Text as="span" tone="subdued" variant="bodySm">
+        {emptyLabel ?? t("onboarding.health.none")}
+      </Text>
+    );
+  }
 
   return (
-    <LabeledCard title={t("onboarding.languages.title")}>
-      {suggested.length === 0 ? (
-        <Text as="p" tone="subdued">
-          {t("onboarding.languages.empty")}
-        </Text>
-      ) : (
-        <BlockStack gap="300">
-          <InlineStack gap="200" wrap>
-            {suggested.map((locale) => (
-              <Badge key={locale} tone="info">
-                {labelByLocale.get(locale) ?? locale}
-              </Badge>
-            ))}
-          </InlineStack>
-          <List type="bullet">
-            {summary.recommendation.reasons.map((reasonKey) => (
-              <List.Item key={reasonKey}>{t(reasonKey)}</List.Item>
-            ))}
-          </List>
-        </BlockStack>
-      )}
-    </LabeledCard>
+    <InlineStack gap="150" wrap>
+      {locales.map((locale) => (
+        <Badge key={locale} tone={tone}>
+          {labelByLocale.get(locale) ?? locale}
+        </Badge>
+      ))}
+    </InlineStack>
   );
 }
 
-/** B. 店铺翻译健康度 —— 优先展示快扫结果，否则 loader 缓存 / 计算中 */
-function TranslationHealth({
-  summary,
-  fastCoverage,
-}: {
-  summary: OnboardingSummary;
-  fastCoverage: OnboardingFastCoverageSnapshot | null;
-}) {
+export function RecommendationStep({ summary }: { summary: OnboardingSummary }) {
   const { t } = useTranslation();
-  const cached = summary.coverage;
-
-  if (fastCoverage && (fastCoverage.complete || fastCoverage.total > 0)) {
-    const percent = fastCoverage.percent ?? 0;
-    return (
-      <LabeledCard title={t("onboarding.health.title")}>
-        <BlockStack gap="300">
-          <InlineStack gap="200" blockAlign="center" wrap>
-            <Text as="span" variant="headingLg">
-              {percent}%
-            </Text>
-            <Text as="span" tone="subdued">
-              {t("onboarding.health.fastLocale", {
-                locale: fastCoverage.localeLabel,
-              })}
-            </Text>
-            <Badge tone="info">{t("onboarding.health.partialBadge")}</Badge>
-          </InlineStack>
-          <ProgressBar progress={percent} size="small" tone="primary" />
-          <Text as="p" tone="subdued" variant="bodySm">
-            {t("onboarding.health.fastHint", {
-              done: fastCoverage.doneCount,
-              total: fastCoverage.totalCount,
-              translated: fastCoverage.translated,
-              items: fastCoverage.total,
-            })}
-          </Text>
-          <InlineStack gap="200" wrap>
-            {fastCoverage.labels.map((row) => {
-              const pct =
-                row.total > 0
-                  ? Math.min(100, Math.round((row.translated / row.total) * 100))
-                  : null;
-              return (
-                <Badge key={row.label} tone={pct === 100 ? "success" : "attention"}>
-                  {`${t(`onboarding.fastModule.${row.label}`, {
-                    defaultValue: row.label,
-                  })}${pct == null ? "" : ` ${pct}%`}`}
-                </Badge>
-              );
-            })}
-          </InlineStack>
-          <Text as="p" tone="subdued" variant="bodySm">
-            {t("onboarding.health.fullScanPending")}
-          </Text>
-        </BlockStack>
-      </LabeledCard>
-    );
-  }
-
-  if (cached?.overallPercent != null) {
-    const percent = cached.overallPercent;
-    return (
-      <LabeledCard title={t("onboarding.health.title")}>
-        <BlockStack gap="300">
-          <InlineStack gap="200" blockAlign="center">
-            <Text as="span" variant="headingLg">
-              {percent}%
-            </Text>
-            <Text as="span" tone="subdued">
-              {t("onboarding.health.overall")}
-            </Text>
-          </InlineStack>
-          <ProgressBar progress={percent} size="small" tone="primary" />
-          <Text as="p">{t("onboarding.health.partial")}</Text>
-          {cached.topGaps.length > 0 ? (
-            <Box>
-              <Text as="p" tone="subdued" variant="bodySm">
-                {t("onboarding.health.topGaps")}
-              </Text>
-              <InlineStack gap="200" wrap>
-                {cached.topGaps.map((gap) => (
-                  <Badge key={gap} tone="attention">
-                    {gap}
-                  </Badge>
-                ))}
-              </InlineStack>
-            </Box>
-          ) : null}
-        </BlockStack>
-      </LabeledCard>
-    );
-  }
+  const rows = buildMarketRows(summary);
+  const labelByLocale = new Map(
+    summary.locales.availableTargets.map((item) => [item.value, item.label] as const),
+  );
 
   return (
     <LabeledCard title={t("onboarding.health.title")}>
-      <BlockStack gap="200">
-        <Text as="p" tone="subdued">
-          {t("onboarding.health.computing")}
-        </Text>
-        <Text as="p" tone="subdued" variant="bodySm">
-          {t("onboarding.health.fullScanPending")}
-        </Text>
-      </BlockStack>
-    </LabeledCard>
-  );
-}
-
-/** C. 预估积分与时间 */
-function EstimatedCost({ summary }: { summary: OnboardingSummary }) {
-  const { t } = useTranslation();
-  const estimate = summary.estimate;
-  const moduleLabels = summary.recommendation.suggestedModuleKeys
-    .map(
-      (key) =>
-        CREATE_TASK_MODULE_LABELS[
-          key as keyof typeof CREATE_TASK_MODULE_LABELS
-        ] ?? key,
-    )
-    .join(" · ");
-
-  return (
-    <LabeledCard title={t("onboarding.cost.title")}>
-      <BlockStack gap="300">
-        {estimate?.credits != null ? (
-          <InlineStack gap="500" wrap>
-            <BlockStack gap="100">
-              <Text as="span" tone="subdued" variant="bodySm">
-                {t("onboarding.cost.credits")}
+      {rows.length === 0 ? (
+        <BlockStack gap="300">
+          <Box>
+            <Text as="p" tone="subdued">
+              {t("onboarding.health.noMarkets")}
+            </Text>
+          </Box>
+          <Box>
+            <Text as="p" tone="subdued" variant="bodySm">
+              {t("onboarding.health.configuredLanguages")}
+            </Text>
+            <Box paddingBlockStart="200">
+              <MarketLocaleBadges
+                locales={summary.locales.availableTargets.map((item) => item.value)}
+                labelByLocale={labelByLocale}
+                emptyLabel={t("onboarding.languages.empty")}
+              />
+            </Box>
+          </Box>
+        </BlockStack>
+      ) : (
+        <BlockStack gap="300">
+          <div
+            style={{
+              border: "1px solid rgba(138, 142, 145, 0.18)",
+              borderRadius: "12px",
+              overflow: "hidden",
+              background: "#ffffff",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "minmax(180px, 1fr) minmax(240px, 1.2fr) minmax(240px, 1.2fr) minmax(120px, 0.7fr)",
+                gap: "12px",
+                padding: "12px 16px",
+                background: "rgba(246, 246, 247, 0.95)",
+                borderBottom: "1px solid rgba(138, 142, 145, 0.18)",
+              }}
+            >
+              <Text as="span" variant="bodySm" tone="subdued">
+                {t("onboarding.health.column.market")}
               </Text>
-              <Text as="span" variant="headingMd">
-                {estimate.isUpperBound ? "≈ " : ""}
-                {formatEstimateCredits(estimate.credits)}
+              <Text as="span" variant="bodySm" tone="subdued">
+                {t("onboarding.health.column.marketLocales")}
               </Text>
-            </BlockStack>
-            {estimate.minutes != null ? (
-              <BlockStack gap="100">
-                <Text as="span" tone="subdued" variant="bodySm">
-                  {t("onboarding.cost.time")}
-                </Text>
-                <Text as="span" variant="headingMd">
-                  {t("onboarding.cost.minutes", { count: estimate.minutes })}
-                </Text>
-              </BlockStack>
-            ) : null}
-          </InlineStack>
-        ) : (
-          <Text as="p" tone="subdued">
-            {t("onboarding.cost.unavailable")}
-          </Text>
-        )}
+              <Text as="span" variant="bodySm" tone="subdued">
+                {t("onboarding.health.column.configuredLocales")}
+              </Text>
+              <Text as="span" variant="bodySm" tone="subdued">
+                {t("onboarding.health.column.status")}
+              </Text>
+            </div>
 
-        <Box>
-          <Text as="p" tone="subdued" variant="bodySm">
-            {t("onboarding.cost.modules")}
-          </Text>
-          <Text as="p">{moduleLabels}</Text>
-        </Box>
+            {rows.map((row, index) => (
+              <div
+                key={row.key}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "minmax(180px, 1fr) minmax(240px, 1.2fr) minmax(240px, 1.2fr) minmax(120px, 0.7fr)",
+                  gap: "12px",
+                  padding: "16px",
+                  background: "#ffffff",
+                  borderBottom:
+                    index === rows.length - 1
+                      ? "none"
+                      : "1px solid rgba(138, 142, 145, 0.14)",
+                }}
+              >
+                <BlockStack gap="100">
+                  <Text as="span" variant="bodyMd" fontWeight="semibold">
+                    {row.marketName}
+                  </Text>
+                  {row.marketLocales.length > 0 ? (
+                    <Text as="span" tone="subdued" variant="bodySm">
+                      {`${row.marketLocales.length} ${t("onboarding.health.localeCount")}`}
+                    </Text>
+                  ) : null}
+                </BlockStack>
 
-        {estimate?.needsMoreCredits ? (
-          <Text as="p" tone="caution">
-            {t("onboarding.cost.needMore")}
-          </Text>
-        ) : null}
-      </BlockStack>
+                <MarketLocaleBadges
+                  locales={row.marketLocales}
+                  labelByLocale={labelByLocale}
+                  emptyLabel={t("onboarding.health.unknownLocales")}
+                />
+
+                <BlockStack gap="150">
+                  <MarketLocaleBadges
+                    locales={row.matchedLocales}
+                    labelByLocale={labelByLocale}
+                    tone="success"
+                  />
+                  {row.missingLocales.length > 0 ? (
+                    <MarketLocaleBadges
+                      locales={row.missingLocales}
+                      labelByLocale={labelByLocale}
+                      tone="attention"
+                    />
+                  ) : null}
+                </BlockStack>
+
+                <InlineStack align="start">
+                  <Badge tone={statusTone(row.status)}>
+                    {t(`onboarding.health.status.${row.status}`)}
+                  </Badge>
+                </InlineStack>
+              </div>
+            ))}
+          </div>
+        </BlockStack>
+      )}
     </LabeledCard>
-  );
-}
-
-export function RecommendationStep({
-  summary,
-  fastCoverage,
-}: {
-  summary: OnboardingSummary;
-  fastCoverage: OnboardingFastCoverageSnapshot | null;
-}) {
-  const { t } = useTranslation();
-  return (
-    <BlockStack gap="400">
-      <BlockStack gap="100">
-        <Text as="h1" variant="headingLg">
-          {t("onboarding.recommendation.title")}
-        </Text>
-        <Text as="p" tone="subdued">
-          {t("onboarding.recommendation.subtitle")}
-        </Text>
-      </BlockStack>
-      <RecommendedLanguages summary={summary} />
-      <TranslationHealth summary={summary} fastCoverage={fastCoverage} />
-      <EstimatedCost summary={summary} />
-    </BlockStack>
   );
 }

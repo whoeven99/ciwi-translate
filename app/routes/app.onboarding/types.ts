@@ -15,6 +15,14 @@ export type OnboardingLocaleOption = {
   published: boolean;
 };
 
+export type OnboardingMarket = {
+  name: string;
+  handle: string;
+  status: string;
+  baseCurrency: string | null;
+  locales: string[];
+};
+
 export type SerializedOnboardingState = {
   shop: string;
   status: OnboardingStatus;
@@ -28,27 +36,6 @@ export type SerializedOnboardingState = {
   estimateCredits: number | null;
   estimateMinutes: number | null;
   sourceScanId: string | null;
-};
-
-/** Preparing 快扫计划：最重要 1 语 × 5 模块（label = 管理翻译卡片名）。 */
-export type OnboardingFastCoveragePlan = {
-  locale: string;
-  localeLabel: string;
-  labels: string[];
-};
-
-/** 快扫结果（部分模块口径，不等于全店全模块）。 */
-export type OnboardingFastCoverageSnapshot = {
-  locale: string;
-  localeLabel: string;
-  labels: Array<{ label: string; translated: number; total: number }>;
-  translated: number;
-  total: number;
-  percent: number | null;
-  doneCount: number;
-  totalCount: number;
-  complete: boolean;
-  partial: true;
 };
 
 export type OnboardingSummary = {
@@ -65,14 +52,7 @@ export type OnboardingSummary = {
     availableTargets: OnboardingLocaleOption[];
     suggestedTargets: string[];
   };
-  /** loader 缓存覆盖率（可能仍为空）；快扫结果由客户端写入 UI state。 */
-  coverage: {
-    overallPercent: number | null;
-    untranslatedRatioByLocale: Record<string, number | null>;
-    topGaps: string[];
-  } | null;
-  /** Preparing 真进度要用的快扫计划；无目标语言时为 null。 */
-  fastCoveragePlan: OnboardingFastCoveragePlan | null;
+  markets: OnboardingMarket[];
   recommendation: {
     suggestedModuleKeys: string[];
     reasons: string[];

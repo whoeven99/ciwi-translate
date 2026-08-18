@@ -1,5 +1,7 @@
 import { Card, BlockStack, InlineStack, Button, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
+import type { OnboardingSummary } from "../types";
+import { formatEstimateCredits } from "~/routes/app.translate-v4/useCreateTaskEstimate";
 
 export type PrimaryCtaKind = "create" | "trial" | "upgrade" | "configure";
 
@@ -11,12 +13,14 @@ const PRIMARY_LABEL_KEY: Record<PrimaryCtaKind, string> = {
 };
 
 export function ActionFooter({
+  summary,
   primaryCta,
   creating,
   onPrimary,
   onCustomize,
   onSkip,
 }: {
+  summary: OnboardingSummary;
   primaryCta: PrimaryCtaKind;
   creating: boolean;
   onPrimary: () => void;
@@ -24,10 +28,39 @@ export function ActionFooter({
   onSkip: () => void;
 }) {
   const { t } = useTranslation();
+  const contextKey = `onboarding.action.context.${primaryCta}`;
+  const estimateCredits =
+    summary.estimate?.credits != null
+      ? formatEstimateCredits(summary.estimate.credits)
+      : null;
 
   return (
     <Card>
-      <BlockStack gap="300">
+      <BlockStack gap="400">
+        <BlockStack gap="100">
+          <Text as="h2" variant="headingMd">
+            {t("onboarding.action.title")}
+          </Text>
+          <Text as="p" tone="subdued">
+            {t(contextKey)}
+          </Text>
+        </BlockStack>
+
+        <InlineStack gap="200" wrap>
+          <Text as="span" tone="subdued" variant="bodySm">
+            {t("onboarding.action.scope", {
+              count: summary.locales.suggestedTargets.length,
+            })}
+          </Text>
+          {estimateCredits ? (
+            <Text as="span" tone="subdued" variant="bodySm">
+              {t("onboarding.action.scopeCredits", {
+                credits: estimateCredits,
+              })}
+            </Text>
+          ) : null}
+        </InlineStack>
+
         <InlineStack gap="300" align="space-between" blockAlign="center" wrap>
           <Button
             variant="primary"
@@ -46,9 +79,6 @@ export function ActionFooter({
             </Button>
           </InlineStack>
         </InlineStack>
-        <Text as="p" tone="subdued" variant="bodySm">
-          {t("onboarding.action.hint")}
-        </Text>
       </BlockStack>
     </Card>
   );

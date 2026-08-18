@@ -14,25 +14,23 @@ import type { OnboardingSummary } from "../types";
 export type PreparingPhase =
   | "boot"
   | "locales"
-  | "coverage"
+  | "market"
   | "recommendation"
   | "done";
 
 const PHASE_ORDER: PreparingPhase[] = [
   "boot",
   "locales",
-  "coverage",
+  "market",
   "recommendation",
   "done",
 ];
 
-/** 每行在 phase 达到该下标时勾选完成（coverage 行在进入 recommendation 后才勾）。 */
 const PHASE_ROWS: Array<{ key: string; doneAt: PreparingPhase }> = [
   { key: "onboarding.preparing.step.structure", doneAt: "locales" },
   { key: "onboarding.preparing.step.data", doneAt: "locales" },
-  { key: "onboarding.preparing.step.market", doneAt: "coverage" },
-  { key: "onboarding.preparing.step.coverage", doneAt: "recommendation" },
-  { key: "onboarding.preparing.step.recommendation", doneAt: "done" },
+  { key: "onboarding.preparing.step.market", doneAt: "market" },
+  { key: "onboarding.preparing.step.recommendation", doneAt: "recommendation" },
 ];
 
 function phaseReached(current: PreparingPhase, target: PreparingPhase): boolean {
@@ -42,31 +40,14 @@ function phaseReached(current: PreparingPhase, target: PreparingPhase): boolean 
 export function PreparingStep({
   summary,
   phase,
-  coverageDone,
-  coverageTotal,
-  activeLabel,
-  coverageLocaleLabel,
 }: {
   summary: OnboardingSummary;
   phase: PreparingPhase;
-  coverageDone: number;
-  coverageTotal: number;
-  activeLabel: string | null;
-  coverageLocaleLabel: string | null;
 }) {
   const { t } = useTranslation();
 
-  const doneCount = PHASE_ROWS.filter((row) =>
-    phaseReached(phase, row.doneAt),
-  ).length;
-  let progress = Math.round((doneCount / PHASE_ROWS.length) * 100);
-  if (phase === "coverage" && coverageTotal > 0) {
-    progress = Math.min(
-      90,
-      60 + Math.round((coverageDone / coverageTotal) * 30),
-    );
-  }
-  if (phase === "done") progress = 100;
+  const doneCount = PHASE_ROWS.filter((row) => phaseReached(phase, row.doneAt)).length;
+  const progress = phase === "done" ? 100 : Math.round((doneCount / PHASE_ROWS.length) * 100);
 
   return (
     <Card>
@@ -85,9 +66,6 @@ export function PreparingStep({
         <BlockStack gap="200">
           {PHASE_ROWS.map((row) => {
             const done = phaseReached(phase, row.doneAt);
-            const isCoverageRow =
-              row.key === "onboarding.preparing.step.coverage";
-            const active = phase === "coverage" && isCoverageRow;
             return (
               <InlineStack key={row.key} gap="200" blockAlign="center">
                 <Box minWidth="20px">
@@ -99,25 +77,9 @@ export function PreparingStep({
                     </Text>
                   )}
                 </Box>
-                <BlockStack gap="100">
-                  <Text as="span" tone={done || active ? "base" : "subdued"}>
-                    {t(row.key)}
-                  </Text>
-                  {active && coverageLocaleLabel ? (
-                    <Text as="span" tone="subdued" variant="bodySm">
-                      {t("onboarding.preparing.coverageProgress", {
-                        locale: coverageLocaleLabel,
-                        done: coverageDone,
-                        total: coverageTotal,
-                        module: activeLabel
-                          ? t(`onboarding.fastModule.${activeLabel}`, {
-                              defaultValue: activeLabel,
-                            })
-                          : "…",
-                      })}
-                    </Text>
-                  ) : null}
-                </BlockStack>
+                <Text as="span" tone={done ? "base" : "subdued"}>
+                  {t(row.key)}
+                </Text>
               </InlineStack>
             );
           })}
