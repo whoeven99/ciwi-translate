@@ -850,7 +850,7 @@ redirect records.
  进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
  `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
  过滤，含 `looksLikeHtmlMarkupFragment`（HTML 属性碎片）与
- `looksLikeAutoLiquidJunk`（评价组件/价格/SKU/年款等；经
+ `looksLikeAutoLiquidJunk`（评价组件/价格/SKU/年款/产品型号等；经
  `translationRuleJudgment("liquid", …)` 入库）。店面采集另跳过
  `isPriceRelatedElement` 与评价 App 常见容器 class。其它门控：全局
  `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
@@ -884,7 +884,10 @@ redirect records.
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
  慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 auto+PENDING junk
-（HTML 属性碎片 + `looksLikeAutoLiquidJunk`）。claim PENDING 时也会跳过并
+（HTML 属性碎片 + `looksLikeAutoLiquidJunk` 含产品型号；默认每 tick 最多
+ 5000 条，`AUTO_LIQUID_JUNK_CLEANUP_MAX_TOTAL_PER_TICK` /
+ `AUTO_LIQUID_JUNK_CLEANUP_BATCH_SIZE` / `AUTO_LIQUID_JUNK_CLEANUP_DELAY_MS`）。
+claim PENDING 时也会跳过并
 删除这类行，避免拿去翻译。管理页
  `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
 
