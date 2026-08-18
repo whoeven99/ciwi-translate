@@ -5,16 +5,13 @@
  * 不能直接连 libsql://。本脚本用 @libsql/client 执行 SQL，并写入 _prisma_migrations。
  *
  * 用法：
- *   npm run turso:migrate:test   # 应用未执行的 migration（测试库）
- *   npm run turso:migrate:prod   # 应用未执行的 migration（生产库）
+ *   npm run turso:migrate:test   # 读 .env + .env.test
+ *   npm run turso:migrate:prod   # 读 .env + .env.prod
  *
- * 凭据来源（后读覆盖先读；process.env 优先）：
- *   test → .env + .env.test
- *   prod → .env + .env.prod
- * 键名回退（同 target，不跨 test/prod）：
- *   TURSO_{TEST|PROD}_DATABASE_URL / _AUTH_TOKEN
- *   → TSF_TURSO_DATABASE_URL / TSF_TURSO_AUTH_TOKEN
- *   → TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
+ * 凭据（文件内同一对键；测/产靠不同 env 文件区分）：
+ *   TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
+ * 短期兼容回退：
+ *   TSF_TURSO_* → 该 target 的 TURSO_{TEST|PROD}_*
  */
 const crypto = require("crypto");
 const fs = require("fs");
@@ -81,7 +78,8 @@ function loadEnvFiles(paths) {
 }
 
 /**
- * 按 target 解析 Turso 凭据。不跨 test/prod 互备，避免迁错库。
+ * 解析 Turso 凭据。主键优先；兼容旧键。migrate 的 target 仅决定加载哪个 env 文件，
+ * 以及旧键回退时用 TEST 还是 PROD（不跨环境互备）。
  * @returns {{ url: string, authToken: string, urlKey: string, tokenKey: string }}
  */
 function resolveTursoCreds(target, fileEnv) {
@@ -92,23 +90,31 @@ function resolveTursoCreds(target, fileEnv) {
     return { url, authToken, urlKey, tokenKey };
   };
 
-  const primary =
-    target === "prod"
-      ? pick("TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN")
-      : pick("TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN");
+  const primary = pick("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN");
   if (primary) return primary;
 
   const tsf = pick("TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN");
-  if (tsf) return tsf;
+  if (tsf) {
+    console.warn(
+      `[turso:migrate] 使用兼容键 ${tsf.urlKey}；请改为 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN`,
+    );
+    return tsf;
+  }
 
-  const generic = pick("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN");
-  if (generic) return generic;
-
-  const expected =
+  const legacy =
     target === "prod"
-      ? "TURSO_PROD_* / TSF_TURSO_* / TURSO_DATABASE_URL"
-      : "TURSO_TEST_* / TSF_TURSO_* / TURSO_DATABASE_URL";
-  throw new Error(`无效 Turso 凭据（target=${target}）。请配置 ${expected}`);
+      ? pick("TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN")
+      : pick("TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN");
+  if (legacy) {
+    console.warn(
+      `[turso:migrate] 使用兼容键 ${legacy.urlKey}；请改为 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN`,
+    );
+    return legacy;
+  }
+
+  throw new Error(
+    `无效 Turso 凭据（target=${target}）。请在对应 env 文件配置 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN`,
+  );
 }
 
 function listMigrations(migrationsDir) {

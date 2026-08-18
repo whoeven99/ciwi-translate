@@ -24,8 +24,10 @@
  * 用法：
  *   node scripts/reset-onboarding.mjs --shop=xxx.myshopify.com               （dry-run，读 .env）
  *   node scripts/reset-onboarding.mjs --shop=xxx --env=.env.test --write
+ *   node scripts/reset-onboarding.mjs --shop=xxx --env=.env.prod --write     （谨慎！）
  *   node scripts/reset-onboarding.mjs --shop=xxx --env=.env.test --write --billing
- *   node scripts/reset-onboarding.mjs --shop=xxx --target=prod --write        （谨慎！）
+ *
+ * Turso 凭据：TURSO_DATABASE_URL / TURSO_AUTH_TOKEN（兼容 TSF_TURSO_* / TURSO_TEST_* / TURSO_PROD_*）
  *
  * 依赖：@libsql/client、@azure/cosmos、ioredis（仓库已装）。
  */
@@ -92,32 +94,23 @@ function loadEnvFile(file) {
 }
 loadEnvFile(envFile);
 
-// ---------- 解析 Turso 目标库（与 app/config/tursoTarget.server.ts 对齐）----------
-function normalizeTarget(v) {
-  const s = String(v || "").trim().toLowerCase();
-  if (s === "prod" || s === "production") return "prod";
-  if (s === "test" || s === "testing") return "test";
-  return "";
-}
-const target =
-  normalizeTarget(args.target) || normalizeTarget(process.env.TURSO_TARGET) || "test";
-
-function readTursoCreds(desired) {
-  // 候选按「期望 target 优先 → 另一 target → TSF_*」排序，取第一组齐全的凭据。
-  // 兼容 .env.test 里 TURSO_TARGET=prod 但只带 TURSO_TEST_* 的常见情况。
+// ---------- 解析 Turso 凭据（主键 TURSO_*；短期兼容旧键）----------
+function readTursoCreds() {
   const candidates = [
-    desired === "prod"
-      ? { urlKey: "TURSO_PROD_DATABASE_URL", tokenKey: "TURSO_PROD_AUTH_TOKEN" }
-      : { urlKey: "TURSO_TEST_DATABASE_URL", tokenKey: "TURSO_TEST_AUTH_TOKEN" },
-    desired === "prod"
-      ? { urlKey: "TURSO_TEST_DATABASE_URL", tokenKey: "TURSO_TEST_AUTH_TOKEN" }
-      : { urlKey: "TURSO_PROD_DATABASE_URL", tokenKey: "TURSO_PROD_AUTH_TOKEN" },
+    { urlKey: "TURSO_DATABASE_URL", tokenKey: "TURSO_AUTH_TOKEN" },
     { urlKey: "TSF_TURSO_DATABASE_URL", tokenKey: "TSF_TURSO_AUTH_TOKEN" },
+    { urlKey: "TURSO_TEST_DATABASE_URL", tokenKey: "TURSO_TEST_AUTH_TOKEN" },
+    { urlKey: "TURSO_PROD_DATABASE_URL", tokenKey: "TURSO_PROD_AUTH_TOKEN" },
   ];
   for (const c of candidates) {
     const url = (process.env[c.urlKey] || "").trim();
     const authToken = (process.env[c.tokenKey] || "").trim();
     if (url && authToken) {
+      if (c.urlKey !== "TURSO_DATABASE_URL") {
+        console.warn(
+          `[reset-onboarding] 使用兼容键 ${c.urlKey}；请改为 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN`,
+        );
+      }
       return { url, authToken, usedUrlKey: c.urlKey };
     }
   }
@@ -132,10 +125,10 @@ function maskHost(url) {
   }
 }
 
-const { url: tursoUrl, authToken: tursoToken, usedUrlKey } = readTursoCreds(target);
+const { url: tursoUrl, authToken: tursoToken, usedUrlKey } = readTursoCreds();
 if (!tursoUrl || !tursoToken) {
   console.error(
-    `缺少 Turso 凭据（target=${target}）。请在 ${envFile} 配置 TURSO_${target.toUpperCase()}_DATABASE_URL / _AUTH_TOKEN（或 TSF_TURSO_*）。`,
+    `缺少 Turso 凭据。请在 ${envFile} 配置 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN。`,
   );
   process.exit(1);
 }
@@ -185,7 +178,6 @@ console.log(
       mode: MODE,
       shop,
       env: envFile,
-      tursoTarget: target,
       tursoKey: usedUrlKey,
       tursoHost: maskHost(tursoUrl),
       cosmosJobs: cosmosJobsContainer

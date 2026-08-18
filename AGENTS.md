@@ -69,7 +69,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `app/root.tsx`                                               | Global Remix root, Redux provider, GTM/web-vitals, global client error reporting.         |
 | `app/entry.client.tsx` / `app/entry.server.tsx`              | Remix hydrate/SSR. Server inlines i18n boot (`app/lib/i18nBoot.ts`) so client hydrate does not await `/locales/*.json`. |
 | `app/shopify.server.ts`                                      | Shopify app config, auth exports, API version, session storage.                           |
-| `app/db.server.ts`                                           | Turso/Prisma client creation and runtime env loading.                                     |
+| `app/db.server.ts`                                           | Turso/Prisma client；凭据 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（见 `tursoTarget.server.ts`）。 |
 | `app/routes/app.tsx`                                         | Embedded app shell, auth, nav, bootstrap, install-time init, shop scan trigger.           |
 | `app/routes/*`                                               | Remix flat routes for pages and API endpoints.                                            |
 | `app/server/*`                                               | Server-side business logic. Prefer adding feature helpers here and keeping routes thin.   |
@@ -595,7 +595,8 @@ Admin 体量标签另用 `COSMOS_SHOP_DATABASE_ID`（默认 `shop`）、
 - Redis: **仅** `RENDER_KV`（Render Key Value / Valkey）。不要再配或连接
   `REDIS_URL` / `REDIS_URL_V4`（Azure 已弃用，见 Operations → Redis）。
 - Blob: `AZURE_BLOB_CONNECTION_STRING`, `AZURE_BLOB_TRANSLATION_CONTAINER`.
-- Turso: `TSF_TURSO_DATABASE_URL`, `TSF_TURSO_AUTH_TOKEN`.
+- Turso: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`（测/产由各 Render 服务各自配值；
+ 短期兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）。
 - LLM: `DEEPSEEK_API_KEY`, `DEEPSEEK_API_KEYS`, `DEEPSEEK_BASE_URL`,
 `DEEPSEEK_MODEL` (default `deepseek-chat`; known id whitelist includes
 `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-reasoner`),
@@ -1323,9 +1324,9 @@ Package-backed root scripts:
 
 - `scripts/translate.js`: `npm run translate`, i18n helper.
 - `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`。
- `test` 读 `.env`+`.env.test`，`prod` 读 `.env`+`.env.prod`；凭据回退
- `TURSO_{TEST|PROD}_*` → `TSF_TURSO_*` → `TURSO_DATABASE_URL` /
- `TURSO_AUTH_TOKEN`（不跨 test/prod）。
+ `test` 读 `.env`+`.env.test`，`prod` 读 `.env`+`.env.prod`；文件内同一对
+ `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（短期兼容 `TSF_TURSO_*` 与该
+ target 的旧 `TURSO_{TEST|PROD}_*`）。
 
 Operational root scripts:
 
@@ -1335,9 +1336,9 @@ Operational root scripts:
  `ShopTargetLocale` + `ShopTranslationSettings` + Redis `tsf:items_count:{shop}:*` +
  Cosmos `shop_scan_jobs`（避免 install 因历史 COMPLETED 被 `skipped_existing`）；可选
  `--billing` 连带清 `Account/AppSubscription/BillingLog/AccountPeriodUsage` 让 `isNew=true`）。
- 默认 dry-run，`--write` 才落库；必须 `--shop=`；`--env=`（默认 `.env`）；Turso 目标按
- `--target`/`TURSO_TARGET` 解析并回退到实际存在的 `TURSO_{TEST,PROD}_*` / `TSF_TURSO_*` 凭据；
- Redis **只连** `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
+ 默认 dry-run，`--write` 才落库；必须 `--shop=`； `--env=`（默认 `.env`）；Turso 认 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`
+ （兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）；Redis **只连**
+ `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
  `latest-scan.json`；只打印脱敏 host。
  示例：`node scripts/reset-onboarding.mjs --shop=xxx.myshopify.com --env=.env.test --write`。
 - `scripts/check-task.mjs`: inspect one task and related Redis state.
@@ -1461,7 +1462,9 @@ node --experimental-vm-modules -e "
 
 
 **Prod access:** Turso prod credentials are in `.env.prod` as
-`TSF_TURSO_DATABASE_URL` / `TSF_TURSO_AUTH_TOKEN`. You can also read them
+`TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（与 App/Worker 同名；测/产靠不同
+env 文件或 Render 服务区分）。短期仍兼容旧名 `TSF_TURSO_*` /
+`TURSO_TEST_*` / `TURSO_PROD_*`。You can also read them
 from Render env vars (see Render section below).
 
 ### Cosmos DB (Translation V4 Jobs)
