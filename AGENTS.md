@@ -1322,7 +1322,10 @@ For "合入PR然后发布测试环境", the script will:
 Package-backed root scripts:
 
 - `scripts/translate.js`: `npm run translate`, i18n helper.
-- `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`.
+- `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`。
+ `test` 读 `.env`+`.env.test`，`prod` 读 `.env`+`.env.prod`；凭据回退
+ `TURSO_{TEST|PROD}_*` → `TSF_TURSO_*` → `TURSO_DATABASE_URL` /
+ `TURSO_AUTH_TOKEN`（不跨 test/prod）。
 
 Operational root scripts:
 

@@ -7,6 +7,14 @@
  * 用法：
  *   npm run turso:migrate:test   # 应用未执行的 migration（测试库）
  *   npm run turso:migrate:prod   # 应用未执行的 migration（生产库）
+ *
+ * 凭据来源（后读覆盖先读；process.env 优先）：
+ *   test → .env + .env.test
+ *   prod → .env + .env.prod
+ * 键名回退（同 target，不跨 test/prod）：
+ *   TURSO_{TEST|PROD}_DATABASE_URL / _AUTH_TOKEN
+ *   → TSF_TURSO_DATABASE_URL / TSF_TURSO_AUTH_TOKEN
+ *   → TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
  */
 const crypto = require("crypto");
 const fs = require("fs");
@@ -58,6 +66,49 @@ function loadDotEnv(dotenvPath) {
     result[key] = value;
   }
   return result;
+}
+
+/** 合并多个 env 文件；后文件覆盖先文件。process.env 已有键不覆盖。 */
+function loadEnvFiles(paths) {
+  const merged = {};
+  const loaded = [];
+  for (const p of paths) {
+    if (!fs.existsSync(p)) continue;
+    Object.assign(merged, loadDotEnv(p));
+    loaded.push(path.basename(p));
+  }
+  return { merged, loaded };
+}
+
+/**
+ * 按 target 解析 Turso 凭据。不跨 test/prod 互备，避免迁错库。
+ * @returns {{ url: string, authToken: string, urlKey: string, tokenKey: string }}
+ */
+function resolveTursoCreds(target, fileEnv) {
+  const pick = (urlKey, tokenKey) => {
+    const url = (process.env[urlKey] || fileEnv[urlKey] || "").trim();
+    const authToken = (process.env[tokenKey] || fileEnv[tokenKey] || "").trim();
+    if (!url || !authToken) return null;
+    return { url, authToken, urlKey, tokenKey };
+  };
+
+  const primary =
+    target === "prod"
+      ? pick("TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN")
+      : pick("TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN");
+  if (primary) return primary;
+
+  const tsf = pick("TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN");
+  if (tsf) return tsf;
+
+  const generic = pick("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN");
+  if (generic) return generic;
+
+  const expected =
+    target === "prod"
+      ? "TURSO_PROD_* / TSF_TURSO_* / TURSO_DATABASE_URL"
+      : "TURSO_TEST_* / TSF_TURSO_* / TURSO_DATABASE_URL";
+  throw new Error(`无效 Turso 凭据（target=${target}）。请配置 ${expected}`);
 }
 
 function listMigrations(migrationsDir) {
@@ -187,23 +238,22 @@ async function markApplied(client, migrationName, sql) {
 
 async function main() {
   const root = process.cwd();
-  const envFromFile = loadDotEnv(path.join(root, ".env"));
   const target = (process.argv[2] || "test").trim().toLowerCase();
 
   if (target !== "test" && target !== "prod") {
     throw new Error('仅支持 "test" 或 "prod"');
   }
 
-  const urlKey =
-    target === "prod" ? "TURSO_PROD_DATABASE_URL" : "TURSO_TEST_DATABASE_URL";
-  const tokenKey =
-    target === "prod" ? "TURSO_PROD_AUTH_TOKEN" : "TURSO_TEST_AUTH_TOKEN";
+  const targetEnvFile = target === "prod" ? ".env.prod" : ".env.test";
+  const { merged: fileEnv, loaded: loadedEnvFiles } = loadEnvFiles([
+    path.join(root, ".env"),
+    path.join(root, targetEnvFile),
+  ]);
 
-  const url = process.env[urlKey] || envFromFile[urlKey];
-  const authToken = process.env[tokenKey] || envFromFile[tokenKey];
+  const { url, authToken, urlKey, tokenKey } = resolveTursoCreds(target, fileEnv);
 
-  if (!url?.startsWith("libsql://")) throw new Error(`无效 ${urlKey}`);
-  if (!authToken || authToken === "REPLACE_ME") throw new Error(`无效 ${tokenKey}`);
+  if (!url.startsWith("libsql://")) throw new Error(`无效 ${urlKey}（需 libsql://）`);
+  if (authToken === "REPLACE_ME") throw new Error(`无效 ${tokenKey}`);
 
   const host = (() => {
     try {
@@ -212,7 +262,10 @@ async function main() {
       return url;
     }
   })();
-  console.log(`[turso:migrate:${target}] 目标库 host=${host}`);
+  console.log(
+    `[turso:migrate:${target}] 目标库 host=${host} key=${urlKey}` +
+      (loadedEnvFiles.length ? ` env=${loadedEnvFiles.join("+")}` : ""),
+  );
 
   const client = createClient({ url, authToken });
   const migrations = listMigrations(path.join(root, "prisma", "migrations"));
@@ -252,7 +305,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("[turso:migrate] 失败:", error.message || error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("[turso:migrate] 失败:", error.message || error);
+    process.exit(1);
+  });
+}
