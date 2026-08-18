@@ -129,6 +129,33 @@ Validation choices:
 Use these rules when changing UI. They summarize the older UI design, audit, and
 execution docs that were consolidated into this file.
 
+### Style system entry points（先看这三个）
+
+| 要什么 | 去哪 |
+| --- | --- |
+| 颜色 / 字号 / 圆角 / 间距 / 阴影 | `app/ui/tokens.ts`（TS 常量，指向 `app/styles.css` 的 `--app-*` 变量） |
+| 现成组件 | `app/ui/components/index.ts`（`AppButton` / `AppSectionCard` / `AppPageHeader` / `AppStatusBadge` / `AppPill` / `AppMetricTile` / `AppMobileListCard`） |
+| 可视化清单与页面骨架规范 | `/app/ui-library-demo`（**仅非生产环境**可访问，`isProductionNodeEnv()` 门禁；nav 链接与 shop-profile 共用同一开关） |
+
+规则：
+
+- **写 inline style 时用 `app/ui/tokens.ts` 的常量，不要写死十六进制色值。**
+ESLint `no-restricted-syntax` 在 `app/ui/**` 是 `error`，在
+`app/routes/**` / `app/components/**` 是 `warn`。合法例外（店面可配色值、
+token 定义本身、图标默认色）加 `// eslint-disable-next-line no-restricted-syntax`
+并写明原因。
+- **新组件先查 `app/ui/components/index.ts` 有没有**；确实需要新增且会被多处
+复用时，放进 `app/ui/components/` 并在 barrel 导出，不要在路由目录里重写。
+- **demo 页必须 import 真实组件**（`~/ui/components`），不要在
+`app.ui-library-demo/route.tsx` 里复刻一份样式。demo 与真实 UI 漂移就失去意义。
+demo 的 preview 容器靠覆盖 `--app-*` 变量实时换肤，所以组件只要用 token
+就能自动跟随。
+- demo 的 `action` 会写回仓库里的 `demo-config.json`，只在本地开发有意义；
+Render 文件系统是临时的，生产已由门禁挡掉。
+- 存量页面按「碰到就改」收敛，不做全量重写。已知遗留硬编码集中在
+`app.translate-v4-mvp/route.tsx`、`CreateTaskConfirmModal.tsx`、
+`V4JobCardParts.tsx`、`TaskQueueSection.tsx`。
+
 - The app should feel like a Shopify Admin tool: restrained, reliable, dense
 enough for repeated work, and not like a marketing landing page.
 - Polaris is the visual and semantic baseline. Ant Design is allowed for complex
@@ -1007,10 +1034,10 @@ Core files:
   `app/routes/api.onboarding.fast-coverage.ts`（Preparing 真进度：最重要 1 语 ×
   Products/Collection/Navigation/Pages/Shop 五个模块，逐 label POST；只写 Redis
   module 明细，**不**写 Turso 语言级汇总，避免污染权威覆盖率）。
-- 入口重定向: `app/routes/app._index/route.tsx` 调 `shouldRedirectToOnboarding`
-  决定跳 `/app/onboarding` 还是默认 `/app/translate-v4`；并在重定向前
-  `enqueueShopScan(install)`（幂等，尽早入队）。onboarding loader / `app.tsx` 也会
-  再入队一次（幂等）。
+- 入口重定向: `app/routes/app._index/route.tsx` 当前直接跳
+  `/app/translate-v4-mvp`；首次引导不再自动拦截 `/app`，仍可显式访问
+  `/app/onboarding`。install shop scan 继续由 `app.tsx` / onboarding loader
+  幂等入队。
 - Model: `ShopOnboarding`（每店一行，独立于 `Account.isNew`）。
 
 Data reuse（不重复建设）:

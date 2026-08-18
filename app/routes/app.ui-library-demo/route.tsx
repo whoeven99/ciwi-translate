@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { TitleBar } from "@shopify/app-bridge-react";
 import {
   json,
+  redirect,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from "@remix-run/node";
@@ -22,6 +23,7 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { authenticate } from "~/shopify.server";
+import { isProductionNodeEnv } from "~/config/nodeEnv.server";
 
 type DemoViewKey =
   | "componentLibrary"
@@ -2074,6 +2076,9 @@ function computePercent(value: string, total: string) {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  if (isProductionNodeEnv()) {
+    throw redirect("/app/translate-v4-mvp");
+  }
   await authenticate.admin(request);
   const config = await readStoredConfig();
 
@@ -2084,6 +2089,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  // This demo writes back to source files, so keep it local-only.
+  if (isProductionNodeEnv()) {
+    throw redirect("/app/translate-v4-mvp");
+  }
   await authenticate.admin(request);
 
   const formData = await request.formData();

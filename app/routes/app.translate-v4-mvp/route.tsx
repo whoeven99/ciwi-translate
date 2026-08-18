@@ -71,6 +71,7 @@ type Recommendation = {
   targets: string[];
   modules: string[];
   pendingItems: number;
+  contentChanged: boolean;
   tone: "success" | "attention" | "info";
 };
 
@@ -313,14 +314,13 @@ function buildRecommendations(
         targets: [row.locale],
         modules: DEFAULT_MODULE_KEYS,
         pendingItems: row.pendingItems,
+        contentChanged,
         tone: contentChanged ? "info" : coverageTone(row.percent),
       } satisfies Recommendation;
     })
     .filter((item) => item.reasons.length > 0)
     .sort((a, b) => {
-      const changedA = a.reasons.some((reason) => reason === t("v4Mvp.recommended.reasonChanged"));
-      const changedB = b.reasons.some((reason) => reason === t("v4Mvp.recommended.reasonChanged"));
-      if (changedA !== changedB) return changedA ? -1 : 1;
+      if (a.contentChanged !== b.contentChanged) return a.contentChanged ? -1 : 1;
       return b.pendingItems - a.pendingItems;
     });
 }
