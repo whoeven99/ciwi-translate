@@ -25,6 +25,7 @@ import { message } from "~/ui/message";
 import { authenticate } from "~/shopify.server";
 import type { RootState } from "~/store";
 import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
+import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import type { CoverageSummary } from "~/server/translateV4/coverage.server";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import {
@@ -53,7 +54,10 @@ import {
 import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import { normalizeShopQuota, type ShopQuota } from "~/lib/translationQuota";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
-import { buildCreateTaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
+import {
+  buildCreateTaskCreditsPurchaseContext,
+  buildTranslateV4TaskCreditsPurchaseContext,
+} from "~/utils/creditsPurchaseTaskContext";
 
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -596,7 +600,7 @@ export default function TranslateV4MvpRoute() {
       const result = await createTranslateV4Tasks({
         source: primaryLocale,
         targets: nextTargets,
-        modules: nextModules,
+        modules: expandV2ModuleKeys(nextModules),
         aiModel: nextAiModel,
         isCover: nextIsCover,
         isHandle: nextIsHandle,
@@ -605,8 +609,14 @@ export default function TranslateV4MvpRoute() {
         shop,
       });
 
+      if (result.validationError) {
+        message.warning(translateV4Message(result.validationError, t));
+        return false;
+      }
+
+      const summary = formatV4CreateTasksMessage(result, t, localeRegionCode);
       if (result.created.length > 0) {
-        message.success(formatV4CreateTasksMessage(result, t, localeRegionCode));
+        message.success(`${summary} ${t("v4.create.createdBelow")}`);
         await Promise.all([refreshTasks(), refreshQuota(), refreshCoverage(false)]);
         setWorkbenchTab("queue");
         setTimeout(() => {
@@ -615,9 +625,20 @@ export default function TranslateV4MvpRoute() {
             block: "start",
           });
         }, 120);
+        if (result.failed.length > 0) {
+          message.warning(
+            result.failed
+              .map(
+                (item) =>
+                  `${localeRegionCode(item.target)}: ${translateV4Message(item.error, t)}`,
+              )
+              .join("；"),
+            6,
+          );
+        }
         return true;
       } else {
-        message.error(formatV4CreateTasksMessage(result, t, localeRegionCode));
+        message.error(summary);
         return false;
       }
     } catch (err) {
@@ -634,6 +655,18 @@ export default function TranslateV4MvpRoute() {
     t,
     targetOptions,
   ]);
+
+  const openTaskCreditsModal = useCallback(
+    (job: TranslationJobProgressSummary) => {
+      openCreditsPurchaseModal(
+        buildTranslateV4TaskCreditsPurchaseContext(
+          job,
+          normalizedQuota?.remaining ?? null,
+        ),
+      );
+    },
+    [normalizedQuota],
+  );
 
   const jobsRef = useRef<TranslationJobProgressSummary[]>([]);
   const previousActiveTaskIdsRef = useRef<string[]>([]);
@@ -791,21 +824,42 @@ export default function TranslateV4MvpRoute() {
           body: JSON.stringify({ taskId, shopName: shop, action: actionType }),
         });
         const data = await readJsonResponse<{ ok?: boolean; error?: string }>(res);
-        if (!data.ok) {
-          message.error(
-            data.error ? translateV4Message(data.error, t) : t("v4.actionFailed"),
-          );
+        if (data.ok) {
+          const label =
+            actionType === "delete"
+              ? t("v4.deleted")
+              : actionType === "resume"
+                ? t("v4.resuming")
+                : actionType === "pause"
+                  ? t("v4.paused")
+                  : t("v4.cancelled");
+          message.success(label);
+          await Promise.all([refreshTasks(), refreshQuota()]);
+          return true;
+        }
+        if (
+          actionType === "resume" &&
+          data.error === "v4.create.noCreditsPricing"
+        ) {
+          const targetJob = jobs.find((item) => item.taskId === taskId) ?? null;
+          if (targetJob) {
+            openTaskCreditsModal(targetJob);
+          } else {
+            openCreditsPurchaseModal();
+          }
           return false;
         }
-        await Promise.all([refreshTasks(), refreshQuota()]);
-        return true;
+        message.error(
+          data.error ? translateV4Message(data.error, t) : t("v4.actionFailed"),
+        );
+        return false;
       } catch (err) {
         console.error("[translate-v4-mvp] task action failed:", err);
         message.error(t("v4.actionFailedRetry"));
         return false;
       }
     },
-    [refreshQuota, refreshTasks, shop, t],
+    [jobs, openTaskCreditsModal, refreshQuota, refreshTasks, shop, t],
   );
 
   return (
@@ -1034,7 +1088,7 @@ export default function TranslateV4MvpRoute() {
                   jobs={jobs}
                   translateSlotBusy={translateSlotBusy}
                   loading={jobsLoading}
-                  onBuyCredits={() => navigate("/app/pricing")}
+                  onBuyCredits={openTaskCreditsModal}
                   onAction={handleTaskAction}
                 />
               )}

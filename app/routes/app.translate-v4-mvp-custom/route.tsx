@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
+import { useLoaderData, useLocation, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { BlockStack, Button, InlineStack, Page, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
@@ -19,12 +19,13 @@ import {
   buildUntranslatedRatioByLocale,
   useCreateTaskEstimate,
 } from "~/routes/app.translate-v4/useCreateTaskEstimate";
-import { formatV4CreateTasksMessage } from "~/routes/app.translate-v4/v4I18n";
+import { formatV4CreateTasksMessage, translateV4Message } from "~/routes/app.translate-v4/v4I18n";
 import { localeRegionCode } from "~/routes/app.translate-v4/localeDisplay";
 import { CreateTaskCard } from "~/routes/app.translate-v4/components/CreateTaskCard";
 import { CreateTaskConfirmModal } from "~/routes/app.translate-v4/components/CreateTaskConfirmModal";
 import { CreateTaskQuotaGateModal } from "~/routes/app.translate-v4/components/CreateTaskQuotaGateModal";
 import { v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
+import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
@@ -33,6 +34,15 @@ import { normalizeShopQuota, type ShopQuota } from "~/lib/translationQuota";
 import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 import { buildCreateTaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
+import {
+  clearCreateTaskDraft,
+  loadCreateTaskDraft,
+  saveCreateTaskDraft,
+} from "~/utils/createTaskDraft";
+import {
+  parseBillingReturn,
+  stripBillingReturnParams,
+} from "~/utils/billingReturn";
 
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -90,9 +100,11 @@ export default function TranslateV4MvpCustomRoute() {
   const { t } = useTranslation();
   const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const plan = useSelector((state: RootState) => state.userConfig.plan);
   const isNew = useSelector((state: RootState) => state.userConfig.isNew);
+  const billingDraftRestoredRef = useRef(false);
 
   const targetOptions = useMemo(
     () =>
@@ -191,6 +203,16 @@ export default function TranslateV4MvpCustomRoute() {
           : "insufficient_pricing"
       : "ready";
 
+  const persistCreateTaskDraft = useCallback(() => {
+    saveCreateTaskDraft(shop, {
+      targets,
+      modules,
+      aiModel,
+      isCover,
+      isHandle,
+    });
+  }, [aiModel, isCover, isHandle, modules, shop, targets]);
+
   const refreshCoverage = useCallback(async () => {
     setCoverageLoading(true);
     try {
@@ -230,6 +252,52 @@ export default function TranslateV4MvpCustomRoute() {
     void Promise.all([refreshCoverage(), refreshQuota()]);
   }, [refreshCoverage, refreshQuota]);
 
+  useEffect(() => {
+    if (billingDraftRestoredRef.current) return;
+    const billing = parseBillingReturn(location.search);
+    if (!billing) return;
+    billingDraftRestoredRef.current = true;
+
+    const cleanedPath = stripBillingReturnParams(
+      `${location.pathname}${location.search}${location.hash}`,
+    );
+    navigate(cleanedPath, { replace: true });
+
+    const draft = loadCreateTaskDraft(shop);
+    if (!draft) return;
+
+    const allowedTargets = new Set(targetOptions.map((option) => option.value));
+    const restoredTargets = draft.targets.filter((locale) =>
+      allowedTargets.has(locale),
+    );
+    const allowedModules = new Set<string>(DEFAULT_MODULE_KEYS);
+    const restoredModules = draft.modules.filter((mod) =>
+      allowedModules.has(mod),
+    );
+    const allowedModels = new Set(AI_MODEL_OPTIONS.map((option) => option.value));
+    const restoredModel = allowedModels.has(draft.aiModel)
+      ? draft.aiModel
+      : DEFAULT_AI_MODEL;
+
+    if (restoredTargets.length > 0) setTargets(restoredTargets);
+    if (restoredModules.length > 0) setModules(restoredModules);
+    setAiModel(restoredModel);
+    setIsCover(draft.isCover);
+    setIsHandle(draft.isHandle);
+    setCreateConfirmOpen(true);
+    void refreshQuota();
+    message.info(t("v4.create.draftRestored"));
+  }, [
+    location.hash,
+    location.pathname,
+    location.search,
+    navigate,
+    refreshQuota,
+    shop,
+    t,
+    targetOptions,
+  ]);
+
   const handleCreateRequest = useCallback(() => {
     if (createQuotaGatePending) {
       message.info(
@@ -254,14 +322,19 @@ export default function TranslateV4MvpCustomRoute() {
       return;
     }
     if (createQuotaGateMode !== null) return;
+    if (remainingCredits == null) {
+      message.info(t("v4.create.quotaUnavailable"));
+      return;
+    }
 
     setCreateConfirmOpen(false);
+    clearCreateTaskDraft(shop);
     setCreating(true);
     try {
       const result = await createTranslateV4Tasks({
         source: primaryLocale,
         targets,
-        modules,
+        modules: expandV2ModuleKeys(modules),
         aiModel,
         isCover,
         isHandle,
@@ -270,9 +343,25 @@ export default function TranslateV4MvpCustomRoute() {
         shop,
       });
 
+      if (result.validationError) {
+        message.warning(translateV4Message(result.validationError, t));
+        return;
+      }
+
       const resultMessage = formatV4CreateTasksMessage(result, t, localeRegionCode);
       if (result.created.length > 0) {
         message.success(resultMessage);
+        if (result.failed.length > 0) {
+          message.warning(
+            result.failed
+              .map(
+                (item) =>
+                  `${localeRegionCode(item.target)}: ${translateV4Message(item.error, t)}`,
+              )
+              .join("；"),
+            6,
+          );
+        }
         navigate("/app/translate-v4-mvp?tab=queue");
       } else {
         message.error(resultMessage);
@@ -293,6 +382,7 @@ export default function TranslateV4MvpCustomRoute() {
     modules,
     navigate,
     primaryLocale,
+    remainingCredits,
     shop,
     t,
     targetOptions,
@@ -360,6 +450,7 @@ export default function TranslateV4MvpCustomRoute() {
         scenario={createConfirmScenario}
         onClose={() => setCreateConfirmOpen(false)}
         onConfirmCreate={handleCreateConfirm}
+        onBeforeBilling={persistCreateTaskDraft}
         onBuyCredits={(detailedCredits) => {
           setCreateConfirmOpen(false);
           openCreditsPurchaseModal(
