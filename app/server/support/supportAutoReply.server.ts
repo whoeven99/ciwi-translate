@@ -176,17 +176,10 @@ export function detectLocaleFromMessageContent(content: string): string | null {
   return null;
 }
 
-/** 消息语言 > 客户端 UI 语言 > en。 */
-export function resolveSupportAutoReplyLocale(
-  content: string,
-  clientLocale?: string | null,
-): string {
+/** 仅从消息正文确认语言；无法确认时默认 en（不用 App UI 语言）。 */
+export function resolveSupportAutoReplyLocale(content: string): string {
   const fromContent = detectLocaleFromMessageContent(content);
   if (fromContent && SUPPORTED_LOCALES.has(fromContent)) return fromContent;
-
-  const fromClient = normalizeSupportLocale(clientLocale);
-  if (fromClient && SUPPORTED_LOCALES.has(fromClient)) return fromClient;
-
   return "en";
 }
 

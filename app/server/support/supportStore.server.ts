@@ -1,4 +1,5 @@
 import prisma from "../../db.server";
+import { isProductionNodeEnv } from "~/config/nodeEnv.server";
 import { sendSupportMessageFeishuNotify } from "../feishu/sendSupportMessageFeishuNotify.server";
 import {
   attachmentsFromPayload,
@@ -126,6 +127,9 @@ export async function getConversationForShop(
 const OFF_HOURS_AUTO_REPLY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 async function hasRecentOffHoursAutoReply(conversationId: string): Promise<boolean> {
+  // 测试/开发环境不冷却，方便反复验证自动回复；生产仍 24h 内仅一次。
+  if (!isProductionNodeEnv()) return false;
+
   const since = new Date(Date.now() - OFF_HOURS_AUTO_REPLY_COOLDOWN_MS);
   const existing = await prisma.supportMessage.findFirst({
     where: {
@@ -143,11 +147,10 @@ async function hasRecentOffHoursAutoReply(conversationId: string): Promise<boole
 async function appendOffHoursAutoReply(
   conversationId: string,
   shopMessageContent: string,
-  clientLocale: string | null | undefined,
 ): Promise<void> {
   if (await hasRecentOffHoursAutoReply(conversationId)) return;
 
-  const locale = resolveSupportAutoReplyLocale(shopMessageContent, clientLocale);
+  const locale = resolveSupportAutoReplyLocale(shopMessageContent);
   const autoContent = getSupportAutoReplyText(locale);
 
   const autoMessage = await prisma.supportMessage.create({
@@ -217,11 +220,7 @@ export async function appendShopMessage(
     },
   });
 
-  await appendOffHoursAutoReply(
-    conversation.id,
-    content || preview,
-    options.clientLocale,
-  );
+  await appendOffHoursAutoReply(conversation.id, content || preview);
 
   void sendSupportMessageFeishuNotify({
     shop,
