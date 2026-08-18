@@ -18,10 +18,15 @@ import {
   V4_MESSAGE_QUOTA_INSUFFICIENT_PARTIAL,
   V4_MESSAGE_WRITEBACK_ALL_FAILED,
 } from "./userFacingMessages.js";
+import {
+  reconcileBenignWritebackFailures,
+  type WritebackFailedResource,
+} from "./writebackUserErrors.js";
 
 export type FinalizeAfterWritebackInput = {
   writebackDone: number;
   writebackFailed: number;
+  failedResources?: WritebackFailedResource[];
   metrics?: TranslationV4Job["metrics"];
   stageTimings?: StageTimings | null;
 };
@@ -33,16 +38,31 @@ export async function finalizeJobAfterWriteback(
 ): Promise<void> {
   const { shopName, id: jobId } = job;
   const latestJob = await getJob(shopName, jobId);
+
+  const reconciled = reconcileBenignWritebackFailures(
+    input.writebackDone,
+    input.writebackFailed,
+    input.failedResources,
+  );
+  if (reconciled.reconciled) {
+    console.log(
+      `[finalize] job=${jobId} benign writeback failures treated as success count=${input.writebackFailed}`,
+    );
+  }
+
+  const writebackDone = reconciled.writebackDone;
+  const writebackFailed = reconciled.writebackFailed;
+
   const mergedMetrics = {
     ...(latestJob?.metrics ?? job.metrics),
     ...(input.metrics ?? {}),
-    writebackDone: input.writebackDone,
-    writebackFailed: input.writebackFailed,
+    writebackDone,
+    writebackFailed,
   };
 
   const initTotal = mergedMetrics.initTotal ?? job.metrics?.initTotal ?? 0;
   const nothingToTranslate = initTotal === 0;
-  const wroteAnything = nothingToTranslate || input.writebackDone > 0;
+  const wroteAnything = nothingToTranslate || writebackDone > 0;
 
   const tTotal = mergedMetrics.translateTotal ?? 0;
   const tAttempted =
@@ -143,6 +163,6 @@ export async function finalizeJobAfterWriteback(
   );
 
   console.log(
-    `[finalize] job=${jobId} status=${finalStatus} written=${input.writebackDone} failed=${input.writebackFailed}`,
+    `[finalize] job=${jobId} status=${finalStatus} written=${writebackDone} failed=${writebackFailed}`,
   );
 }

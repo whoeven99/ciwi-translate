@@ -10,11 +10,15 @@ import {
 } from "@remix-run/react";
 import { Provider } from "react-redux";
 import store from "./store";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { createHead } from "remix-island";
 import { globalStore } from "./globalStore";
 import { patchToastDeduplication } from "./ui/message";
 import { reportClientError } from "./utils/clientLog";
+import {
+  sanitizeEmbeddedAppHref,
+  sanitizeEmbeddedAppPath,
+} from "./lib/sanitizeEmbeddedAppPath";
 
 import "./styles.css";
 
@@ -236,8 +240,19 @@ function summarizeConsoleArg(value: unknown) {
 
 export function ErrorBoundary() {
   const error = useRouteError();
-  console.error("Root Error:", error);
   const loggedRef = useRef(false);
+  const recoverableHref =
+    typeof window === "undefined"
+      ? null
+      : sanitizeEmbeddedAppHref(
+          `${window.location.pathname}${window.location.search}${window.location.hash}`,
+        );
+
+  useLayoutEffect(() => {
+    if (!recoverableHref) return;
+    window.location.replace(recoverableHref);
+  }, [recoverableHref]);
+
   const htmlErrorStatusCode = getHtmlErrorStatusCode(error);
   let errorCode = "500";
   if (isRouteErrorResponse(error)) {
@@ -301,8 +316,18 @@ export function ErrorBoundary() {
 
   const currentError = errorMessages[errorCode] || errorMessages["500"];
 
+  if (!recoverableHref) {
+    console.error("Root Error:", error);
+  }
+
   useEffect(() => {
     if (loggedRef.current) return;
+    if (
+      typeof window !== "undefined" &&
+      sanitizeEmbeddedAppPath(window.location.pathname)
+    ) {
+      return;
+    }
     loggedRef.current = true;
     void reportClientError("root_error_boundary", error, {
       shop: globalStore.shop,

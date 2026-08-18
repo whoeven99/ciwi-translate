@@ -88,7 +88,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `scripts/*`                                                  | Migration, audit, diagnostic, cleanup, and one-off operational scripts.                   |
 | `public/locales/*/translation.json`                          | App i18n strings (15 locales，清单在 `app/lib/appI18nLanguages.ts`)。手写 `en` + `zh-CN`，其余可用 `npm run translate` 机翻补齐。 |
 | `.github/workflows/tsf-deploy.yml`                           | Manual Shopify extension/config and Render app/worker deployment workflow.                |
-| `Dockerfile`                                                 | Render container build for the Remix app; the worker is built from `worker/`.             |
+| `Dockerfile`                                                 | Render container build for the Remix app (`node:22-slim`); the worker is built from `worker/`. |
 
 
 
@@ -187,6 +187,11 @@ best-effort Shopify cancel when token present) before Account soft-delete and
 Session delete.
 `APP_UNINSTALLED` snapshots subscription/quota/size via
 `uninstallSnapshot.server.ts` before cleanup, then sends that text to Feishu.
+Lifetime-first install (`bound: true` Account create in `app.tsx` loader) and
+lifetime-first `BillingLog.SUBSCRIPTION_ACTIVATED` (count === 1) also send to
+the same support webhook via `lifecycleFeishuNotify.server.ts`; reinstall /
+plan change / resubscribe do not. Worker `billingSubscriptionReconcile`
+notifies only when it inserts the shop's first ACTIVATED row (webhook miss).
 Billing webhooks ACK first and process in the background
 (`APP_PURCHASES_ONE_TIME_UPDATE` / `APP_SUBSCRIPTIONS_UPDATE` are fire-and-forget
 with `.catch`; ledger writes are idempotent and failures are recovered by worker
@@ -523,7 +528,10 @@ metric reconciliation helpers kept aligned with `app/server/translateV4/*`.
 - `worker/src/services/tsfQuota.ts`: quota query/deduct adapter.
 - `worker/src/services/stagePool.ts`: stage concurrency (auto/manual slot pools).
 - `worker/src/services/finalizeJobAfterWriteback.ts`: post-writeback final status
-selection and Redis `items_count` refresh for completed jobs.
+selection and Redis `items_count` refresh for completed jobs. Benign Shopify
+writeback rejections (`too many translation keys`, field length validation on
+resource) are reconciled to `writebackDone` at finalize so jobs are not marked
+`WRITEBACK_ALL_FAILED` when every failure is a platform constraint (`writebackUserErrors.ts`).
 - `worker/src/services/recordJobUsageSnapshot.ts`: task-terminal usage snapshot
 into Turso `TranslateV4JobUsage` (time / tokens / units / chars; survives Cosmos
 job retention cleanup).
@@ -671,6 +679,8 @@ via clock-aligned `Asia/Shanghai` `:45` (not process-local `:30`).
 Prisma/LibSQL 多行栈常被 Render 拆开且只有中间行带 `level=error`；digest
 会对残缺的 `Error occurred during query execution` 回拉同资源邻近日志，
 把 `SqliteError.message`（如 `capacity temporarily exceeded`）拼进飞书样本。
+发版噪音默认过滤：`AbortError`、Render SIGTERM 时的 `npm error *`、旧 hash
+`/assets/*` 的 `No route matches URL`（见 `IGNORE_MESSAGE_PATTERNS`）。
 - Email: `TENCENT_CLOUD_KEY_ID`, `TENCENT_CLOUD_KEY`, and template/recipient
 variables consumed by `workerEmail.ts` and TSF email helpers.
 
@@ -703,18 +713,24 @@ redact billing cleanup (local cancel always; Shopify `appSubscriptionCancel`
 best-effort only on SHOP_REDACT when token present; APP_UNINSTALLED skips
 outbound cancel). Reinstall path in `ensureAccount.server.ts` also clears
 leftover `AppSubscription` when restoring a soft-deleted Account.
-- `app/server/billing/uninstallSnapshot.server.ts`: pre-cleanup snapshot for
-uninstall Feishu (plan, interval, quota, size tier via
-`shopScan/shopSizeProfile.server.ts`).
+- `app/server/billing/uninstallSnapshot.server.ts`: shop billing snapshot +
+ Feishu text for uninstall / first-install / first-subscribe (plan, interval,
+ quota, size tier via `shopScan/shopSizeProfile.server.ts`).
+- `app/server/billing/lifecycleFeishuNotify.server.ts`: lifetime-first install
+ (`bound: true`) and lifetime-first `SUBSCRIPTION_ACTIVATED` (Turso count === 1)
+ to `FEISHU_WEBHOOK_URL_SUPPORT`; same group as uninstall.
 - `app/server/billing/email/billingEmail.server.ts`: purchase/subscribe/renewal emails.
 - `app/server/billing/email/welcomeEmail.server.ts`: first-install welcome email
-(`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init).
+(`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init;
+ same `bound` gate also fires the first-install Feishu notify).
 - 收件人/后台 token：`app/server/shop/fetchShopContact.server.ts`（Shopify
 GraphQL 拉店铺联系邮箱）与 `app/server/shop/offlineSessionToken.server.ts`
 （App 侧唯一的 offline token 读取口，Turso `Session`；storefront switcher /
 liquid collect 也走它）。卸载后取不到 token 属预期，调用方需静默降级。
 - `worker/src/services/billingSubscriptionReconcile.ts`: worker-only Shopify
 subscription reconciliation (writes Turso directly; does not call TSF Web).
+If it inserts the shop's first `SUBSCRIPTION_ACTIVATED` BillingLog, it sends
+the same first-subscribe Feishu notify (`lifecycleFeishuNotify.ts`).
 Syncs `AppSubscription.currentPeriodEnd/Start` from Shopify for MONTHLY and
 ANNUAL; for ANNUAL also grants monthly credits every 30 days (max 12 per
 Shopify year) derived from `currentPeriodEnd` (never from `createdAt`).
@@ -833,8 +849,11 @@ redirect records.
  `LiquidRule(status=PENDING, source=auto, afterTranslation="")`，**不在 Web
  进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
  `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
- 过滤）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
- shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
+ 过滤，含 `looksLikeHtmlMarkupFragment`（HTML 属性碎片）与
+ `looksLikeAutoLiquidJunk`（评价组件/价格/SKU/年款等；经
+ `translationRuleJudgment("liquid", …)` 入库）。店面采集另跳过
+ `isPriceRelatedElement` 与评价 App 常见容器 class。其它门控：全局
+ `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
  名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
  Redis 日聚合 `tsf:auto_liquid:deny:req|texts|shops:{utcYmd}`（8d TTL）。
   服务端细日志默认开（`AUTO_LIQUID_DEBUG` 默认 true，可设 false）；店面
@@ -864,7 +883,9 @@ redirect records.
  `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
- 慢删 `source='auto'`（绝不碰 manual）。管理页
+ 慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 auto+PENDING junk
+（HTML 属性碎片 + `looksLikeAutoLiquidJunk`）。claim PENDING 时也会跳过并
+删除这类行，避免拿去翻译。管理页
  `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
 
 - **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
@@ -1253,17 +1274,19 @@ For "合入PR然后发布测试环境", the script will:
 | App Proxy 401/404                | `api.storefront.$.ts`                                 | `server/storefront/auth.server.ts`, extension caller                                                    |
 | 店面数据不更新 / Turso 502       | `app/server/storefront/cache.server.ts`               | `app/config/libsqlFetch.server.ts`, `api.storefront.$.ts`, 写入方的 `invalidateStorefrontCache` 调用     |
 | Manage Translation resource page | `app/routes/app.manage_translation_.<type>/route.tsx` | `manageTranslationRoute.server.ts`, `pictureClient.ts`                                                  |
+| `/app/...&icon=data:image` 404   | `app/lib/sanitizeEmbeddedAppPath.ts`                  | `app/routes/app.$.tsx`, `app/root.tsx` ErrorBoundary                                                    |
 | Picture translation/storage      | `app/server/picture/picture.server.ts`                | `api.picture.*`, `api.translate-v4.image`, `UserPicture`, App Proxy picture branches                    |
 | Glossary                         | `app/routes/app.glossary/route.tsx`                   | `glossary.server.ts`, Worker `tsfDb.loadGlossaryRowsFromTsf` via `translationCoreRuntime.ts`            |
 | Shop profile / AI profile        | `app/routes/app.shop-profile/route.tsx`               | `server/shopScan/*`, `shopProfileContext.server.ts` / `shopProfilePrompt.server.ts`, worker shop scan   |
 | Support chat / notifications     | `app/components/SupportChatWidget.tsx`                | `api.support.tsx`, `supportStore.server.ts`, Feishu/SES helpers                                         |
+| 安装 / 首次订阅 / 卸载飞书       | `app/server/billing/lifecycleFeishuNotify.server.ts`  | `uninstallSnapshot.server.ts`, `app.tsx` loader, `handleBillingWebhook.server.ts`, worker `lifecycleFeishuNotify.ts` |
 | First-time onboarding            | `app/routes/app.onboarding/route.tsx`                 | `app/server/onboarding/onboarding.server.ts`, `app/routes/app._index/route.tsx`, `ShopOnboarding`      |
 | Auto translate                   | `worker/src/services/autoTranslate.ts`                | `autoScanSchedule.ts`, `ShopTargetLocale`, module catalog                                               |
 | Scheduled shop scan              | `worker/src/services/scheduledShopScan.ts`            | `autoScanSchedule.ts`, `shopScanCosmos.ts`, `shopScanWorker.ts`                                         |
 | Public storefront locale audit   | `scripts/storefront-locale-audit.mjs`                 | Cursor browser locale discovery; local tree under `scripts/tmp/storefront-audit/`                       |
 | Translation core/filter rule     | `packages/translation-core/src/*`                     | App and Worker runtime adapters, focused builds                                                         |
 | i18n copy                        | `public/locales/en/translation.json`                  | `public/locales/zh-CN/translation.json`, other locales                                                  |
-| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml`             |
+| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`（`@shopify/shopify-app-remix` 5 / `@shopify/shopify-api` 14，需 Node ≥22）、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml` |
 | Deploy config                    | `shopify.app*.toml`                                   | `Dockerfile`, Render/GitHub Actions config                                                              |
 
 
@@ -1699,6 +1722,11 @@ logging uses beacon-style client logging instead of route `fetcher.submit`.
 - `pricing` AbortError: Remix fetcher replacement or route changes can produce
 expected aborts. Global client error reporting should ignore AbortError-like
 noise, and exposure logging should prefer `reportClientLog(..., { beacon: true })` over competing fetcher submits.
+- `/app/manage_translation&icon=data:image/png;base64,...` 404: Shopify Admin /
+  App Bridge can append the 32×32 nav icon with `&` and no `?`, so Remix treats
+  it as pathname. Recover via `sanitizeEmbeddedAppPath` (`app.$.tsx` redirect +
+  root ErrorBoundary `location.replace`). Do not add a dedicated route for the
+  junk URL. `entry.server` is too late (routing already ran).
 
 
 

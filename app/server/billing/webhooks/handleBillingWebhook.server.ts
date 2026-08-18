@@ -8,6 +8,7 @@ import {
   shouldSendTsfSubscriptionRenewalEmail,
 } from "../email/billingEmail.server";
 import { applyActiveSubscription } from "../subscription/activateSubscription.server";
+import { scheduleFirstSubscribeFeishuNotify } from "../lifecycleFeishuNotify.server";
 import { cancelSubscription } from "../subscription/cancelSubscription.server";
 import { applyTokenPackPurchase } from "../purchase/applyTokenPack.server";
 import {
@@ -248,6 +249,7 @@ export async function handleTsfSubscriptionWebhook(params: {
 
   // 邮件与 BillingLog 幂等查询全部离开 webhook 关键路径。
   if (outcome === "activated") {
+    scheduleFirstSubscribeFeishuNotify(params.shop);
     void sendTsfSubscribeSuccessEmail({
       shop: params.shop,
       plan,

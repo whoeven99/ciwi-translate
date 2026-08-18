@@ -2885,7 +2885,72 @@ function isAutoLiquidCandidate(text) {
   if (t.length < AUTO_LIQUID_MIN_LEN || t.length > AUTO_LIQUID_MAX_LEN) return false;
   // 至少含一个字母（含 CJK / 各语言字母），过滤纯数字 / 符号
   if (!/\p{L}/u.test(t)) return false;
+  if (looksLikeHtmlMarkupFragment(t)) return false;
+  if (looksLikeAutoLiquidJunk(t)) return false;
   return true;
+}
+
+/**
+ * 与 translation-core `looksLikeHtmlMarkupFragment` 对齐：拦 img/source 属性碎片。
+ * 例：`}" loading="lazy" width="1536" height="2048" />`
+ */
+function looksLikeHtmlMarkupFragment(text) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  if (/\b(loading|srcset|decoding|fetchpriority)\s*=\s*["']/i.test(t)) return true;
+  const attrs = t.match(/\b[\w:-]+\s*=\s*(["'])(?:(?!\1).)*\1/g);
+  if (attrs && attrs.length >= 2) return true;
+  if (/^[}\]"'`,;]+/.test(t) && /\b[\w:-]+\s*=\s*["']/.test(t)) return true;
+  if (/\/\s*>\s*$/.test(t) && /\b[\w:-]+\s*=\s*["']/.test(t)) return true;
+  return false;
+}
+
+/**
+ * 与 translation-core `autoLiquidJunk.ts` 对齐：评价组件、价格、SKU、年款等 junk。
+ */
+function looksLikeAutoLiquidJunk(text) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  if (
+    /\b(reviews?|ratings?|verified|stars?|sterren|stelle|étoiles?|estrellas?|bewertungen?)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (/★/.test(t)) return true;
+  if (/\d+\s*stars?\s*:/i.test(t)) return true;
+  if (/\d+\s*[:：]\s*\d+/.test(t) && /%/.test(t)) return true;
+  if (/[$€£¥₹]\s*\d[\d,.'’]*/.test(t)) return true;
+  if (/\d[\d,.'’]*\s*(JPY|EUR|USD|GBP|CNY|RMB)\b/i.test(t)) return true;
+  if (/^SKU\s*[：:]/i.test(t)) return true;
+  if (/\b(19|20)\d{2}\s+and\s+later\b/i.test(t)) return true;
+  if (t.length <= 80 && /\b(19|20)\d{2}\s*[-–—]\s*(19|20)\d{2}\b/.test(t)) return true;
+  if (!/\s/.test(t) && /^[A-Z0-9]{4,12}$/i.test(t) && /\d/.test(t)) return true;
+  if (/^\d+\s*%\s*OFF$/i.test(t)) return true;
+  if (/^(EUR|USD|GBP|JPY|CNY|RMB)\s*[€$£¥]?$/i.test(t)) return true;
+  return false;
+}
+
+/** 评价 App 常见容器：采集时跳过整块 DOM。 */
+const AUTO_LIQUID_REVIEW_ANCESTOR_SELECTOR = [
+  '[class*="judgeme"]',
+  '[class*="loox"]',
+  '[class*="yotpo"]',
+  '[class*="stamped"]',
+  '[class*="review-widget"]',
+  '[class*="product-reviews"]',
+  '[class*="rating"]',
+  '[id*="review"]',
+].join(", ");
+
+function isAutoLiquidReviewAncestor(element) {
+  if (!element || typeof element.closest !== "function") return false;
+  try {
+    return Boolean(element.closest(AUTO_LIQUID_REVIEW_ANCESTOR_SELECTOR));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -3018,6 +3083,8 @@ function createAutoLiquidTextWalker(root, ciwiBlock) {
       }
       if (parent.isContentEditable) return NodeFilter.FILTER_REJECT;
       if (isElementHiddenForTranslation(parent)) return NodeFilter.FILTER_REJECT;
+      if (isPriceRelatedElement(parent)) return NodeFilter.FILTER_REJECT;
+      if (isAutoLiquidReviewAncestor(parent)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });

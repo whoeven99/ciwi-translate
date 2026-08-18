@@ -36,7 +36,7 @@
   },
   "type": "module",
   "engines": {
-    "node": "^18.20 || ^20.10 || >=21.0.0"
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "@ciwi/translation-core": "*",
@@ -52,8 +52,8 @@
     "@remix-run/serve": "^2.7.1",
     "@shopify/app-bridge-react": "^4.1.8",
     "@shopify/polaris": "^12.0.0",
-    "@shopify/shopify-app-remix": "^4.2.0",
-    "@shopify/shopify-app-session-storage-prisma": "^9.0.0",
+    "@shopify/shopify-app-remix": "^5.0.0",
+    "@shopify/shopify-app-session-storage-prisma": "^10.0.0",
     "@tiptap/extension-color": "^3.0.9",
     "@tiptap/extension-highlight": "^3.0.9",
     "@tiptap/extension-image": "^3.0.9",
