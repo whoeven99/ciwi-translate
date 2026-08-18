@@ -37,19 +37,22 @@ export type UninstallWinbackKind =
 
 const KIND_META: Record<
   UninstallWinbackKind,
-  { templateId: number; label: string }
+  { templateId: number; label: string; emoji: string }
 > = {
   paid_incomplete: {
     templateId: TEMPLATE_PAID_INCOMPLETE,
     label: "已付费未完成",
+    emoji: "⚠️",
   },
   never_first: {
     templateId: TEMPLATE_NEVER_FIRST,
     label: "未完成首次翻译",
+    emoji: "👋",
   },
   remaining_credits: {
     templateId: TEMPLATE_REMAINING_CREDITS,
     label: "剩余积分",
+    emoji: "💎",
   },
 };
 
@@ -101,9 +104,17 @@ export function resolveUninstallWinbackKind(input: {
   remainingCredits: number;
 }): UninstallWinbackKind | null {
   if (input.everPaid && input.hasIncomplete) return "paid_incomplete";
-  if (!input.hasCompleted) return "never_first";
   if (input.remainingCredits > 0) return "remaining_credits";
+  if (!input.hasCompleted) return "never_first";
   return null;
+}
+
+export function formatUninstallKindTitle(
+  shop: string,
+  kind: UninstallWinbackKind,
+): string {
+  const meta = KIND_META[kind];
+  return `${meta.emoji} 店铺卸载 · ${meta.label}：${shop}`;
 }
 
 function neverFirstBody(customerName: string): string {
@@ -271,13 +282,18 @@ async function claimUninstallEmailSlot(shop: string): Promise<boolean> {
 async function sendUninstallSnapshotFeishu(
   shop: string,
   snapshot: UninstallShopSnapshot | null,
-  skipReason?: string,
+  options?: {
+    kind?: UninstallWinbackKind | null;
+    skipReason?: string;
+  },
 ): Promise<void> {
-  const base = snapshot
-    ? formatUninstallFeishuMessage(snapshot)
+  const kind = options?.kind ?? null;
+  const title = kind
+    ? formatUninstallKindTitle(shop, kind)
     : `🛑 店铺卸载：${shop}`;
-  const message = skipReason
-    ? `${base}\n挽回邮件：未发（${skipReason}）`
+  const base = snapshot ? formatUninstallFeishuMessage(snapshot, title) : title;
+  const message = options?.skipReason
+    ? `${base}\n挽回邮件：未发（${options.skipReason}）`
     : base;
   const result = await sendFeishuTextMessage(message);
   if (!result.ok && !("skipped" in result && result.skipped)) {
@@ -300,7 +316,7 @@ async function notifyWinbackFeishu(params: {
     params.remainingCreditsLabel,
   );
   const message = [
-    "📧 卸载挽回邮件",
+    `${meta.emoji} 卸载挽回邮件 · ${meta.label}`,
     `店铺：${params.shop}`,
     `收件人：${maskEmail(params.to)}`,
     `分群：${meta.label}`,
@@ -375,22 +391,14 @@ async function resolveKindOrNotifySkip(params: {
     remainingCredits,
   });
 
-  if (!contact.email) {
-    console.warn(`${LOG} skip reason=no_recipient shop=${params.shop}`);
-    await sendUninstallSnapshotFeishu(
-      params.shop,
-      params.snapshot,
-      "payload 无店铺邮箱",
-    );
-    return null;
-  }
-
   const signals = await loadWinbackSignals(params.shop).catch((error) => {
     console.error(`${LOG} classify failed shop=${params.shop}`, error);
     return null;
   });
   if (!signals) {
-    await sendUninstallSnapshotFeishu(params.shop, params.snapshot, "分类失败");
+    await sendUninstallSnapshotFeishu(params.shop, params.snapshot, {
+      skipReason: "分类失败",
+    });
     return null;
   }
 
@@ -403,11 +411,18 @@ async function resolveKindOrNotifySkip(params: {
   });
   if (!kind) {
     console.info(`${LOG} skip reason=no_segment shop=${params.shop}`);
-    await sendUninstallSnapshotFeishu(
-      params.shop,
-      params.snapshot,
-      "已完成翻译且无剩余积分",
-    );
+    await sendUninstallSnapshotFeishu(params.shop, params.snapshot, {
+      skipReason: "已完成翻译且无剩余积分",
+    });
+    return null;
+  }
+
+  if (!contact.email) {
+    console.warn(`${LOG} skip reason=no_recipient shop=${params.shop}`);
+    await sendUninstallSnapshotFeishu(params.shop, params.snapshot, {
+      kind,
+      skipReason: "payload 无店铺邮箱",
+    });
     return null;
   }
 
@@ -427,7 +442,9 @@ async function runWinbackAfterClaim(params: {
   const resolved = await resolveKindOrNotifySkip(params);
   if (!resolved) return;
 
-  await sendUninstallSnapshotFeishu(params.shop, params.snapshot);
+  await sendUninstallSnapshotFeishu(params.shop, params.snapshot, {
+    kind: resolved.kind,
+  });
   await deliverWinback({
     shop: params.shop,
     kind: resolved.kind,
@@ -462,7 +479,9 @@ async function sendUninstallWinbackEmail(params: {
     });
   } catch (error) {
     console.error(`${LOG} unhandled after claim shop=${shop}`, error);
-    await sendUninstallSnapshotFeishu(shop, params.snapshot, "分类失败");
+    await sendUninstallSnapshotFeishu(shop, params.snapshot, {
+      skipReason: "分类失败",
+    });
   }
 }
 
