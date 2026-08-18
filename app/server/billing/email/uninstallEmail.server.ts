@@ -372,6 +372,10 @@ async function sendUninstallWinbackEmail(params: {
   const claimed = await claimUninstallEmailSlot(shop);
   if (!claimed) {
     console.info(`${LOG} skip reason=duplicate shop=${shop}`);
+    // 幂等只挡 SES；7 天内再卸仍发卸载飞书，避免测试店反复装卸时运营侧静默。
+    await sendUninstallSnapshotFeishu(shop, params.snapshot, {
+      skipReason: "7 天内已发过",
+    });
     return;
   }
 
