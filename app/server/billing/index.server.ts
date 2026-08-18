@@ -74,3 +74,4 @@ export {
   handleTsfSubscriptionWebhook,
   handleTsfPurchaseWebhook,
 } from "./webhooks/handleBillingWebhook.server";
+export { scheduleUninstallWinbackEmail } from "./email/uninstallEmail.server";

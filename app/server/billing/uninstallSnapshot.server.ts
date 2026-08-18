@@ -159,8 +159,12 @@ function formatLifecycleFeishuMessage(
 /** 组装卸载飞书纯文本（用清理前快照，避免清理后额度/订阅已空）。 */
 export function formatUninstallFeishuMessage(
   snap: UninstallShopSnapshot,
+  title?: string,
 ): string {
-  return formatLifecycleFeishuMessage(`🛑 店铺卸载：${snap.shop}`, snap);
+  return formatLifecycleFeishuMessage(
+    title ?? `🛑 店铺卸载：${snap.shop}`,
+    snap,
+  );
 }
 
 /** 店铺终身第一次创建 Account 时的安装飞书文案。 */
