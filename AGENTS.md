@@ -794,6 +794,10 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
+- Launch Credits（新手礼包）：店铺终身首次 `SUBSCRIPTION_ACTIVATED` 时按档写入
+  `trialCredits`（Basic 4M / Pro 8M / Premium 16M），`BillingLog` `TRIAL_GRANTED`
+  + `referenceId=launch_credits` 幂等；续费结转、不随月额度替换；App
+  `grantLaunchCredits.server.ts` 与 Worker `grantLaunchCredits.ts` 双路径发放。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
 (MONTHLY ≈ +30d, ANNUAL ≈ +365d). `currentPeriodStart = end - intervalDays`.

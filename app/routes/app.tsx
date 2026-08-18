@@ -41,6 +41,7 @@ import {
   setSource,
   setShop,
   setTotalChars,
+  setTrialCredits,
   setUpdateTime,
   setUserConfigIsLoading,
 } from "~/store/modules/userConfig";
@@ -199,6 +200,7 @@ function applyBootstrapToStore(
   }
   dispatch(setChars({ chars: bootstrap.chars }));
   dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
+  dispatch(setTrialCredits({ trialCredits: bootstrap.trialCredits ?? 0 }));
   if (bootstrap.isNew !== null) {
     dispatch(setIsNew({ isNew: bootstrap.isNew }));
   }

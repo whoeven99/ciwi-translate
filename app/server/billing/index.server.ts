@@ -44,6 +44,13 @@ export {
 } from "./lifecycleFeishuNotify.server";
 export { applyTokenPackPurchase } from "./purchase/applyTokenPack.server";
 export {
+  grantLaunchCreditsIfEligible,
+  resolveLaunchCreditsForPlanKey,
+  LAUNCH_CREDITS_BY_TIER,
+  LAUNCH_CREDITS_REFERENCE_ID,
+  type GrantLaunchCreditsResult,
+} from "./grant/grantLaunchCredits.server";
+export {
   resolveBillingBinding,
   type BindingResolution,
 } from "./binding/resolveBillingBinding.server";
