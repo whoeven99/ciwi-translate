@@ -1,0 +1,2425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CIWI UI Component Library Demo</title>
+    <style>
+      :root {
+        --p-color-bg: #f6f6f7;
+        --p-color-bg-surface: #ffffff;
+        --p-color-bg-surface-secondary: #f3f4f6;
+        --p-color-bg-surface-selected: #eef2ff;
+        --p-color-bg-surface-hover: #f8fafc;
+        --p-color-bg-surface-info: #eef6ff;
+        --p-color-bg-surface-success: #edf7ee;
+        --p-color-bg-surface-caution: #fff7e8;
+        --p-color-bg-surface-critical: #fff1f0;
+        --p-color-border: #d0d5dd;
+        --p-color-border-secondary: #e4e7ec;
+        --p-color-text: #182033;
+        --p-color-text-secondary: #55607a;
+        --p-color-text-tertiary: #7b869f;
+        --p-color-text-info: #1d4ed8;
+        --p-color-text-success: #0c5132;
+        --p-color-text-caution: #8a6116;
+        --p-color-text-critical: #be2d2f;
+
+        --app-color-bg: var(--p-color-bg);
+        --app-color-surface: var(--p-color-bg-surface);
+        --app-color-surface-secondary: var(--p-color-bg-surface-secondary);
+        --app-color-surface-selected: var(--p-color-bg-surface-selected);
+        --app-color-surface-hover: var(--p-color-bg-surface-hover);
+        --app-color-surface-info: var(--p-color-bg-surface-info);
+        --app-color-surface-success: var(--p-color-bg-surface-success);
+        --app-color-surface-caution: var(--p-color-bg-surface-caution);
+        --app-color-surface-critical: var(--p-color-bg-surface-critical);
+        --app-color-border: var(--p-color-border);
+        --app-color-border-secondary: var(--p-color-border-secondary);
+        --app-color-text: var(--p-color-text);
+        --app-color-text-secondary: var(--p-color-text-secondary);
+        --app-color-text-tertiary: var(--p-color-text-tertiary);
+        --app-accent-primary: #5467ff;
+        --app-accent-primary-hover: #4254e8;
+        --app-accent-primary-soft: rgba(84, 103, 255, 0.12);
+        --app-accent-growth: #1d9a7f;
+        --app-accent-growth-soft: rgba(29, 154, 127, 0.12);
+        --app-accent-utility: #c88b24;
+        --app-accent-utility-soft: rgba(200, 139, 36, 0.14);
+        --app-accent-critical: #d04d5f;
+        --app-accent-critical-soft: rgba(208, 77, 95, 0.12);
+        --app-color-brand-on-fill: #ffffff;
+
+        --app-font-size-page-title: 24px;
+        --app-font-size-section-title: 14px;
+        --app-font-size-body: 14px;
+        --app-font-size-body-small: 13px;
+        --app-font-size-caption: 12px;
+        --app-font-size-micro: 11px;
+
+        --app-space-100: 4px;
+        --app-space-200: 8px;
+        --app-space-300: 12px;
+        --app-space-400: 16px;
+        --app-space-500: 20px;
+        --app-space-600: 24px;
+        --app-space-page: 24px;
+        --app-card-padding: 16px;
+        --app-row-padding-y: 12px;
+        --app-button-height: 32px;
+        --demo-modal-width: 560px;
+
+        --app-radius-sm: 6px;
+        --app-radius-md: 8px;
+        --app-radius-lg: 12px;
+        --app-shadow-card: 0 10px 24px rgba(15, 23, 42, 0.04);
+        --app-shadow-card-strong: 0 18px 40px rgba(15, 23, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--app-color-bg);
+        color: var(--app-color-text);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        font-size: var(--app-font-size-body);
+        line-height: 1.5;
+      }
+
+      body {
+        min-height: 100vh;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      a {
+        color: var(--app-accent-primary);
+        text-decoration: none;
+      }
+
+      .demo-shell {
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .demo-sidebar {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow: auto;
+        padding: 24px 20px 28px;
+        border-right: 1px solid var(--app-color-border-secondary);
+        background: rgba(255, 255, 255, 0.84);
+        backdrop-filter: blur(12px);
+      }
+
+      .demo-sidebar h1 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.2;
+      }
+
+      .demo-sidebar p {
+        margin: 10px 0 0;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .sidebar-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+
+      .sidebar-section {
+        margin-top: 22px;
+        padding-top: 18px;
+        border-top: 1px solid var(--app-color-border-secondary);
+      }
+
+      .sidebar-section h2 {
+        margin: 0 0 12px;
+        font-size: 14px;
+        line-height: 20px;
+      }
+
+      .control-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .control-item {
+        display: grid;
+        gap: 6px;
+      }
+
+      .control-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .control-row label {
+        font-size: var(--app-font-size-caption);
+        font-weight: 600;
+      }
+
+      .control-value {
+        font-size: var(--app-font-size-micro);
+        color: var(--app-color-text-secondary);
+      }
+
+      .control-item input[type="range"] {
+        width: 100%;
+      }
+
+      .control-item input[type="color"] {
+        width: 100%;
+        height: 36px;
+        border: 1px solid var(--app-color-border-secondary);
+        border-radius: var(--app-radius-md);
+        background: var(--app-color-surface);
+        padding: 4px;
+      }
+
+      .token-export {
+        margin-top: 14px;
+        padding: 12px;
+        border-radius: var(--app-radius-md);
+        border: 1px solid var(--app-color-border-secondary);
+        background: #101828;
+        color: #f8fafc;
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        overflow: auto;
+      }
+
+      .demo-main {
+        padding: 28px;
+      }
+
+      .intro-card {
+        padding: 20px 22px;
+        border: 1px solid var(--app-color-border-secondary);
+        border-radius: 20px;
+        background:
+          linear-gradient(180deg, rgba(84, 103, 255, 0.06), rgba(255, 255, 255, 0.92)),
+          var(--app-color-surface);
+        box-shadow: var(--app-shadow-card-strong);
+      }
+
+      .intro-card h2 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.2;
+      }
+
+      .intro-card p {
+        margin: 10px 0 0;
+        max-width: 920px;
+        color: var(--app-color-text-secondary);
+      }
+
+      .source-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .source-item {
+        padding: 12px;
+        border-radius: var(--app-radius-lg);
+        border: 1px solid var(--app-color-border-secondary);
+        background: rgba(255, 255, 255, 0.8);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .preview-stack {
+        display: grid;
+        gap: var(--app-space-page);
+        margin-top: 24px;
+      }
+
+      .preview-group {
+        display: grid;
+        gap: var(--app-space-400);
+      }
+
+      .preview-group-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .preview-group-head h3 {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.2;
+      }
+
+      .preview-group-head p {
+        margin: 6px 0 0;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .source-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+        font-weight: 600;
+      }
+
+      .preview-frame {
+        padding: 20px;
+        border: 1px dashed var(--app-color-border-secondary);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.56);
+      }
+
+      .preview-grid-2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .preview-grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .app-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: var(--app-button-height);
+        padding: 0 14px;
+        border-radius: var(--app-radius-md);
+        border: 1px solid transparent;
+        font-size: var(--app-font-size-body);
+        font-weight: 600;
+        line-height: 1;
+        cursor: pointer;
+        transition:
+          background-color 0.16s ease,
+          border-color 0.16s ease,
+          color 0.16s ease;
+      }
+
+      .app-button.primary {
+        background: var(--app-accent-primary);
+        border-color: var(--app-accent-primary);
+        color: var(--app-color-brand-on-fill);
+      }
+
+      .app-button.secondary {
+        background: var(--app-color-surface);
+        border-color: var(--app-color-border-secondary);
+        color: var(--app-color-text);
+      }
+
+      .app-button.text {
+        background: transparent;
+        color: var(--app-color-text-secondary);
+      }
+
+      .app-button.danger {
+        background: var(--app-color-surface-critical);
+        border-color: rgba(208, 77, 95, 0.2);
+        color: var(--app-accent-critical);
+      }
+
+      .app-link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        color: var(--app-accent-primary);
+        font-size: var(--app-font-size-body-small);
+        font-weight: 600;
+      }
+
+      .button-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .app-page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--app-space-400);
+        flex-wrap: wrap;
+      }
+
+      .app-page-header__main {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .app-page-header__title {
+        margin: 0;
+        color: var(--app-color-text);
+        font-size: var(--app-font-size-page-title);
+        line-height: 1.25;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+
+      .app-page-header__description {
+        margin: 0;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+        line-height: 20px;
+        max-width: 760px;
+      }
+
+      .app-section-card {
+        width: 100%;
+        border: 1px solid var(--app-color-border-secondary);
+        border-radius: var(--app-radius-lg);
+        background: var(--app-color-surface);
+        box-shadow: var(--app-shadow-card);
+        padding: var(--app-card-padding);
+      }
+
+      .app-section-card__stack {
+        display: flex;
+        flex-direction: column;
+        gap: var(--app-space-300);
+      }
+
+      .app-section-card__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--app-space-300);
+        flex-wrap: wrap;
+      }
+
+      .app-section-card__title {
+        margin: 0;
+        color: var(--app-color-text);
+        font-size: var(--app-font-size-section-title);
+        line-height: 20px;
+        font-weight: 600;
+      }
+
+      .app-section-card__description {
+        margin: 6px 0 0;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+        line-height: 20px;
+        max-width: 720px;
+      }
+
+      .app-status-cluster {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .app-status-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 24px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: var(--app-font-size-caption);
+        line-height: 16px;
+        font-weight: 600;
+        white-space: nowrap;
+        border: 1px solid var(--app-color-border-secondary);
+      }
+
+      .app-status-badge.neutral {
+        background: var(--app-color-surface-secondary);
+        color: var(--app-color-text-secondary);
+      }
+
+      .app-status-badge.info {
+        background: var(--app-color-surface-info);
+        color: var(--p-color-text-info);
+        border-color: rgba(84, 103, 255, 0.18);
+      }
+
+      .app-status-badge.success {
+        background: var(--app-color-surface-success);
+        color: var(--p-color-text-success);
+        border-color: rgba(29, 154, 127, 0.18);
+      }
+
+      .app-status-badge.caution {
+        background: var(--app-color-surface-caution);
+        color: var(--p-color-text-caution);
+        border-color: rgba(200, 139, 36, 0.2);
+      }
+
+      .app-status-badge.critical {
+        background: var(--app-color-surface-critical);
+        color: var(--p-color-text-critical);
+        border-color: rgba(208, 77, 95, 0.2);
+      }
+
+      .app-subtle-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: var(--app-accent-primary-soft);
+        border: 1px solid rgba(84, 103, 255, 0.18);
+        color: var(--app-color-text);
+        font-size: var(--app-font-size-caption);
+        font-weight: 600;
+      }
+
+      .settings-stack {
+        display: grid;
+        gap: 0;
+      }
+
+      .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        padding: var(--app-row-padding-y) 0;
+        border-bottom: 1px solid var(--app-color-border-secondary);
+      }
+
+      .setting-row:last-child {
+        border-bottom: none;
+      }
+
+      .setting-row__copy {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .setting-row__title {
+        margin: 0;
+        font-size: var(--app-font-size-body);
+        font-weight: 600;
+      }
+
+      .setting-row__desc {
+        margin: 4px 0 0;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+        line-height: 20px;
+      }
+
+      .switch {
+        position: relative;
+        width: 40px;
+        height: 24px;
+        border-radius: 999px;
+        background: rgba(27, 39, 71, 0.14);
+        flex-shrink: 0;
+      }
+
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #ffffff;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+      }
+
+      .switch.active {
+        background: var(--app-accent-primary);
+      }
+
+      .switch.active::after {
+        left: 19px;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+      }
+
+      .metric-block {
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: rgba(255, 255, 255, 0.8);
+      }
+
+      .metric-label {
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .metric-value {
+        margin-top: 4px;
+        font-size: 22px;
+        line-height: 1.2;
+        font-weight: 700;
+      }
+
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border-radius: var(--app-radius-lg);
+      }
+
+      .data-table th,
+      .data-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--app-color-border-secondary);
+        text-align: left;
+      }
+
+      .data-table th {
+        background: var(--app-color-surface-secondary);
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+        font-weight: 600;
+      }
+
+      .data-table td {
+        background: var(--app-color-surface);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .job-card {
+        padding: 16px;
+        border-radius: var(--app-radius-lg);
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+        box-shadow: var(--app-shadow-card);
+      }
+
+      .job-card__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .job-card__title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .job-card__route {
+        font-size: var(--app-font-size-body);
+        font-weight: 700;
+      }
+
+      .progress-track {
+        height: 8px;
+        margin-top: 12px;
+        border-radius: 999px;
+        background: var(--app-color-surface-secondary);
+        overflow: hidden;
+      }
+
+      .progress-track__bar {
+        width: 64%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--app-accent-primary), var(--app-accent-growth));
+      }
+
+      .notice-bar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--app-accent-utility-soft);
+        border: 1px solid rgba(200, 139, 36, 0.22);
+      }
+
+      .notice-copy {
+        color: var(--app-accent-utility);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .modal-demo {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(15, 23, 42, 0.36);
+        backdrop-filter: blur(8px);
+      }
+
+      .modal-demo.open {
+        display: flex;
+      }
+
+      .modal-panel {
+        width: min(var(--demo-modal-width), calc(100vw - 32px));
+        border-radius: 20px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+        box-shadow: var(--app-shadow-card-strong);
+        overflow: hidden;
+      }
+
+      .modal-panel__body {
+        padding: 24px 24px 20px;
+      }
+
+      .modal-panel__head {
+        padding-bottom: 20px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--app-color-border-secondary);
+      }
+
+      .modal-title {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.2;
+        font-weight: 700;
+      }
+
+      .modal-subtitle {
+        margin: 10px 0 0;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body);
+      }
+
+      .fake-select {
+        width: 100%;
+        min-height: 40px;
+        padding: 0 12px;
+        display: flex;
+        align-items: center;
+        border-radius: var(--app-radius-md);
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+        font-size: var(--app-font-size-body);
+      }
+
+      .summary-box {
+        margin-top: 14px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+      }
+
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .summary-label {
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .summary-main {
+        margin-top: 4px;
+        font-size: 18px;
+        line-height: 1.2;
+        font-weight: 700;
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 24px;
+      }
+
+      .help-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .actions-right {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .mini-preview-note {
+        margin-top: 8px;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .toolbar-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .toolbar-left,
+      .toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .toolbar-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 0 12px;
+        border-radius: var(--app-radius-md);
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .summary-inline {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        flex-wrap: wrap;
+      }
+
+      .summary-inline__item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .summary-inline__label {
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .summary-inline__value {
+        font-size: 20px;
+        line-height: 1.2;
+        font-weight: 700;
+      }
+
+      .hub-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .hub-card {
+        padding: 16px;
+        border-radius: var(--app-radius-lg);
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+        box-shadow: var(--app-shadow-card);
+      }
+
+      .hub-card__title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .hub-card__desc {
+        margin: 8px 0 12px;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .hub-card__meta {
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .detail-shell {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        gap: 18px;
+        min-height: 520px;
+      }
+
+      .detail-sidebar {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px;
+        border-radius: var(--app-radius-lg);
+        border: 1px solid var(--app-color-border-secondary);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .side-nav {
+        display: grid;
+        gap: 8px;
+      }
+
+      .side-nav__item {
+        padding: 10px 12px;
+        border-radius: var(--app-radius-md);
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+        background: transparent;
+      }
+
+      .side-nav__item.active {
+        background: var(--app-color-surface-selected);
+        color: var(--app-color-text);
+        font-weight: 600;
+      }
+
+      .detail-content {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .section-heading {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .savebar-preview {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(84, 103, 255, 0.18);
+        background: linear-gradient(180deg, rgba(84, 103, 255, 0.08), rgba(84, 103, 255, 0.04));
+      }
+
+      .savebar-preview__copy {
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .media-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .media-card {
+        padding: 14px;
+        border-radius: var(--app-radius-lg);
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+      }
+
+      .media-thumb {
+        width: 100%;
+        height: 132px;
+        border-radius: 12px;
+        border: 1px solid var(--app-color-border-secondary);
+        background:
+          linear-gradient(135deg, rgba(84, 103, 255, 0.12), rgba(84, 103, 255, 0.03)),
+          linear-gradient(180deg, #ffffff, #eef2ff);
+      }
+
+      .mobile-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .mobile-list-card {
+        padding: 14px;
+        border-radius: var(--app-radius-lg);
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+      }
+
+      .mobile-list-card__row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 10px;
+      }
+
+      .pricing-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .pricing-card {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 100%;
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+        box-shadow: var(--app-shadow-card);
+      }
+
+      .pricing-card.recommended {
+        border-color: rgba(84, 103, 255, 0.26);
+        box-shadow: 0 18px 36px rgba(84, 103, 255, 0.12);
+      }
+
+      .pricing-price {
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+      }
+
+      .pricing-price strong {
+        font-size: 28px;
+        line-height: 1;
+      }
+
+      .feature-list {
+        display: grid;
+        gap: 8px;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+      }
+
+      .feature-list li {
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .faq-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .faq-item {
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+      }
+
+      .faq-item strong {
+        display: block;
+        font-size: var(--app-font-size-body);
+      }
+
+      .faq-item span {
+        display: block;
+        margin-top: 6px;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .analytics-stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .analytics-status {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .step-chip {
+        padding: 12px;
+        border-radius: 14px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+      }
+
+      .step-chip strong {
+        display: block;
+        font-size: var(--app-font-size-body-small);
+      }
+
+      .step-chip span {
+        display: block;
+        margin-top: 4px;
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .tag-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .term-tag {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--app-color-surface-secondary);
+        color: var(--app-color-text-secondary);
+        font-size: var(--app-font-size-caption);
+      }
+
+      .code-panel {
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: #0f172a;
+        color: #e2e8f0;
+        font-size: 12px;
+        line-height: 1.7;
+        white-space: pre-wrap;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .state-card {
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid var(--app-color-border-secondary);
+        background: var(--app-color-surface);
+        box-shadow: var(--app-shadow-card);
+      }
+
+      .progress-steps {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .progress-step {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .progress-step__dot {
+        width: 28px;
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: var(--app-accent-primary-soft);
+        color: var(--app-accent-primary);
+        font-size: var(--app-font-size-caption);
+        font-weight: 700;
+      }
+
+      .progress-step__dot.success {
+        background: var(--app-accent-growth-soft);
+        color: var(--app-accent-growth);
+      }
+
+      .history-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 28px 16px;
+        border-radius: 16px;
+        background: var(--app-color-surface-secondary);
+        text-align: center;
+      }
+
+      .history-empty__icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: linear-gradient(180deg, rgba(84, 103, 255, 0.12), rgba(84, 103, 255, 0.04));
+      }
+
+      @media (max-width: 1100px) {
+        .demo-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .demo-sidebar {
+          position: static;
+          height: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--app-color-border-secondary);
+        }
+
+        .preview-grid-2,
+        .preview-grid-3,
+        .hub-grid,
+        .detail-shell,
+        .media-grid,
+        .pricing-grid,
+        .analytics-status,
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="demo-shell">
+      <aside class="demo-sidebar">
+        <h1>组件库 Demo</h1>
+        <p>
+          这份页面从当前代码里的共享组件和典型页面块抽出来，后续你可以只调 token，
+          不直接改业务页面结构。
+        </p>
+
+        <div class="sidebar-actions">
+          <button class="app-button secondary" id="resetTokens">重置默认值</button>
+          <button class="app-button primary" id="copyTokens">复制 Token</button>
+        </div>
+
+        <section class="sidebar-section">
+          <h2>字号</h2>
+          <div class="control-list">
+            <div class="control-item">
+              <div class="control-row">
+                <label for="pageTitleSize">页面标题</label>
+                <span class="control-value" data-output="pageTitleSize"></span>
+              </div>
+              <input id="pageTitleSize" type="range" min="20" max="32" value="24" data-var="--app-font-size-page-title" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="sectionTitleSize">区块标题</label>
+                <span class="control-value" data-output="sectionTitleSize"></span>
+              </div>
+              <input id="sectionTitleSize" type="range" min="13" max="18" value="14" data-var="--app-font-size-section-title" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="bodySize">正文</label>
+                <span class="control-value" data-output="bodySize"></span>
+              </div>
+              <input id="bodySize" type="range" min="13" max="16" value="14" data-var="--app-font-size-body" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="bodySmallSize">辅助正文</label>
+                <span class="control-value" data-output="bodySmallSize"></span>
+              </div>
+              <input id="bodySmallSize" type="range" min="12" max="15" value="13" data-var="--app-font-size-body-small" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="captionSize">Caption</label>
+                <span class="control-value" data-output="captionSize"></span>
+              </div>
+              <input id="captionSize" type="range" min="11" max="14" value="12" data-var="--app-font-size-caption" data-unit="px" />
+            </div>
+          </div>
+        </section>
+
+        <section class="sidebar-section">
+          <h2>间距与圆角</h2>
+          <div class="control-list">
+            <div class="control-item">
+              <div class="control-row">
+                <label for="cardPadding">卡片 padding</label>
+                <span class="control-value" data-output="cardPadding"></span>
+              </div>
+              <input id="cardPadding" type="range" min="12" max="28" value="16" data-var="--app-card-padding" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="pageGap">页面模块间距</label>
+                <span class="control-value" data-output="pageGap"></span>
+              </div>
+              <input id="pageGap" type="range" min="16" max="36" value="24" data-var="--app-space-page" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="space400">标准模块间距</label>
+                <span class="control-value" data-output="space400"></span>
+              </div>
+              <input id="space400" type="range" min="12" max="24" value="16" data-var="--app-space-400" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="rowPadding">行项目 padding</label>
+                <span class="control-value" data-output="rowPadding"></span>
+              </div>
+              <input id="rowPadding" type="range" min="8" max="18" value="12" data-var="--app-row-padding-y" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="buttonHeight">按钮高度</label>
+                <span class="control-value" data-output="buttonHeight"></span>
+              </div>
+              <input id="buttonHeight" type="range" min="28" max="44" value="32" data-var="--app-button-height" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="modalWidth">弹窗宽度</label>
+                <span class="control-value" data-output="modalWidth"></span>
+              </div>
+              <input id="modalWidth" type="range" min="440" max="760" value="560" data-var="--demo-modal-width" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="radiusLg">大圆角</label>
+                <span class="control-value" data-output="radiusLg"></span>
+              </div>
+              <input id="radiusLg" type="range" min="8" max="20" value="12" data-var="--app-radius-lg" data-unit="px" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="radiusMd">中圆角</label>
+                <span class="control-value" data-output="radiusMd"></span>
+              </div>
+              <input id="radiusMd" type="range" min="6" max="14" value="8" data-var="--app-radius-md" data-unit="px" />
+            </div>
+          </div>
+        </section>
+
+        <section class="sidebar-section">
+          <h2>颜色</h2>
+          <div class="control-list">
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorPrimary">主色</label>
+                <span class="control-value" data-output="colorPrimary"></span>
+              </div>
+              <input id="colorPrimary" type="color" value="#5467ff" data-var="--app-accent-primary" data-role="primary" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorPrimaryHover">主色 Hover</label>
+                <span class="control-value" data-output="colorPrimaryHover"></span>
+              </div>
+              <input id="colorPrimaryHover" type="color" value="#4254e8" data-var="--app-accent-primary-hover" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorText">正文色</label>
+                <span class="control-value" data-output="colorText"></span>
+              </div>
+              <input id="colorText" type="color" value="#182033" data-var="--app-color-text" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorTextSecondary">辅助文字色</label>
+                <span class="control-value" data-output="colorTextSecondary"></span>
+              </div>
+              <input id="colorTextSecondary" type="color" value="#55607a" data-var="--app-color-text-secondary" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorBg">页面背景</label>
+                <span class="control-value" data-output="colorBg"></span>
+              </div>
+              <input id="colorBg" type="color" value="#f6f6f7" data-var="--app-color-bg" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorSurface">卡片背景</label>
+                <span class="control-value" data-output="colorSurface"></span>
+              </div>
+              <input id="colorSurface" type="color" value="#ffffff" data-var="--app-color-surface" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorSurfaceSecondary">次级背景</label>
+                <span class="control-value" data-output="colorSurfaceSecondary"></span>
+              </div>
+              <input id="colorSurfaceSecondary" type="color" value="#f3f4f6" data-var="--app-color-surface-secondary" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorBorder">边框</label>
+                <span class="control-value" data-output="colorBorder"></span>
+              </div>
+              <input id="colorBorder" type="color" value="#e4e7ec" data-var="--app-color-border-secondary" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorSuccess">Success</label>
+                <span class="control-value" data-output="colorSuccess"></span>
+              </div>
+              <input id="colorSuccess" type="color" value="#1d9a7f" data-var="--app-accent-growth" data-role="success" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorWarning">Warning</label>
+                <span class="control-value" data-output="colorWarning"></span>
+              </div>
+              <input id="colorWarning" type="color" value="#c88b24" data-var="--app-accent-utility" data-role="warning" />
+            </div>
+            <div class="control-item">
+              <div class="control-row">
+                <label for="colorCritical">Critical</label>
+                <span class="control-value" data-output="colorCritical"></span>
+              </div>
+              <input id="colorCritical" type="color" value="#d04d5f" data-var="--app-accent-critical" data-role="critical" />
+            </div>
+          </div>
+
+          <pre class="token-export" id="tokenExport"></pre>
+        </section>
+      </aside>
+
+      <main class="demo-main">
+        <section class="intro-card">
+          <h2>CIWI 组件库基线</h2>
+          <p>
+            这份 demo 不是重新发明组件，而是把现有代码里的稳定结构抽出来，改成纯
+            HTML 预览。后续建议流程就是：先在这里调 token，再去 Figma 微调，最后再把确认过的变量回写到代码。
+          </p>
+          <div class="source-list">
+            <div class="source-item"><strong>共享基础</strong><br />`AppButton` / `AppPageHeader` / `AppSectionCard` / `AppStatusBadge`</div>
+            <div class="source-item"><strong>弹窗骨架</strong><br />`V4ModalShell` / `paymentModal.tsx`</div>
+            <div class="source-item"><strong>列表与任务卡</strong><br />`TaskQueueSection.tsx` / `CoverageCard.tsx`</div>
+            <div class="source-item"><strong>全局 token</strong><br />`app/styles.css` / `app/ui/theme.ts` / `v4Styles.ts`</div>
+          </div>
+        </section>
+
+        <div class="preview-stack">
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Typography &amp; Buttons</h3>
+                <p>先锁定字号层级和按钮风格，避免每个页面自己长出一套视觉。</p>
+              </div>
+              <span class="source-chip">app/styles.css / AppButton.tsx</span>
+            </div>
+            <div class="preview-frame preview-grid-2">
+              <div class="app-section-card">
+                <div class="app-section-card__stack">
+                  <div>
+                    <div class="app-subtle-chip">Typography Scale</div>
+                    <h1 class="app-page-header__title" style="margin-top: 14px;">Page Title / 页面标题</h1>
+                    <p class="app-page-header__description">这是页面级说明文字，用来解释当前页面做什么，以及用户为什么在这里。</p>
+                  </div>
+                  <div>
+                    <h3 class="app-section-card__title">Section Title / 区块标题</h3>
+                    <p class="app-section-card__description">辅助正文、caption、micro 都会跟左侧控制面板联动。</p>
+                    <div class="mini-preview-note">Caption 示例：用于状态、标签、列头、次级说明。</div>
+                  </div>
+                </div>
+              </div>
+              <div class="app-section-card">
+                <div class="app-section-card__stack">
+                  <div>
+                    <h3 class="app-section-card__title">Button Set</h3>
+                    <p class="app-section-card__description">默认只围绕主按钮、次按钮、文字按钮、危险动作做样式确定性。</p>
+                  </div>
+                  <div class="button-row">
+                    <button class="app-button primary">Primary</button>
+                    <button class="app-button secondary">Secondary</button>
+                    <button class="app-button text">Text</button>
+                    <button class="app-button danger">Danger</button>
+                    <a class="app-link" href="javascript:void(0)">Text link</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Page Header &amp; Status</h3>
+                <p>对应 `AppPageHeader` 和 `AppStatusBadge`，是大多数页面都应该优先复用的头部模式。</p>
+              </div>
+              <span class="source-chip">AppPageHeader.tsx / AppStatusBadge.tsx</span>
+            </div>
+            <div class="preview-frame">
+              <div class="app-page-header">
+                <div class="app-page-header__main">
+                  <h1 class="app-page-header__title">Switcher</h1>
+                  <p class="app-page-header__description">
+                    Configure how the storefront language and currency switcher behaves, looks, and appears to merchants.
+                  </p>
+                </div>
+                <div class="button-row">
+                  <button class="app-button secondary">View pricing</button>
+                  <button class="app-button primary">Primary action</button>
+                </div>
+              </div>
+              <div style="margin-top: 20px;" class="app-status-cluster">
+                <span class="app-status-badge neutral">Neutral</span>
+                <span class="app-status-badge info">Info</span>
+                <span class="app-status-badge success">Success</span>
+                <span class="app-status-badge caution">Caution</span>
+                <span class="app-status-badge critical">Critical</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Section Card &amp; Setting Row</h3>
+                <p>这是后续设置页最需要稳定下来的形态，只允许调 token，不随意改信息顺序。</p>
+              </div>
+              <span class="source-chip">AppSectionCard.tsx / app.switcher</span>
+            </div>
+            <div class="preview-frame preview-grid-2">
+              <div class="app-section-card">
+                <div class="app-section-card__stack">
+                  <div class="app-section-card__header">
+                    <div>
+                      <h3 class="app-section-card__title">Behavior</h3>
+                      <p class="app-section-card__description">
+                        Control how storefront visitors see or do not see the switcher before opening it.
+                      </p>
+                    </div>
+                    <span class="app-status-badge info">Paid feature</span>
+                  </div>
+                  <div class="settings-stack">
+                    <div class="setting-row">
+                      <div class="setting-row__copy">
+                        <p class="setting-row__title">Geolocation</p>
+                        <p class="setting-row__desc">Automatically place the selector for visitors based on IP when available.</p>
+                      </div>
+                      <span class="switch active" aria-hidden="true"></span>
+                    </div>
+                    <div class="setting-row">
+                      <div class="setting-row__copy">
+                        <p class="setting-row__title">Hide visible switcher</p>
+                        <p class="setting-row__desc">Keep localization active without rendering a visible selector entry point.</p>
+                      </div>
+                      <span class="switch" aria-hidden="true"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="app-section-card">
+                <div class="app-section-card__stack">
+                  <div class="app-section-card__header">
+                    <div>
+                      <h3 class="app-section-card__title">Style</h3>
+                      <p class="app-section-card__description">
+                        Adjust the switcher appearance, placement, and preview behavior.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="settings-stack">
+                    <div class="setting-row">
+                      <div class="setting-row__copy">
+                        <p class="setting-row__title">Include flag</p>
+                        <p class="setting-row__desc">Display the selected language flag alongside the switcher label when possible.</p>
+                      </div>
+                      <span class="switch active" aria-hidden="true"></span>
+                    </div>
+                    <div class="setting-row">
+                      <div class="setting-row__copy">
+                        <p class="setting-row__title">Selector position</p>
+                        <p class="setting-row__desc">Top right / Bottom left 这类配置行，视觉应当和开关行保持一致。</p>
+                      </div>
+                      <a class="app-link" href="javascript:void(0)">Select field</a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Metrics &amp; Coverage</h3>
+                <p>对应 v4 概览区的摘要卡和覆盖率卡，重点是统一指标块、状态标签和轻按钮密度。</p>
+              </div>
+              <span class="source-chip">CoverageCard.tsx / v4Styles.ts</span>
+            </div>
+            <div class="preview-frame preview-grid-2">
+              <div class="app-section-card">
+                <div class="app-section-card__stack">
+                  <div class="app-section-card__header">
+                    <div>
+                      <h3 class="app-section-card__title">Coverage</h3>
+                      <p class="app-section-card__description">Compact overview card for target languages and translation health.</p>
+                    </div>
+                    <div class="button-row">
+                      <button class="app-button secondary">Manage languages</button>
+                      <button class="app-button secondary">Refresh stats</button>
+                    </div>
+                  </div>
+                  <div class="metric-grid">
+                    <div class="metric-block">
+                      <div class="metric-label">Target languages</div>
+                      <div class="metric-value">8</div>
+                    </div>
+                    <div class="metric-block">
+                      <div class="metric-label">Auto translate</div>
+                      <div class="metric-value">5</div>
+                    </div>
+                    <div class="metric-block">
+                      <div class="metric-label">Needs improvement</div>
+                      <div class="metric-value">3</div>
+                    </div>
+                  </div>
+                  <div class="settings-stack">
+                    <div class="setting-row">
+                      <div class="setting-row__copy">
+                        <p class="setting-row__title">DE Deutsch</p>
+                        <p class="setting-row__desc">Coverage 98% · Last update 2h ago</p>
+                      </div>
+                      <span class="app-status-badge success">Healthy</span>
+                    </div>
+                    <div class="setting-row">
+                      <div class="setting-row__copy">
+                        <p class="setting-row__title">FR Français</p>
+                        <p class="setting-row__desc">Coverage 72% · Needs review</p>
+                      </div>
+                      <span class="app-status-badge caution">Review</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="job-card">
+                <div class="job-card__head">
+                  <div>
+                    <div class="job-card__title">
+                      <span class="job-card__route">EN → FR</span>
+                      <span class="app-status-badge info">RUNNING</span>
+                      <span class="app-subtle-chip">Just created</span>
+                    </div>
+                    <div class="mini-preview-note">In progress · Translating product content</div>
+                  </div>
+                  <button class="app-button secondary">View</button>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-track__bar"></div>
+                </div>
+                <div class="notice-bar">
+                  <div class="notice-copy">Credits are running low. Buy more credits before the task reaches the final stage.</div>
+                  <button class="app-button primary">Buy credits</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Table &amp; Index Pattern</h3>
+                <p>给列表型页面一个稳定基线，后面只允许调列头字号、行高、badge 和操作密度。</p>
+              </div>
+              <span class="source-chip">manage_translation / table pattern</span>
+            </div>
+            <div class="preview-frame">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Resource</th>
+                    <th>Status</th>
+                    <th>Updated</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Product / Summer Dress</td>
+                    <td><span class="app-status-badge success">Translated</span></td>
+                    <td>2 hours ago</td>
+                    <td><a class="app-link" href="javascript:void(0)">View details</a></td>
+                  </tr>
+                  <tr>
+                    <td>Collection / New Arrivals</td>
+                    <td><span class="app-status-badge caution">Outdated</span></td>
+                    <td>6 hours ago</td>
+                    <td><a class="app-link" href="javascript:void(0)">Update translation</a></td>
+                  </tr>
+                  <tr>
+                    <td>Blog / Autumn Guide</td>
+                    <td><span class="app-status-badge neutral">Untranslated</span></td>
+                    <td>Yesterday</td>
+                    <td><a class="app-link" href="javascript:void(0)">Translate</a></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Manage Translation Hub</h3>
+                <p>对应 `/app/manage_translation` 的入口页，不是普通表格，而是“筛选条 + 摘要卡 + 模块入口卡片网格”的首页结构。</p>
+              </div>
+              <span class="source-chip">app.manage_translation / ManageTranslationsCard</span>
+            </div>
+            <div class="preview-frame">
+              <div class="app-page-header" style="margin-bottom: 16px;">
+                <div class="app-page-header__main">
+                  <h1 class="app-page-header__title">Manage Translation</h1>
+                </div>
+              </div>
+              <div class="app-section-card" style="margin-bottom: 14px;">
+                <div class="toolbar-row">
+                  <div class="toolbar-left">
+                    <strong>Localized content:</strong>
+                    <div class="toolbar-pill">French (FR)</div>
+                    <button class="app-button secondary">Refresh statistics</button>
+                  </div>
+                </div>
+              </div>
+              <div class="app-section-card" style="margin-bottom: 14px;">
+                <div class="summary-inline">
+                  <div class="summary-inline__item">
+                    <span class="summary-inline__label">Items Translated</span>
+                    <span class="summary-inline__value">12,480 / 18,205 (69%)</span>
+                  </div>
+                </div>
+              </div>
+              <div class="hub-grid">
+                <div class="hub-card">
+                  <h4 class="hub-card__title">Products</h4>
+                  <p class="hub-card__desc">商品标题、描述、SEO 与选项值。</p>
+                  <div class="hub-card__meta">2,310 items</div>
+                </div>
+                <div class="hub-card">
+                  <h4 class="hub-card__title">Online Store Theme</h4>
+                  <p class="hub-card__desc">Theme section、JSON template、locale content。</p>
+                  <div class="hub-card__meta">1,284 items</div>
+                </div>
+                <div class="hub-card">
+                  <h4 class="hub-card__title">Blogs and Articles</h4>
+                  <p class="hub-card__desc">博客标题、文章正文、页面内容。</p>
+                  <div class="hub-card__meta">348 items</div>
+                </div>
+                <div class="hub-card">
+                  <h4 class="hub-card__title">Liquid &amp; Third-Party Apps</h4>
+                  <p class="hub-card__desc">Custom Liquid、PageFly、第三方内容入口。</p>
+                  <div class="hub-card__meta">126 items</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Editable Detail Page Shell</h3>
+                <p>对应 `product / collection / page / article` 这一整族页面：顶部筛选、SaveBar、左侧资源菜单、右侧多段编辑表格，才是这类页面的真实骨架。</p>
+              </div>
+              <span class="source-chip">app.manage_translation_.product family</span>
+            </div>
+            <div class="preview-frame">
+              <div class="savebar-preview" style="margin-bottom: 14px;">
+                <div class="savebar-preview__copy">Unsaved changes in current resource</div>
+                <div class="button-row">
+                  <button class="app-button secondary">Cancel</button>
+                  <button class="app-button primary">Save</button>
+                </div>
+              </div>
+              <div class="toolbar-row" style="margin-bottom: 14px;">
+                <div class="toolbar-left">
+                  <div class="toolbar-pill" style="min-width: 220px;">Search...</div>
+                  <div class="toolbar-pill">French</div>
+                  <div class="toolbar-pill">Product</div>
+                </div>
+              </div>
+              <div class="detail-shell">
+                <div class="detail-sidebar">
+                  <div class="side-nav">
+                    <div class="side-nav__item active">Summer Dress</div>
+                    <div class="side-nav__item">Autumn Jacket</div>
+                    <div class="side-nav__item">Canvas Bag</div>
+                    <div class="side-nav__item">Wool Scarf</div>
+                  </div>
+                  <div class="button-row">
+                    <button class="app-button secondary">Previous</button>
+                    <button class="app-button secondary">Next</button>
+                  </div>
+                </div>
+                <div class="detail-content">
+                  <h4 class="section-heading">Summer Dress</h4>
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>Source</th>
+                        <th>Translated</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Title</td>
+                        <td>Summer Dress</td>
+                        <td>Robe d&apos;été</td>
+                        <td><a class="app-link" href="javascript:void(0)">Translate</a></td>
+                      </tr>
+                      <tr>
+                        <td>Description</td>
+                        <td>Lightweight cotton dress for everyday wear.</td>
+                        <td>Robe légère en coton pour un usage quotidien.</td>
+                        <td><a class="app-link" href="javascript:void(0)">Edit</a></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>SEO</th>
+                        <th>Source</th>
+                        <th>Translated</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Meta title</td>
+                        <td>Summer Dress | CIWI</td>
+                        <td>Robe d&apos;été | CIWI</td>
+                        <td><a class="app-link" href="javascript:void(0)">Update</a></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Operation Lists</h3>
+                <p>语言、币种、术语表这类页面不是单纯 table，它们通常包含批量操作条、状态列、移动端卡片化，以及多个业务弹窗。</p>
+              </div>
+              <span class="source-chip">app.language / app.currency / app.glossary</span>
+            </div>
+            <div class="preview-frame preview-grid-2">
+              <div class="app-section-card">
+                <div class="app-section-card__stack">
+                  <div class="app-section-card__header">
+                    <div>
+                      <h3 class="app-section-card__title">Desktop List</h3>
+                      <p class="app-section-card__description">批量删除、预览、添加语言，以及状态与开关列同时出现。</p>
+                    </div>
+                    <div class="button-row">
+                      <button class="app-button secondary">Preview store</button>
+                      <button class="app-button primary">Add Language</button>
+                    </div>
+                  </div>
+                  <div class="toolbar-left">
+                    <button class="app-button secondary">Delete</button>
+                    <span class="mini-preview-note">Selected 2 items</span>
+                  </div>
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Language</th>
+                        <th>Status</th>
+                        <th>Published</th>
+                        <th>Auto translate</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Français</td>
+                        <td><span class="app-status-badge success">Healthy</span></td>
+                        <td>On</td>
+                        <td>On</td>
+                        <td><a class="app-link" href="javascript:void(0)">Manage</a></td>
+                      </tr>
+                      <tr>
+                        <td>Deutsch</td>
+                        <td><span class="app-status-badge caution">Needs review</span></td>
+                        <td>Off</td>
+                        <td>Off</td>
+                        <td><a class="app-link" href="javascript:void(0)">Translate</a></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="app-section-card">
+                <div class="app-section-card__stack">
+                  <div>
+                    <h3 class="app-section-card__title">Mobile Card Layout</h3>
+                    <p class="app-section-card__description">`app.language` 在移动端会退化成纵向卡片，而不是挤压原表格。</p>
+                  </div>
+                  <div class="mobile-list">
+                    <div class="mobile-list-card">
+                      <strong>Français</strong>
+                      <div class="mobile-list-card__row">
+                        <span>Status</span>
+                        <span class="app-status-badge success">Healthy</span>
+                      </div>
+                      <div class="mobile-list-card__row">
+                        <span>Publish</span>
+                        <span class="switch active" aria-hidden="true"></span>
+                      </div>
+                      <div class="mobile-list-card__row">
+                        <span>Auto translation</span>
+                        <span class="switch active" aria-hidden="true"></span>
+                      </div>
+                      <div class="button-row" style="margin-top: 12px;">
+                        <button class="app-button primary">Translate</button>
+                        <button class="app-button secondary">Manage</button>
+                      </div>
+                    </div>
+                    <div class="mobile-list-card">
+                      <strong>Deutsch</strong>
+                      <div class="mobile-list-card__row">
+                        <span>Status</span>
+                        <span class="app-status-badge caution">Review</span>
+                      </div>
+                      <div class="mobile-list-card__row">
+                        <span>Publish</span>
+                        <span class="switch" aria-hidden="true"></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Media Translation Pattern</h3>
+                <p>图片翻译页是独立类型：资源选择、媒体预览、上传/删除动作、专用语言弹窗，这些都不是 generic table 可以替代的。</p>
+              </div>
+              <span class="source-chip">app.manage_translation_.productImage</span>
+            </div>
+            <div class="preview-frame">
+              <div class="detail-shell">
+                <div class="detail-sidebar">
+                  <div class="side-nav">
+                    <div class="side-nav__item active">Summer Dress</div>
+                    <div class="side-nav__item">Canvas Bag</div>
+                    <div class="side-nav__item">Leather Boots</div>
+                  </div>
+                  <div class="button-row">
+                    <button class="app-button secondary">Previous</button>
+                    <button class="app-button secondary">Next</button>
+                  </div>
+                </div>
+                <div class="detail-content">
+                  <h4 class="section-heading">Product Images</h4>
+                  <div class="media-grid">
+                    <div class="media-card">
+                      <div class="media-thumb"></div>
+                      <div class="mini-preview-note">Default language</div>
+                      <div class="button-row" style="margin-top: 12px;">
+                        <button class="app-button secondary">Upload</button>
+                        <button class="app-button secondary">Delete</button>
+                      </div>
+                    </div>
+                    <div class="media-card">
+                      <div class="media-thumb"></div>
+                      <div class="mini-preview-note">Translated target image</div>
+                      <div class="button-row" style="margin-top: 12px;">
+                        <button class="app-button primary">Image Translation</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="summary-box">
+                    <div class="summary-row">
+                      <div>
+                        <div class="summary-label">Source Language</div>
+                        <div class="fake-select" style="margin-top: 8px;">English</div>
+                      </div>
+                      <div>
+                        <div class="summary-label">Target Language</div>
+                        <div class="fake-select" style="margin-top: 8px;">French</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Pricing &amp; Commerce Page</h3>
+                <p>定价页是单独的一套商业化页面：账户信息、套餐卡、对比表、FAQ 和购买 credits 弹窗，都需要单独校准。</p>
+              </div>
+              <span class="source-chip">app.pricing / paymentModal</span>
+            </div>
+            <div class="preview-frame">
+              <div class="app-page-header" style="margin-bottom: 16px;">
+                <div class="app-page-header__main">
+                  <h1 class="app-page-header__title">Pricing</h1>
+                </div>
+                <div class="app-status-cluster">
+                  <span class="app-status-badge info">Basic Plan</span>
+                  <span class="mini-preview-note">Next payment: Sep 05</span>
+                </div>
+              </div>
+              <div class="pricing-grid" style="margin-bottom: 16px;">
+                <div class="pricing-card">
+                  <span class="app-status-badge neutral">Current plan</span>
+                  <strong>Free</strong>
+                  <div class="pricing-price"><strong>$0</strong><span>/month</span></div>
+                  <button class="app-button secondary">Current plan</button>
+                  <ul class="feature-list">
+                    <li>Basic translation quota</li>
+                    <li>Manual translation workflow</li>
+                    <li>Email support</li>
+                  </ul>
+                </div>
+                <div class="pricing-card recommended">
+                  <span class="app-status-badge caution">Recommended</span>
+                  <strong>Basic</strong>
+                  <div class="pricing-price"><strong>$19</strong><span>/month</span></div>
+                  <button class="app-button primary">Start plan</button>
+                  <ul class="feature-list">
+                    <li>Auto translation</li>
+                    <li>Glossary and switcher features</li>
+                    <li>More credits included</li>
+                  </ul>
+                </div>
+                <div class="pricing-card">
+                  <strong>Pro</strong>
+                  <div class="pricing-price"><strong>$79</strong><span>/month</span></div>
+                  <button class="app-button secondary">Choose plan</button>
+                  <ul class="feature-list">
+                    <li>Higher quota</li>
+                    <li>Priority processing</li>
+                    <li>Advanced support</li>
+                  </ul>
+                </div>
+              </div>
+              <table class="data-table" style="margin-bottom: 16px;">
+                <thead>
+                  <tr>
+                    <th>Feature</th>
+                    <th>Free</th>
+                    <th>Basic</th>
+                    <th>Pro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Glossary</td>
+                    <td>-</td>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                  </tr>
+                  <tr>
+                    <td>Auto translate</td>
+                    <td>-</td>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="faq-list">
+                <div class="faq-item">
+                  <strong>Can I switch plans later?</strong>
+                  <span>Yes, merchants can upgrade or downgrade based on business needs.</span>
+                </div>
+                <div class="faq-item">
+                  <strong>How do credits work?</strong>
+                  <span>Credits are consumed by task size and translation operations.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Analytics / Report Page</h3>
+                <p>`Shop Profile` 这类页面更像分析后台：扫描状态、画像描述、标签、统计值、数据表和提示词块连续堆叠，不属于简单的设置页。</p>
+              </div>
+              <span class="source-chip">app.shop-profile</span>
+            </div>
+            <div class="preview-frame">
+              <div class="toolbar-row" style="margin-bottom: 16px;">
+                <div class="toolbar-left">
+                  <h1 class="app-page-header__title" style="font-size: 22px;">店铺画像扫描结果</h1>
+                  <span class="app-status-badge info">Scanning</span>
+                </div>
+                <button class="app-button primary">重新扫描</button>
+              </div>
+              <div class="analytics-stack">
+                <div class="app-section-card">
+                  <div class="app-section-card__stack">
+                    <div class="app-section-card__header">
+                      <div>
+                        <h3 class="app-section-card__title">扫描状态</h3>
+                        <p class="app-section-card__description">更新时间、阶段状态、整体扫描进度。</p>
+                      </div>
+                    </div>
+                    <div class="analytics-status">
+                      <div class="step-chip">
+                        <strong>1. Collect</strong>
+                        <span>Done</span>
+                      </div>
+                      <div class="step-chip">
+                        <strong>2. Extract</strong>
+                        <span>Done</span>
+                      </div>
+                      <div class="step-chip">
+                        <strong>3. Understand</strong>
+                        <span>Running</span>
+                      </div>
+                      <div class="step-chip">
+                        <strong>4. Strategy</strong>
+                        <span>Waiting</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="two-col">
+                  <div class="app-section-card">
+                    <div class="app-section-card__stack">
+                      <div>
+                        <h3 class="app-section-card__title">店铺画像</h3>
+                        <p class="app-section-card__description">结构化描述、标签与核心品牌语气。</p>
+                      </div>
+                      <div class="tag-row">
+                        <span class="term-tag">fashion</span>
+                        <span class="term-tag">minimal</span>
+                        <span class="term-tag">EU market</span>
+                      </div>
+                      <div class="mini-preview-note">品牌语气: clean, modern, premium but friendly</div>
+                    </div>
+                  </div>
+                  <div class="app-section-card">
+                    <div class="app-section-card__stack">
+                      <div>
+                        <h3 class="app-section-card__title">内容规模</h3>
+                        <p class="app-section-card__description">条目与字符数摘要，通常会和明细表一起出现。</p>
+                      </div>
+                      <div class="metric-grid">
+                        <div class="metric-block">
+                          <div class="metric-label">可翻译条目</div>
+                          <div class="metric-value">18,205</div>
+                        </div>
+                        <div class="metric-block">
+                          <div class="metric-label">源文字符数</div>
+                          <div class="metric-value">1.2M</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="app-section-card">
+                  <div class="app-section-card__stack">
+                    <div>
+                      <h3 class="app-section-card__title">翻译提示词预览</h3>
+                    </div>
+                    <div class="code-panel">Brand tone: minimal, premium, easy to understand.
+Target audience: cross-border fashion shoppers.
+Localization guidance: keep product names natural, preserve branded terms, prefer concise copy for CTA and merchandising blocks.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Onboarding &amp; History States</h3>
+                <p>引导流和历史页是状态型页面，重点不在常规 table，而在准备过程、推荐结果、底部动作和 empty state 的完整节奏。</p>
+              </div>
+              <span class="source-chip">app.onboarding / app.translate-v4-history</span>
+            </div>
+            <div class="preview-frame preview-grid-2">
+              <div class="state-card">
+                <div class="app-subtle-chip">Preparing</div>
+                <h3 class="section-heading" style="margin-top: 14px;">Set up your first translation task</h3>
+                <p class="app-page-header__description">先完成 locale、coverage、recommendation 三段准备，再进入建议结果页。</p>
+                <div class="progress-steps">
+                  <div class="progress-step">
+                    <span class="progress-step__dot success">1</span>
+                    <div>
+                      <strong>Load locales</strong>
+                      <div class="mini-preview-note">Completed</div>
+                    </div>
+                  </div>
+                  <div class="progress-step">
+                    <span class="progress-step__dot success">2</span>
+                    <div>
+                      <strong>Fast coverage scan</strong>
+                      <div class="mini-preview-note">3 / 5 modules done</div>
+                    </div>
+                  </div>
+                  <div class="progress-step">
+                    <span class="progress-step__dot">3</span>
+                    <div>
+                      <strong>Build recommendation</strong>
+                      <div class="mini-preview-note">Waiting for coverage snapshot</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="button-row" style="margin-top: 16px;">
+                  <button class="app-button secondary">Skip</button>
+                  <button class="app-button primary">Create first task</button>
+                </div>
+              </div>
+              <div class="state-card">
+                <h3 class="section-heading">Task History Empty State</h3>
+                <p class="app-page-header__description">历史页空状态也是独立模式，和普通列表页的“无数据”处理不一样。</p>
+                <div class="history-empty">
+                  <div class="history-empty__icon"></div>
+                  <strong>No task history yet</strong>
+                  <span class="mini-preview-note">Completed, cancelled, or deleted tasks will appear here.</span>
+                  <button class="app-button secondary">Back to current tasks</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="preview-group">
+            <div class="preview-group-head">
+              <div>
+                <h3>Modal Pattern</h3>
+                <p>基于 `V4ModalShell` 和 `paymentModal`，后续可以只调标题字号、面板宽度、卡片 padding 和 CTA 样式。</p>
+                <p>基于 `V4ModalShell` 和 `paymentModal`，后续可以只调标题字号、面板宽度、卡片 padding 和 CTA 样式。</p>
+              </div>
+              <span class="source-chip">V4ModalShell.tsx / paymentModal.tsx</span>
+            </div>
+            <div class="preview-frame">
+              <div class="button-row">
+                <button class="app-button primary" id="openModal">打开弹窗预览</button>
+                <button class="app-button secondary" id="openCompactModal">打开窄版弹窗预览</button>
+              </div>
+              <div class="mini-preview-note">
+                这里先给你一套可调参数的 modal 基线，后面如果你在 Figma 微调了宽度、标题字号、内边距，我们再回写到代码。
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div class="modal-demo" id="modalDemo" aria-hidden="true">
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-panel__body">
+          <div class="modal-panel__head">
+            <h2 class="modal-title" id="modalTitle">Buy credits</h2>
+            <p class="modal-subtitle">Choose a pack for this task.</p>
+          </div>
+
+          <div class="fake-select">1M credits · option-2</div>
+
+          <div class="summary-box">
+            <div class="summary-row">
+              <div>
+                <div class="summary-label">Credits</div>
+                <div class="summary-main">1M credits</div>
+                <div class="mini-preview-note">1,000,000 credits</div>
+              </div>
+              <div style="text-align: right;">
+                <div class="summary-label">Total payment</div>
+                <div class="summary-main">$19.99</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <div class="help-inline">
+              <span>Need help?</span>
+              <a href="javascript:void(0)">Contact us</a>
+            </div>
+            <div class="actions-right">
+              <button class="app-button secondary" id="closeModalSecondary">Maybe later</button>
+              <button class="app-button primary">Buy now · $19.99</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const controls = Array.from(document.querySelectorAll("[data-var]"));
+      const outputs = Array.from(document.querySelectorAll("[data-output]"));
+      const defaults = {};
+
+      function hexToRgba(hex, alpha) {
+        const safeHex = hex.replace("#", "");
+        const value =
+          safeHex.length === 3
+            ? safeHex
+                .split("")
+                .map((char) => char + char)
+                .join("")
+            : safeHex;
+        const numeric = parseInt(value, 16);
+        const r = (numeric >> 16) & 255;
+        const g = (numeric >> 8) & 255;
+        const b = numeric & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+
+      function syncSoftColors() {
+        const primary = document.getElementById("colorPrimary").value;
+        const success = document.getElementById("colorSuccess").value;
+        const warning = document.getElementById("colorWarning").value;
+        const critical = document.getElementById("colorCritical").value;
+
+        document.documentElement.style.setProperty("--app-accent-primary-soft", hexToRgba(primary, 0.12));
+        document.documentElement.style.setProperty("--app-accent-growth-soft", hexToRgba(success, 0.12));
+        document.documentElement.style.setProperty("--app-accent-utility-soft", hexToRgba(warning, 0.14));
+        document.documentElement.style.setProperty("--app-accent-critical-soft", hexToRgba(critical, 0.12));
+
+        document.documentElement.style.setProperty("--app-color-surface-info", hexToRgba(primary, 0.1));
+        document.documentElement.style.setProperty("--app-color-surface-success", hexToRgba(success, 0.1));
+        document.documentElement.style.setProperty("--app-color-surface-caution", hexToRgba(warning, 0.12));
+        document.documentElement.style.setProperty("--app-color-surface-critical", hexToRgba(critical, 0.1));
+      }
+
+      function updateOutput(id, value, unit = "") {
+        const output = document.querySelector(`[data-output="${id}"]`);
+        if (!output) return;
+        output.textContent = `${value}${unit}`;
+      }
+
+      function updateTokenExport() {
+        const root = getComputedStyle(document.documentElement);
+        const keys = [
+          "--app-font-size-page-title",
+          "--app-font-size-section-title",
+          "--app-font-size-body",
+          "--app-font-size-body-small",
+          "--app-font-size-caption",
+          "--app-card-padding",
+          "--app-space-page",
+          "--app-space-400",
+          "--app-row-padding-y",
+          "--app-button-height",
+          "--demo-modal-width",
+          "--app-radius-md",
+          "--app-radius-lg",
+          "--app-color-bg",
+          "--app-color-surface",
+          "--app-color-surface-secondary",
+          "--app-color-border-secondary",
+          "--app-color-text",
+          "--app-color-text-secondary",
+          "--app-accent-primary",
+          "--app-accent-primary-hover",
+          "--app-accent-growth",
+          "--app-accent-utility",
+          "--app-accent-critical"
+        ];
+
+        const text = [":root {"]
+          .concat(
+            keys.map((key) => `  ${key}: ${root.getPropertyValue(key).trim()};`)
+          )
+          .concat(["}"])
+          .join("\n");
+
+        document.getElementById("tokenExport").textContent = text;
+      }
+
+      function applyControl(control) {
+        const variableName = control.dataset.var;
+        const unit = control.dataset.unit || "";
+        const value = control.value + unit;
+        document.documentElement.style.setProperty(variableName, value);
+        updateOutput(control.id, control.value, unit);
+        syncSoftColors();
+        updateTokenExport();
+      }
+
+      controls.forEach((control) => {
+        defaults[control.id] = control.value;
+        applyControl(control);
+        control.addEventListener("input", () => applyControl(control));
+      });
+
+      document.getElementById("resetTokens").addEventListener("click", () => {
+        controls.forEach((control) => {
+          control.value = defaults[control.id];
+          applyControl(control);
+        });
+      });
+
+      document.getElementById("copyTokens").addEventListener("click", async () => {
+        const content = document.getElementById("tokenExport").textContent;
+        try {
+          await navigator.clipboard.writeText(content);
+          document.getElementById("copyTokens").textContent = "已复制";
+          window.setTimeout(() => {
+            document.getElementById("copyTokens").textContent = "复制 Token";
+          }, 1200);
+        } catch (error) {
+          console.error(error);
+        }
+      });
+
+      const modal = document.getElementById("modalDemo");
+      const openModal = () => {
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+      };
+      const closeModal = () => {
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
+      };
+
+      document.getElementById("openModal").addEventListener("click", openModal);
+      document.getElementById("openCompactModal").addEventListener("click", openModal);
+      document.getElementById("closeModalSecondary").addEventListener("click", closeModal);
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeModal();
+      });
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeModal();
+      });
+    </script>
+  </body>
+</html>
