@@ -186,7 +186,12 @@ logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
 best-effort Shopify cancel when token present) before Account soft-delete and
 Session delete.
 `APP_UNINSTALLED` snapshots subscription/quota/size via
-`uninstallSnapshot.server.ts` before cleanup, then sends that text to Feishu.
+`uninstallSnapshot.server.ts` before cleanup, then fire-and-forgets
+`uninstallEmail.server.ts`: uninstall Feishu (same billing snapshot text;
+if winback is skipped, last line is `挽回邮件：未发（原因）`) plus optional
+winback SES + Feishu copy (payload `email` / `customer_email`; 互斥：已付费未完成
+`212617` → 从未 COMPLETED `212616` → 剩余积分 `212612`; 额度用清理前快照;
+Redis `tsf:uninstall-email:{shop}` NX 7d). `SHOP_REDACT` does not send winback.
 Lifetime-first install (`bound: true` Account create in `app.tsx` loader) and
 lifetime-first `BillingLog.SUBSCRIPTION_ACTIVATED` (count === 1) also send to
 the same support webhook via `lifecycleFeishuNotify.server.ts`; reinstall /
@@ -723,6 +728,10 @@ leftover `AppSubscription` when restoring a soft-deleted Account.
 - `app/server/billing/email/welcomeEmail.server.ts`: first-install welcome email
 (`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init;
  same `bound` gate also fires the first-install Feishu notify).
+- `app/server/billing/email/uninstallEmail.server.ts`: uninstall snapshot Feishu
+ + winback SES (templates `212616` / `212617` / `212612`) + Feishu copy;
+ skip (no email / no segment) appends `挽回邮件：未发（原因）` on the snapshot
+ message. Scheduled from `APP_UNINSTALLED` in `webhooks.tsx`.
 - 收件人/后台 token：`app/server/shop/fetchShopContact.server.ts`（Shopify
 GraphQL 拉店铺联系邮箱）与 `app/server/shop/offlineSessionToken.server.ts`
 （App 侧唯一的 offline token 读取口，Turso `Session`；storefront switcher /
@@ -1280,6 +1289,7 @@ For "合入PR然后发布测试环境", the script will:
 | Shop profile / AI profile        | `app/routes/app.shop-profile/route.tsx`               | `server/shopScan/*`, `shopProfileContext.server.ts` / `shopProfilePrompt.server.ts`, worker shop scan   |
 | Support chat / notifications     | `app/components/SupportChatWidget.tsx`                | `api.support.tsx`, `supportStore.server.ts`, Feishu/SES helpers                                         |
 | 安装 / 首次订阅 / 卸载飞书       | `app/server/billing/lifecycleFeishuNotify.server.ts`  | `uninstallSnapshot.server.ts`, `app.tsx` loader, `handleBillingWebhook.server.ts`, worker `lifecycleFeishuNotify.ts` |
+| 卸载挽回邮件                     | `app/server/billing/email/uninstallEmail.server.ts`   | `webhooks.tsx` `APP_UNINSTALLED`、腾讯云模板 `212616`/`212617`/`212612`、飞书副本 |
 | First-time onboarding            | `app/routes/app.onboarding/route.tsx`                 | `app/server/onboarding/onboarding.server.ts`, `app/routes/app._index/route.tsx`, `ShopOnboarding`      |
 | Auto translate                   | `worker/src/services/autoTranslate.ts`                | `autoScanSchedule.ts`, `ShopTargetLocale`, module catalog                                               |
 | Scheduled shop scan              | `worker/src/services/scheduledShopScan.ts`            | `autoScanSchedule.ts`, `shopScanCosmos.ts`, `shopScanWorker.ts`                                         |
@@ -1539,6 +1549,7 @@ node worker/scripts/probe-hint-queues.mjs
 | `translate:v4:auto_scan:last_success_at` | String: last successful auto-scan completion |
 | `tsf:shop_scan:hints` | List: shop-scan wake hints `{scanId,shopName}` (Cosmos poll is fallback) |
 | `tsf:items_count:{shop}:{locale}` | Hash: module → `{total,translated,updatedAt}` (TTL 7d; language summary in Turso) |
+| `tsf:uninstall-email:{shop}` | String: uninstall winback send lock (`SET NX`, TTL 7d) |
 | `tm:v5:{shop}:{target}:{model}:{digest}` | String: field-digest translation memory (TTL default 30d) |
 | `tm:v5:val:{source}:{target}:{model}:{id}` | String: value-level TM; id = digest or CRC-32 (TTL default 30d) |
 | `translate:v4:keystat:{label}` | Hash: LLM API-key snapshot (TTL 24h) |
