@@ -7,7 +7,7 @@ export type ReportEntry = {
   key: string;
   original: string;
   translated: string;
-  status: "translated" | "fallback";
+  status: "translated" | "fallback" | "skipped";
 };
 
 export type FieldStat = {
@@ -102,7 +102,7 @@ export function analyzeTranslations(entries: ReportEntry[], samplePerClass = 5):
       stat.fallback++;
       flags.push({ module: e.module, resourceId: e.resourceId, key: e.key, reason: "fallback", detail: "engine fell back to original" });
     }
-    if (klass !== "skip" && o !== "" && t === o) {
+    if (e.status !== "skipped" && klass !== "skip" && o !== "" && t === o) {
       unchanged++;
       stat.unchanged++;
       flags.push({ module: e.module, resourceId: e.resourceId, key: e.key, reason: "unchanged", detail: "translated equals original" });

@@ -18,7 +18,8 @@ import type { ShopLocaleRow } from "./shopContext.js";
  *
  * 覆盖率统计的模块 = 管理翻译汇总页全部卡片对应的 module，因此回填的缓存可被
  * 管理翻译页 getItemsCountByLabel 直接命中（预热），各卡片「已翻译/总数」秒出。
- * 相比自动翻译模块（AUTO_TRANSLATE_V4_MODULES）额外补齐两个仅手动翻译的 module：
+ * 相比自动翻译模块（AUTO_TRANSLATE_V4_MODULES）额外补齐三个覆盖率聚合 module：
+ *   - PAYMENT_GATEWAY（并入 Shop 卡片，与 app 侧 coverage 聚合保持一致）
  *   - EMAIL_TEMPLATE（管理翻译「电子邮件通知」卡片）
  *   - ONLINE_STORE_THEME_LOCALE_CONTENT（主题语言内容，Theme 卡片累加项之一）
  *
@@ -26,6 +27,7 @@ import type { ShopLocaleRow } from "./shopContext.js";
  */
 const COVERAGE_MODULES: readonly string[] = [
   ...AUTO_TRANSLATE_V4_MODULES,
+  "PAYMENT_GATEWAY",
   "EMAIL_TEMPLATE",
   "ONLINE_STORE_THEME_LOCALE_CONTENT",
 ];

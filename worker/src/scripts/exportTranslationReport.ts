@@ -28,7 +28,7 @@ type TranslateChunk = Array<{
     originalValue: string;
     translatedValue: string;
     digest: string;
-    status?: "translated" | "fallback";
+    status?: "translated" | "fallback" | "skipped";
   }>;
 }>;
 
