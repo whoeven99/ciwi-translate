@@ -14,6 +14,10 @@ const DEFAULT_INTERVAL_MS = 60 * 60_000;
 const DEFAULT_TZ = "Asia/Shanghai";
 const DEFAULT_MAX_PER_RUN = 500;
 const DEFAULT_ROW_DELAY_MS = 20;
+/** junk 清理（与 retention 独立）：默认每 tick 最多删 5000 条，每批 2000。 */
+const DEFAULT_JUNK_BATCH_SIZE = 2000;
+const DEFAULT_JUNK_MAX_TOTAL_PER_TICK = 5000;
+const DEFAULT_JUNK_DELAY_MS = 2;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -64,6 +68,28 @@ function getMaxPerRun(): number {
 
 function getRowDelayMs(): number {
   return envInt("AUTO_LIQUID_RETENTION_DELAY_MS", DEFAULT_ROW_DELAY_MS, 0, 2000);
+}
+
+function getJunkBatchSize(): number {
+  return envInt(
+    "AUTO_LIQUID_JUNK_CLEANUP_BATCH_SIZE",
+    DEFAULT_JUNK_BATCH_SIZE,
+    100,
+    10_000,
+  );
+}
+
+function getJunkMaxTotalPerTick(): number {
+  return envInt(
+    "AUTO_LIQUID_JUNK_CLEANUP_MAX_TOTAL_PER_TICK",
+    DEFAULT_JUNK_MAX_TOTAL_PER_TICK,
+    500,
+    50_000,
+  );
+}
+
+function getJunkDelayMs(): number {
+  return envInt("AUTO_LIQUID_JUNK_CLEANUP_DELAY_MS", DEFAULT_JUNK_DELAY_MS, 0, 2000);
 }
 
 function timezoneOffsetMs(at: Date, timeZone: string): number {
@@ -182,16 +208,34 @@ export async function cleanupOldAutoLiquidRules(): Promise<{ deleted: number }> 
 
   console.log(`${LOG} done deleted=${deleted}/${ids.length}`);
 
-  const junkDeleted = await cleanupJunkAutoLiquidPending(maxPerRun, delayMs);
+  const junkDeleted = await cleanupJunkAutoLiquidPending();
   return { deleted: deleted + junkDeleted };
 }
 
 /**
- * 清掉采集误入的 junk（HTML 属性碎片、评价/价格/SKU 等；不按年龄；只删 auto+PENDING）。
- * SQL 先用 LIKE 收窄，再用 isAutoLiquidCollectJunk 确认。
+ * 清掉采集误入的 junk（HTML 属性碎片、评价/价格/SKU/型号等；不按年龄；只删 auto+PENDING）。
+ * SQL 先用 LIKE 收窄，再用 isAutoLiquidCollectJunk 确认；多批循环直到 tick 上限。
  */
-async function cleanupJunkAutoLiquidPending(
-  maxPerRun: number,
+async function cleanupJunkAutoLiquidPending(): Promise<number> {
+  const batchSize = getJunkBatchSize();
+  const maxTotal = getJunkMaxTotalPerTick();
+  const delayMs = getJunkDelayMs();
+  let totalDeleted = 0;
+
+  while (totalDeleted < maxTotal && !isShuttingDown()) {
+    const deleted = await cleanupJunkAutoLiquidBatch(batchSize, delayMs);
+    if (deleted === 0) break;
+    totalDeleted += deleted;
+  }
+
+  if (totalDeleted > 0) {
+    console.log(`${LOG} junk auto-liquid totalDeleted=${totalDeleted} cap=${maxTotal}`);
+  }
+  return totalDeleted;
+}
+
+async function cleanupJunkAutoLiquidBatch(
+  batchSize: number,
   delayMs: number,
 ): Promise<number> {
   const rs = await tsfExecute({
@@ -220,10 +264,17 @@ async function cleanupJunkAutoLiquidPending(
               OR beforeTranslation LIKE '% USD'
               OR beforeTranslation LIKE 'SKU%'
               OR beforeTranslation LIKE '% and later'
+              OR beforeTranslation LIKE '%-%'
+              OR beforeTranslation LIKE '_ %'
+              OR (
+                length(beforeTranslation) >= 3
+                AND length(beforeTranslation) <= 8
+                AND beforeTranslation = upper(beforeTranslation)
+              )
             )
           ORDER BY updatedAt ASC
           LIMIT ?`,
-    args: ["%loading='%", maxPerRun],
+    args: ["%loading='%", batchSize],
   });
 
   const shopsToInvalidate = new Set<string>();
@@ -254,7 +305,7 @@ async function cleanupJunkAutoLiquidPending(
     await invalidateAutoLiquidTotal(shop);
   }
   if (deleted > 0) {
-    console.log(`${LOG} junk auto-liquid deleted=${deleted}/${rs.rows.length}`);
+    console.log(`${LOG} junk auto-liquid batchDeleted=${deleted}/${rs.rows.length}`);
   }
   return deleted;
 }
