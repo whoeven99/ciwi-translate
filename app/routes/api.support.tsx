@@ -25,6 +25,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     intent?: string;
     content?: string;
     email?: string;
+    locale?: string;
+    attachments?: unknown;
   };
 
   try {
@@ -35,13 +37,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (body.intent === "send") {
       const content = body.content ?? "";
-      if (!content.trim()) {
+      const attachments = body.attachments;
+      const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+      if (!content.trim() && !hasAttachments) {
         return json({ ok: false, error: "消息内容不能为空" }, { status: 400 });
       }
       const message = await appendShopMessage(
         session.shop,
         content,
         session.email ?? null,
+        { clientLocale: body.locale, attachments },
       );
       return json({ ok: true, message });
     }

@@ -1,5 +1,17 @@
 import prisma from "../../db.server";
 import { sendSupportMessageFeishuNotify } from "../feishu/sendSupportMessageFeishuNotify.server";
+import {
+  attachmentsFromPayload,
+  messagePreviewText,
+  normalizeIncomingAttachments,
+  serializeSupportMessagePayload,
+  type SupportImageAttachment,
+} from "./supportAttachments.server";
+import {
+  getSupportAutoReplyText,
+  resolveSupportAutoReplyLocale,
+  SUPPORT_OFF_HOURS_AUTO_REPLY_KIND,
+} from "./supportAutoReply.server";
 
 /**
  * 翻译 v4 人工客服存储（TSF 自有 Turso）。
@@ -13,6 +25,7 @@ export type SupportMessageDTO = {
   sender: string; // "shop" | "ops"
   senderName: string | null;
   content: string;
+  attachments: SupportImageAttachment[];
   createdAt: string;
 };
 
@@ -36,6 +49,7 @@ function toMessageDTO(m: {
   sender: string;
   senderName: string | null;
   content: string;
+  payloads: string | null;
   createdAt: Date;
 }): SupportMessageDTO {
   return {
@@ -43,6 +57,7 @@ function toMessageDTO(m: {
     sender: m.sender,
     senderName: m.senderName,
     content: m.content,
+    attachments: attachmentsFromPayload(m.payloads),
     createdAt: m.createdAt.toISOString(),
   };
 }
@@ -108,14 +123,68 @@ export async function getConversationForShop(
   };
 }
 
+const OFF_HOURS_AUTO_REPLY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+async function hasRecentOffHoursAutoReply(conversationId: string): Promise<boolean> {
+  const since = new Date(Date.now() - OFF_HOURS_AUTO_REPLY_COOLDOWN_MS);
+  const existing = await prisma.supportMessage.findFirst({
+    where: {
+      conversationId,
+      sender: "ops",
+      payloads: { contains: SUPPORT_OFF_HOURS_AUTO_REPLY_KIND },
+      createdAt: { gte: since },
+    },
+    select: { id: true },
+  });
+  return existing != null;
+}
+
+/** 非工作时间自动回复（24 小时内仅一次）。 */
+async function appendOffHoursAutoReply(
+  conversationId: string,
+  shopMessageContent: string,
+  clientLocale: string | null | undefined,
+): Promise<void> {
+  if (await hasRecentOffHoursAutoReply(conversationId)) return;
+
+  const locale = resolveSupportAutoReplyLocale(shopMessageContent, clientLocale);
+  const autoContent = getSupportAutoReplyText(locale);
+
+  const autoMessage = await prisma.supportMessage.create({
+    data: {
+      conversationId,
+      sender: "ops",
+      senderName: "Support",
+      content: autoContent,
+      payloads: JSON.stringify({ kind: SUPPORT_OFF_HOURS_AUTO_REPLY_KIND, locale }),
+    },
+  });
+
+  await prisma.supportConversation.update({
+    where: { id: conversationId },
+    data: {
+      lastMessage: autoContent.slice(0, PREVIEW_LEN),
+      lastMessageAt: autoMessage.createdAt,
+      unreadForShop: { increment: 1 },
+    },
+  });
+}
+
 /** 商家发送一条消息：追加 + 累计运营未读 + 刷新预览。 */
 export async function appendShopMessage(
   shop: string,
   rawContent: string,
   shopEmail: string | null,
+  options: {
+    clientLocale?: string | null;
+    attachments?: unknown;
+  } = {},
 ): Promise<SupportMessageDTO> {
   const content = rawContent.trim().slice(0, MAX_MESSAGE_LEN);
-  if (!content) throw new Error("消息内容不能为空");
+  const attachments = normalizeIncomingAttachments(shop, options.attachments);
+  if (!content && attachments.length === 0) {
+    throw new Error("消息内容不能为空");
+  }
 
   const conversation = await prisma.supportConversation.upsert({
     where: { shop_source: { shop, source: SOURCE } },
@@ -123,23 +192,41 @@ export async function appendShopMessage(
     update: shopEmail ? { shopEmail } : {},
   });
 
+  const preview = messagePreviewText(content, attachments);
+  const payloads =
+    attachments.length > 0
+      ? serializeSupportMessagePayload({ attachments })
+      : null;
+
   const message = await prisma.supportMessage.create({
-    data: { conversationId: conversation.id, sender: "shop", content },
+    data: {
+      conversationId: conversation.id,
+      sender: "shop",
+      content,
+      payloads,
+    },
   });
 
   const updated = await prisma.supportConversation.update({
     where: { shop_source: { shop, source: SOURCE } },
     data: {
-      lastMessage: content.slice(0, PREVIEW_LEN),
+      lastMessage: preview.slice(0, PREVIEW_LEN),
       lastMessageAt: message.createdAt,
       unreadForOps: { increment: 1 },
       status: "open",
     },
   });
 
+  await appendOffHoursAutoReply(
+    conversation.id,
+    content || preview,
+    options.clientLocale,
+  );
+
   void sendSupportMessageFeishuNotify({
     shop,
     content,
+    attachments,
     contactEmail: updated.contactEmail,
     shopEmail: updated.shopEmail,
     unreadForOps: updated.unreadForOps,

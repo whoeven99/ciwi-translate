@@ -1,4 +1,5 @@
 import { sendFeishuTextMessage } from "./sendFeishuTextMessage.server";
+import type { SupportImageAttachment } from "~/server/support/supportAttachments.server";
 
 const LOG = "[Feishu][SupportMsg]";
 const CONTENT_MAX_LENGTH = 500;
@@ -7,6 +8,7 @@ const FIELD_FALLBACK = "（未提供）";
 export type SendSupportMessageFeishuNotifyParams = {
   shop: string;
   content: string;
+  attachments?: SupportImageAttachment[];
   contactEmail?: string | null;
   shopEmail?: string | null;
   unreadForOps?: number;
@@ -43,6 +45,22 @@ function resolveAdminSupportUrl(): string | null {
   return `${base.replace(/\/+$/, "")}/translate-v4-support`;
 }
 
+function formatMessageBody(
+  content: string,
+  attachments: SupportImageAttachment[] | undefined,
+): string {
+  const text = content.trim();
+  const imageLines =
+    attachments?.filter((item) => item.type === "image").map((item) => item.url) ?? [];
+  if (text && imageLines.length > 0) {
+    return `${truncate(text, CONTENT_MAX_LENGTH - 40)}\n[图片] ${imageLines.join("\n")}`;
+  }
+  if (imageLines.length > 0) {
+    return `[图片]\n${imageLines.join("\n")}`;
+  }
+  return truncate(text, CONTENT_MAX_LENGTH);
+}
+
 export function buildSupportMessageNotify(
   params: SendSupportMessageFeishuNotifyParams,
 ): string {
@@ -56,7 +74,7 @@ export function buildSupportMessageNotify(
     "来源: 翻译 v4",
     `店铺: ${params.shop}`,
     `联系邮箱: ${truncate(contact || shopEmail, 200)}${contact ? "" : shopEmail ? "（账户邮箱）" : ""}`,
-    `消息: ${truncate(params.content, CONTENT_MAX_LENGTH)}`,
+    `消息: ${formatMessageBody(params.content, params.attachments)}`,
     `时间: ${formatOpsNotifyTime(params.at ?? new Date())}`,
   ];
   if (typeof params.unreadForOps === "number" && params.unreadForOps > 1) {
