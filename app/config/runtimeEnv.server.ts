@@ -204,14 +204,17 @@ function logOptionalV4InfraKeys(pattern: RegExp, label: string): void {
 function logCriticalEnvStatus(): void {
   console.info(`${ENV_LOG} ===== 关键变量 =====`);
 
-  const tursoTestOk = tursoPairOk("TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN");
-  const tursoProdOk = tursoPairOk("TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN");
-  logEnvCheck("Turso", tursoTestOk || tursoProdOk, [
-    ["TURSO_TARGET", process.env.TURSO_TARGET],
+  const tursoOk =
+    tursoPairOk("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN") ||
+    tursoPairOk("TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN") ||
+    tursoPairOk("TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN") ||
+    tursoPairOk("TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN");
+  logEnvCheck("Turso", tursoOk, [
+    ["TURSO_DATABASE_URL", process.env.TURSO_DATABASE_URL],
+    ["TURSO_AUTH_TOKEN", process.env.TURSO_AUTH_TOKEN],
+    ["TSF_TURSO_DATABASE_URL", process.env.TSF_TURSO_DATABASE_URL],
     ["TURSO_TEST_DATABASE_URL", process.env.TURSO_TEST_DATABASE_URL],
-    ["TURSO_TEST_AUTH_TOKEN", process.env.TURSO_TEST_AUTH_TOKEN],
     ["TURSO_PROD_DATABASE_URL", process.env.TURSO_PROD_DATABASE_URL],
-    ["TURSO_PROD_AUTH_TOKEN", process.env.TURSO_PROD_AUTH_TOKEN],
   ]);
 
   logEnvCheck(
@@ -290,6 +293,8 @@ export function ensureRuntimeEnv(): void {
     process.env.RENDER &&
     secretFileApplied === 0 &&
     !process.env.SHOPIFY_API_KEY?.trim() &&
+    !tursoPairOk("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN") &&
+    !tursoPairOk("TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN") &&
     !tursoPairOk("TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN") &&
     !tursoPairOk("TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN")
   ) {
@@ -312,8 +317,8 @@ export function describeTursoEnvKeys(): string {
   if (keys.length === 0) {
     return (
       "process.env 中无任何 TURSO_* 键。" +
-      `请确认仓库根目录 ${path.join(getProjectRoot(), ".env")} 存在且含 TURSO_TEST_*；` +
-      "Render 请在 Environment 面板配置或使用 Secret File /etc/secrets/.env。"
+      `请确认仓库根目录 ${path.join(getProjectRoot(), ".env")} 存在且含 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN；` +
+      "Render 请在各服务 Environment 面板配置或使用 Secret File /etc/secrets/.env。"
     );
   }
   const parts = keys.map((k) => {

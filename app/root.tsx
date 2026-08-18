@@ -5,7 +5,6 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useFetcher,
   useRouteError,
 } from "@remix-run/react";
 import { Provider } from "react-redux";
@@ -15,6 +14,10 @@ import { createHead } from "remix-island";
 import { globalStore } from "./globalStore";
 import { patchToastDeduplication } from "./ui/message";
 import { reportClientError } from "./utils/clientLog";
+import {
+  observeLcpDiagnostics,
+  reportShopifyWebVitals,
+} from "./utils/lcpDiagnostics";
 import {
   sanitizeEmbeddedAppHref,
   sanitizeEmbeddedAppPath,
@@ -399,8 +402,6 @@ export function ErrorBoundary() {
 }
 
 export default function App() {
-  const fetcher = useFetcher<any>();
-
   // 从 loader 数据中获取国际化语言代码
   useEffect(() => {
     // GTM 初始化脚本
@@ -408,22 +409,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const callback = async (metrics: any) => {
-      const data = JSON.stringify(metrics);
-      fetcher.submit(
-        {
-          metrics: data,
-        },
-        {
-          method: "POST",
-          action: "/web-vitals-metrics",
-        },
-      );
-    };
-    // 确保 shopify 对象存在再调用
+    // LCP 归因日志（元素 / 阶段耗时 / 冷热缓存 / 网络档位）走 sendBeacon → `/log`。
+    // Shopify 的 web vitals 也改走同一通道：原先的 fetcher.submit 会在每次上报后触发
+    // Remix 全量 loader revalidate，等于把鉴权和 Shopify 语言查询再跑一遍。
+    const stopLcpDiagnostics = observeLcpDiagnostics();
     if (typeof shopify !== "undefined" && shopify?.webVitals?.onReport) {
-      shopify?.webVitals?.onReport(callback);
+      shopify.webVitals.onReport(reportShopifyWebVitals);
     }
+    return stopLcpDiagnostics;
   }, []);
 
   useEffect(() => {

@@ -69,7 +69,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `app/root.tsx`                                               | Global Remix root, Redux provider, GTM/web-vitals, global client error reporting.         |
 | `app/entry.client.tsx` / `app/entry.server.tsx`              | Remix hydrate/SSR. Server inlines i18n boot (`app/lib/i18nBoot.ts`) so client hydrate does not await `/locales/*.json`. |
 | `app/shopify.server.ts`                                      | Shopify app config, auth exports, API version, session storage.                           |
-| `app/db.server.ts`                                           | Turso/Prisma client creation and runtime env loading.                                     |
+| `app/db.server.ts`                                           | Turso/Prisma client；凭据 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（见 `tursoTarget.server.ts`）。 |
 | `app/routes/app.tsx`                                         | Embedded app shell, auth, nav, bootstrap, install-time init, shop scan trigger.           |
 | `app/routes/*`                                               | Remix flat routes for pages and API endpoints.                                            |
 | `app/server/*`                                               | Server-side business logic. Prefer adding feature helpers here and keeping routes thin.   |
@@ -205,9 +205,12 @@ with `.catch`; ledger writes are idempotent and failures are recovered by worker
 `billingSubscriptionReconcile.ts`). Every `APP_UNINSTALLED` step is best-effort
 try/catch and never blocks the `200`.
 - `app/routes/currencyInit.tsx`: currency initialization route.
-- `app/routes/web-vitals-metrics.tsx`: web vitals receiver.
+- `app/routes/web-vitals-metrics.tsx`: 兼容保留的 web vitals receiver；已无调用方
+（要过 `authenticate.admin`，且 `fetcher.submit` 上报会触发全量 loader revalidate）。
 - `app/routes/log.tsx`: structured client log receiver plus legacy form payload
-compatibility; client helpers live in `app/utils/clientLog.ts`.
+compatibility; client helpers live in `app/utils/clientLog.ts`。对
+`event=lcp_diagnostics` 额外输出可 grep 的 `[perf][lcp] {json}` 单行（LCP 归因，
+见 Operations Debugging → LCP）。
 - `app/routes/publishAction.tsx`: publish/unpublish Shopify locales.
 - `app/routes/_index/route.tsx` and `app/routes/app._index/route.tsx`: root entry
 and embedded `/app` redirect/landing behavior.
@@ -592,7 +595,8 @@ Admin 体量标签另用 `COSMOS_SHOP_DATABASE_ID`（默认 `shop`）、
 - Redis: **仅** `RENDER_KV`（Render Key Value / Valkey）。不要再配或连接
   `REDIS_URL` / `REDIS_URL_V4`（Azure 已弃用，见 Operations → Redis）。
 - Blob: `AZURE_BLOB_CONNECTION_STRING`, `AZURE_BLOB_TRANSLATION_CONTAINER`.
-- Turso: `TSF_TURSO_DATABASE_URL`, `TSF_TURSO_AUTH_TOKEN`.
+- Turso: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`（测/产由各 Render 服务各自配值；
+ 短期兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）。
 - LLM: `DEEPSEEK_API_KEY`, `DEEPSEEK_API_KEYS`, `DEEPSEEK_BASE_URL`,
 `DEEPSEEK_MODEL` (default `deepseek-chat`; known id whitelist includes
 `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-reasoner`),
@@ -1319,7 +1323,10 @@ For "合入PR然后发布测试环境", the script will:
 Package-backed root scripts:
 
 - `scripts/translate.js`: `npm run translate`, i18n helper.
-- `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`.
+- `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`。
+ `test` 读 `.env`+`.env.test`，`prod` 读 `.env`+`.env.prod`；文件内同一对
+ `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（短期兼容 `TSF_TURSO_*` 与该
+ target 的旧 `TURSO_{TEST|PROD}_*`）。
 
 Operational root scripts:
 
@@ -1329,9 +1336,9 @@ Operational root scripts:
  `ShopTargetLocale` + `ShopTranslationSettings` + Redis `tsf:items_count:{shop}:*` +
  Cosmos `shop_scan_jobs`（避免 install 因历史 COMPLETED 被 `skipped_existing`）；可选
  `--billing` 连带清 `Account/AppSubscription/BillingLog/AccountPeriodUsage` 让 `isNew=true`）。
- 默认 dry-run，`--write` 才落库；必须 `--shop=`；`--env=`（默认 `.env`）；Turso 目标按
- `--target`/`TURSO_TARGET` 解析并回退到实际存在的 `TURSO_{TEST,PROD}_*` / `TSF_TURSO_*` 凭据；
- Redis **只连** `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
+ 默认 dry-run，`--write` 才落库；必须 `--shop=`； `--env=`（默认 `.env`）；Turso 认 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`
+ （兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）；Redis **只连**
+ `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
  `latest-scan.json`；只打印脱敏 host。
  示例：`node scripts/reset-onboarding.mjs --shop=xxx.myshopify.com --env=.env.test --write`。
 - `scripts/check-task.mjs`: inspect one task and related Redis state.
@@ -1340,6 +1347,10 @@ Operational root scripts:
 recent 72-hour window.
 - `scripts/next-auto-slot-shops.mjs`: preview shops in next auto-translate scan slot.
 - `scripts/smoke-shop-counts.mjs`: focused shop/item count smoke check.
+- `scripts/lcp-trend.mjs`: 首屏 LCP 归因趋势（只读）。从 Render 运行日志抓
+ `[perf][lcp]` 单行，聚合 LCP / FCP / TTFB 的 p50/p75/p90，并按冷热缓存、LCP 元素、
+ 路由、网络档位分组。`--hours=` / `--route=/app` / `--service=srv-xxx` /
+ `--env=.env.prod` / `--json`；需要 `RENDER_API_KEY`。
 - `scripts/backfill-locale-coverage-from-redis.mjs`: Redis `items_count` →
   Turso `ShopTargetLocale.coverage*`（默认 dry-run；`--write` 写线上；
   支持 `--shop=` / `--only-missing`；MOVED 重连重试；Redis 源用 `RENDER_KV`）。
@@ -1451,7 +1462,9 @@ node --experimental-vm-modules -e "
 
 
 **Prod access:** Turso prod credentials are in `.env.prod` as
-`TSF_TURSO_DATABASE_URL` / `TSF_TURSO_AUTH_TOKEN`. You can also read them
+`TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（与 App/Worker 同名；测/产靠不同
+env 文件或 Render 服务区分）。短期仍兼容旧名 `TSF_TURSO_*` /
+`TURSO_TEST_*` / `TURSO_PROD_*`。You can also read them
 from Render env vars (see Render section below).
 
 ### Cosmos DB (Translation V4 Jobs)
@@ -1704,6 +1717,35 @@ const { logs } = await res.json();
 
 
 
+### LCP / 首屏性能归因
+
+嵌入式首页（`/app`、`/app/translate-v4`）的 LCP 有完整归因链，**不要再靠猜**：
+
+1. 采集：`app/utils/lcpDiagnostics.ts`（`app/root.tsx` 里 `observeLcpDiagnostics()`
+ 挂一次）。用 `PerformanceObserver('largest-contentful-paint')` + navigation /
+ paint / resource timing，在**首次交互 / 页面隐藏 / 12s 兜底**三者最早发生时
+ `sendBeacon` 发 `/log`（`event=lcp_diagnostics`，`context.reportReason` 标明时机）。
+ 一个文档只发一次。Shopify App Bridge 的 `webVitals.onReport` 也走同一通道
+ （`event=shopify_web_vitals`）。
+2. 落盘：`app/routes/log.tsx` 输出 `[perf][lcp] {json}` 单行 + 原有 `[client-log]` 全量行。
+3. 聚合：`node scripts/lcp-trend.mjs --hours=72 --route=/app`。
+ 分位数 + 冷热缓存 / LCP 元素 / 路由 / 网络档位分组。
+
+字段判读：
+
+- `coldLoad`：由 `scriptCachedCount < scriptCount/2` 推出。**首次安装冷加载和回访
+ 热加载的 LCP 能差 3 倍**，混在一起看分位数会得出错误结论。
+- `element`：LCP 元素的短选择器（标签 + class + nth-child）。首屏卡片带
+ `.v4-enter` / `.v4-enter-d1` / `.v4-lift`，据此能定位到具体卡片。
+ **有意不采文本内容** —— manage_translation 等页面的 LCP 元素可能是商户商品文案。
+- `ttfbMs` vs `fcpMs` vs `lcpMs`：TTFB 高 → 服务端 loader（鉴权 / Shopify GraphQL）；
+ FCP 与 TTFB 差距大 → 阻塞 CSS/JS；LCP 明显晚于 FCP → 骨架屏换真实内容太晚
+ （对照 `context.resources.apiTimings` 里首屏接口的 `responseEnd`）。
+- `effectiveType` / `rttMs`：排除「其实是商户网络慢」。
+
+`app/utils/perf.ts` 的 `markPerfStart` / `logReactProfilerRender` 是另一条**按需**
+链路，只在 `?perf=1` 或 `localStorage.CIWI_PERF_DEBUG=1` 时上报，用于本地细查渲染。
+
 ### Combined Diagnostic Cheat Sheet
 
 
@@ -1716,6 +1758,7 @@ const { logs } = await res.json();
 | Currency/switcher not working        | Turso: `SwitcherConfiguration`, `Currency` tables              |
 | App 500 / worker crash               | Render deploy logs → check for missing env vars                |
 | Auto-translate not running           | `probe-hint-queues.mjs` auto queues + `auto_scan:last_at`      |
+| 首屏 LCP 慢                          | `scripts/lcp-trend.mjs` → `[perf][lcp]` 归因（见上一节）        |
 
 
 

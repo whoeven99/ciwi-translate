@@ -85,8 +85,14 @@ function collectChecks(): ServiceCheck[] {
   );
   const blobOk = Boolean(process.env.AZURE_BLOB_CONNECTION_STRING?.trim());
   const tsfTursoOk = Boolean(
-    process.env.TSF_TURSO_DATABASE_URL?.trim()?.startsWith("libsql://") &&
-      process.env.TSF_TURSO_AUTH_TOKEN?.trim(),
+    (process.env.TURSO_DATABASE_URL?.trim()?.startsWith("libsql://") &&
+      process.env.TURSO_AUTH_TOKEN?.trim()) ||
+      (process.env.TSF_TURSO_DATABASE_URL?.trim()?.startsWith("libsql://") &&
+        process.env.TSF_TURSO_AUTH_TOKEN?.trim()) ||
+      (process.env.TURSO_TEST_DATABASE_URL?.trim()?.startsWith("libsql://") &&
+        process.env.TURSO_TEST_AUTH_TOKEN?.trim()) ||
+      (process.env.TURSO_PROD_DATABASE_URL?.trim()?.startsWith("libsql://") &&
+        process.env.TURSO_PROD_AUTH_TOKEN?.trim()),
   );
   const sesOk = Boolean(
     process.env.TENCENT_CLOUD_KEY_ID?.trim() && process.env.TENCENT_CLOUD_KEY?.trim(),
@@ -110,7 +116,7 @@ function collectChecks(): ServiceCheck[] {
     {
       label: "TSF Turso",
       ok: tsfTursoOk,
-      hint: "TSF_TURSO_DATABASE_URL, TSF_TURSO_AUTH_TOKEN",
+      hint: "TURSO_DATABASE_URL, TURSO_AUTH_TOKEN（兼容 TSF_TURSO_* / TURSO_TEST_* / TURSO_PROD_*）",
     },
     {
       label: "LLM",

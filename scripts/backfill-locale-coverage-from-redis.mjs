@@ -17,7 +17,8 @@
  * 前置：migration `20260730000000_shop_target_locale_coverage`
  *   （测试：`npm run turso:migrate:test` / 生产：`npm run turso:migrate:prod`）。
  *
- * 凭据：`--env=` 指向的文件；Turso 认 TSF_TURSO_* / TURSO_TEST_* / TURSO_PROD_*；
+ * 凭据：`--env=` 指向的文件；Turso 认 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
+ * （兼容 TSF_TURSO_* / TURSO_TEST_* / TURSO_PROD_*）；
  * Redis 认同文件 REDIS_URL_V4 / REDIS_URL（测试一般为 sparkredistest）。
  */
 import { readFileSync } from "node:fs";
@@ -109,17 +110,18 @@ function loadEnvFile(path) {
 }
 
 function pickTurso(env) {
-  const url =
-    env.TSF_TURSO_DATABASE_URL?.trim() ||
-    env.TURSO_TEST_DATABASE_URL?.trim() ||
-    env.TURSO_PROD_DATABASE_URL?.trim() ||
-    env.TURSO_DATABASE_URL?.trim();
-  const authToken =
-    env.TSF_TURSO_AUTH_TOKEN?.trim() ||
-    env.TURSO_TEST_AUTH_TOKEN?.trim() ||
-    env.TURSO_PROD_AUTH_TOKEN?.trim() ||
-    env.TURSO_AUTH_TOKEN?.trim();
-  return { url, authToken };
+  const candidates = [
+    ["TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"],
+    ["TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN"],
+    ["TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN"],
+    ["TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN"],
+  ];
+  for (const [urlKey, tokenKey] of candidates) {
+    const url = env[urlKey]?.trim();
+    const authToken = env[tokenKey]?.trim();
+    if (url && authToken) return { url, authToken, urlKey };
+  }
+  return { url: undefined, authToken: undefined, urlKey: "TURSO_DATABASE_URL" };
 }
 
 async function resolveRedisUrl(env) {
