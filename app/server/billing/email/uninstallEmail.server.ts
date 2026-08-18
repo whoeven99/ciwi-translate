@@ -1,5 +1,5 @@
 /**
- * 卸载挽回邮件：按分群发腾讯云 SES，并同步抄一份到客服飞书。
+ * 卸载挽回邮件：按分群发腾讯云 SES，并同步发一条元数据飞书（不含邮件正文）。
  * 收件人只从 APP_UNINSTALLED payload 取（卸载后 token 已失效）。
  */
 
@@ -117,93 +117,6 @@ export function formatUninstallKindTitle(
   return `${meta.emoji} 店铺卸载 · ${meta.label}：${shop}`;
 }
 
-function neverFirstBody(customerName: string): string {
-  return [
-    `Hi ${customerName},`,
-    "",
-    "We noticed that you recently uninstalled Ciwi.ai Translator, and it looks like you may not have had the chance to complete your first translation.",
-    "",
-    "If translation credits were the reason you couldn't continue, we'd be happy to help.",
-    "",
-    "We can add some complimentary translation credits to your account so you can try Ciwi again and complete your translation before deciding whether it's right for your store.",
-    "",
-    "If you'd like us to do that, simply reply to this email. You can also let us know what you were trying to translate and which languages you need — our team will be happy to help.",
-    "",
-    "And if something else made you uninstall Ciwi, we'd really appreciate hearing about it. Even a short reply helps us improve the product.",
-    "",
-    "Best,",
-    "The Ciwi.ai Team",
-  ].join("\n");
-}
-
-function paidIncompleteBody(customerName: string): string {
-  return [
-    `Hi ${customerName},`,
-    "",
-    "We noticed that you recently uninstalled Ciwi.ai Translator.",
-    "",
-    "It also looks like you had already started translating your store, but some of your translation tasks may not have been completed.",
-    "",
-    "If that's what happened, we'd like to help make it right.",
-    "",
-    "Our team can check your previous translation tasks and help you continue or complete the unfinished translations. If additional credits are needed because of the interruption, we can also review your account and provide complimentary credits where appropriate.",
-    "",
-    "You shouldn't have to pay again just to finish something you've already started.",
-    "",
-    "Simply reply to this email and we'll take a look at your previous tasks and help you figure out the best way forward.",
-    "",
-    "If there was another problem with Ciwi — translation quality, speed, usability, pricing, or anything else — we'd also really appreciate your feedback.",
-    "",
-    "Best,",
-    "The Ciwi.ai Team",
-  ].join("\n");
-}
-
-function remainingCreditsBody(
-  customerName: string,
-  remainingCreditsLabel: string,
-): string {
-  return [
-    `Hi ${customerName},`,
-    "",
-    "We noticed that you recently uninstalled Ciwi.ai Translator.",
-    "",
-    `You previously used Ciwi and still have ${remainingCreditsLabel} translation credits associated with your account.`,
-    "",
-    "Before we close the loop, we wanted to check whether there's anything we can help with.",
-    "",
-    "If you still need to translate or localize your Shopify store, reply to this email and we'll help you understand the best way to use your remaining credits and continue from where you left off.",
-    "",
-    "If you no longer need Ciwi, we'd also love to understand why.",
-    "",
-    "Was it because:",
-    "You finished your translation work",
-    "You weren't using Ciwi often enough",
-    "The translation quality didn't meet your expectations",
-    "The workflow was difficult to use",
-    "The pricing or credit system wasn't right for you",
-    "You moved to another translation solution",
-    "Something else",
-    "",
-    "You don't need to write a detailed explanation — even a one-line reply would be extremely helpful.",
-    "",
-    "And if there's something we can do to make Ciwi useful for your store again, just let us know.",
-    "",
-    "Best,",
-    "The Ciwi.ai Team",
-  ].join("\n");
-}
-
-function renderEmailBody(
-  kind: UninstallWinbackKind,
-  customerName: string,
-  remainingCreditsLabel: string,
-): string {
-  if (kind === "never_first") return neverFirstBody(customerName);
-  if (kind === "paid_incomplete") return paidIncompleteBody(customerName);
-  return remainingCreditsBody(customerName, remainingCreditsLabel);
-}
-
 async function loadUsageStatuses(shop: string): Promise<string[]> {
   try {
     const rows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
@@ -305,16 +218,10 @@ async function notifyWinbackFeishu(params: {
   shop: string;
   kind: UninstallWinbackKind;
   to: string;
-  customerName: string;
   remainingCreditsLabel: string;
   sesOk: boolean;
 }): Promise<void> {
   const meta = KIND_META[params.kind];
-  const body = renderEmailBody(
-    params.kind,
-    params.customerName,
-    params.remainingCreditsLabel,
-  );
   const message = [
     `${meta.emoji} 卸载挽回邮件 · ${meta.label}`,
     `店铺：${params.shop}`,
@@ -324,8 +231,6 @@ async function notifyWinbackFeishu(params: {
     `SES：${params.sesOk ? "ok" : "failed"}`,
     `剩余积分：${params.remainingCreditsLabel}`,
     `标题：${SUBJECT}`,
-    "",
-    body,
   ].join("\n");
 
   const result = await sendFeishuTextMessage(message);
@@ -364,7 +269,6 @@ async function deliverWinback(params: {
     shop: params.shop,
     kind: params.kind,
     to: params.email,
-    customerName: params.customerName,
     remainingCreditsLabel: params.remainingCreditsLabel,
     sesOk,
   });
