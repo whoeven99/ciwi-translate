@@ -32,6 +32,11 @@ model Session {
   emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+
+  // 每次 Shopify Admin API 调用都会按 shop + isOnline 查 offline token（App 与 Worker 唯一
+  // token 来源，见 shopAccessToken.ts / offlineSessionToken.server.ts，无进程内缓存），
+  // 是全库最热的查询路径；此前该表没有任何索引，命中的是全表扫描。
+  @@index([shop, isOnline])
 }
 
 // 取代 Java `Translates` —— 每店一行的翻译配置

@@ -31,6 +31,35 @@ export type FinalizeAfterWritebackInput = {
   stageTimings?: StageTimings | null;
 };
 
+/**
+ * `computeModuleCount` 没有自己的节流/退避（直接裸 fetch 分页），所以不能对
+ * 10-20 个 module 做无限制的 Promise.all（会瞬时打爆 Shopify 该店的 GraphQL
+ * cost bucket，换来更多 429）。用一个小的并发上限把「串行 10-20 次」换成
+ * 「批量 N 路并行」，兼顾提速和不触发限流。
+ */
+const MODULE_COUNT_CONCURRENCY = 4;
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(limit, items.length)) },
+    async () => {
+      while (true) {
+        const i = cursor++;
+        if (i >= items.length) return;
+        results[i] = await fn(items[i], i);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
+
 /** 写回结束后直接收尾：COMPLETED / PAUSED / FAILED（不再进入校验）。 */
 export async function finalizeJobAfterWriteback(
   job: TranslationV4Job,
@@ -85,28 +114,45 @@ export async function finalizeJobAfterWriteback(
     const modulesToCount = [
       ...new Set<string>([...job.modules, ...COVERAGE_SUMMARY_MODULES]),
     ];
-    for (const module of modulesToCount) {
-      if (!accessToken) break;
-      try {
-        const count = await computeModuleCount(
-          shopName,
-          accessToken,
-          module,
-          job.target,
-        );
-        moduleCounts.set(module, count);
-        const stored = await setItemsCount(shopName, job.target, module, count);
-        if (stored) {
-          console.log(
-            `[finalize] items_count job=${jobId} ${module} ${count.translated}/${count.total} stored`,
-          );
-        } else {
-          console.warn(
-            `[finalize] items_count job=${jobId} ${module} ${count.translated}/${count.total} redis unavailable`,
-          );
-        }
-      } catch (e) {
-        console.error(`[finalize] items_count job=${jobId} ${module} failed:`, e);
+    if (accessToken) {
+      const results = await mapWithConcurrency(
+        modulesToCount,
+        MODULE_COUNT_CONCURRENCY,
+        async (module) => {
+          try {
+            const count = await computeModuleCount(
+              shopName,
+              accessToken,
+              module,
+              job.target,
+            );
+            const stored = await setItemsCount(
+              shopName,
+              job.target,
+              module,
+              count,
+            );
+            if (stored) {
+              console.log(
+                `[finalize] items_count job=${jobId} ${module} ${count.translated}/${count.total} stored`,
+              );
+            } else {
+              console.warn(
+                `[finalize] items_count job=${jobId} ${module} ${count.translated}/${count.total} redis unavailable`,
+              );
+            }
+            return { module, count };
+          } catch (e) {
+            console.error(
+              `[finalize] items_count job=${jobId} ${module} failed:`,
+              e,
+            );
+            return null;
+          }
+        },
+      );
+      for (const r of results) {
+        if (r) moduleCounts.set(r.module, r.count);
       }
     }
 
