@@ -33,6 +33,7 @@ import {
 import { CreateTaskQuotaGateModal } from "~/routes/app.translate-v4/components/CreateTaskQuotaGateModal";
 import {
   buildUntranslatedRatioByLocale,
+  type CreateTaskEstimateView,
   formatEstimateCredits,
 } from "~/routes/app.translate-v4/useCreateTaskEstimate";
 import {
@@ -41,6 +42,7 @@ import {
 } from "~/routes/app.translate-v4/v4I18n";
 import { TaskQueueSection } from "~/routes/app.translate-v4/components/TaskQueueSection";
 import { PageHeaderBar } from "~/routes/app.translate-v4/components/SummaryAndHeader";
+import { CreateTaskConfirmModal } from "~/routes/app.translate-v4/components/CreateTaskConfirmModal";
 import { v4CardStyle, v4Colors, v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
 import { localeRegionCode, localeShortName } from "~/routes/app.translate-v4/localeDisplay";
 import { shouldPollV4Job } from "~/routes/app.translate-v4/jobFilters";
@@ -73,6 +75,17 @@ type Recommendation = {
   pendingItems: number;
   contentChanged: boolean;
   tone: "success" | "attention" | "info";
+};
+
+type PendingCreateConfig = {
+  recommendationId: string | null;
+  targets: string[];
+  modules: string[];
+  aiModel: string;
+  isCover: boolean;
+  isHandle: boolean;
+  includeLiquid: boolean;
+  estimate: CreateTaskEstimateView | null;
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -355,6 +368,10 @@ export default function TranslateV4MvpRoute() {
   const [createQuotaGateOpen, setCreateQuotaGateOpen] = useState<"trial" | "pricing" | null>(
     null,
   );
+  const [createConfirmConfig, setCreateConfirmConfig] = useState<PendingCreateConfig | null>(
+    null,
+  );
+  const [creating, setCreating] = useState(false);
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
   const planType = plan?.type?.trim() || null;
 
@@ -379,6 +396,9 @@ export default function TranslateV4MvpRoute() {
   );
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
   const remainingCredits = normalizedQuota?.remaining ?? null;
+  const normalizedPlanType = planType?.trim().toLowerCase() || "";
+  const hasPaidPlan =
+    normalizedPlanType !== "" && normalizedPlanType !== "free";
   const createShouldGateByCredits = shouldBlockCreateTaskByCredits({
     remainingCredits,
   });
@@ -544,6 +564,18 @@ export default function TranslateV4MvpRoute() {
     () => recommendations.filter((item) => !submittingRecommendationIds.includes(item.id)),
     [recommendations, submittingRecommendationIds],
   );
+  const createConfirmScenario:
+    | "ready"
+    | "insufficient_paid"
+    | "insufficient_trial"
+    | "insufficient_pricing" =
+    createConfirmConfig?.estimate?.needsMoreCredits
+      ? hasPaidPlan
+        ? "insufficient_paid"
+        : createQuotaGateMode === "trial"
+          ? "insufficient_trial"
+          : "insufficient_pricing"
+      : "ready";
 
   const createTasksWithConfig = useCallback(async ({
     nextTargets,
@@ -669,32 +701,80 @@ export default function TranslateV4MvpRoute() {
     }
 
     const estimatedCredits = recommendationEstimates[item.id] ?? null;
-    if (estimatedCredits != null && estimatedCredits > remainingCredits) {
-      openCreditsPurchaseModal(
-        buildCreateTaskCreditsPurchaseContext({
-          estimatedCredits,
-          currentRemainingCredits: remainingCredits,
-          targetsCount: item.targets.length,
-          modulesCount: item.modules.length,
-        }),
-      );
-      return;
-    }
-
-    setSubmittingRecommendationIds((current) =>
-      current.includes(item.id) ? current : [...current, item.id],
-    );
-
-    await createTasksWithConfig({
-      nextTargets: item.targets,
-      nextModules: item.modules,
+    setCreateConfirmConfig({
+      recommendationId: item.id,
+      targets: item.targets,
+      modules: item.modules,
+      aiModel: "gpt-4o-mini",
+      isCover: false,
+      isHandle: false,
+      includeLiquid: false,
+      estimate: {
+        estimatedCredits,
+        remainingCredits: remainingCredits ?? 0,
+        isUpperBound: true,
+        needsMoreCredits:
+          estimatedCredits != null &&
+          remainingCredits != null &&
+          estimatedCredits > remainingCredits,
+        loading: false,
+      },
     });
-    setSubmittingRecommendationIds((current) => current.filter((id) => id !== item.id));
   }, [
     createQuotaGateMode,
     createQuotaGatePending,
-    createTasksWithConfig,
     recommendationEstimates,
+    remainingCredits,
+    t,
+  ]);
+
+  const handleCreateConfirm = useCallback(async () => {
+    if (!createConfirmConfig) return;
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (createQuotaGateMode !== null) return;
+    if (remainingCredits == null) {
+      message.info(t("v4.create.quotaUnavailable"));
+      return;
+    }
+
+    const recommendationId = createConfirmConfig.recommendationId;
+    setCreateConfirmConfig(null);
+    if (recommendationId) {
+      setSubmittingRecommendationIds((current) =>
+        current.includes(recommendationId)
+          ? current
+          : [...current, recommendationId],
+      );
+    }
+
+    setCreating(true);
+    try {
+      await createTasksWithConfig({
+        nextTargets: createConfirmConfig.targets,
+        nextModules: createConfirmConfig.modules,
+        nextAiModel: createConfirmConfig.aiModel,
+        nextIsCover: createConfirmConfig.isCover,
+        nextIsHandle: createConfirmConfig.isHandle,
+        nextIncludeLiquid: createConfirmConfig.includeLiquid,
+      });
+    } finally {
+      setCreating(false);
+      if (recommendationId) {
+        setSubmittingRecommendationIds((current) =>
+          current.filter((id) => id !== recommendationId),
+        );
+      }
+    }
+  }, [
+    createConfirmConfig,
+    createQuotaGateMode,
+    createQuotaGatePending,
+    createTasksWithConfig,
     remainingCredits,
     t,
   ]);
@@ -1032,6 +1112,39 @@ export default function TranslateV4MvpRoute() {
         open={createQuotaGateOpen !== null}
         mode={createQuotaGateOpen ?? "pricing"}
         onClose={() => setCreateQuotaGateOpen(null)}
+      />
+      <CreateTaskConfirmModal
+        open={createConfirmConfig !== null}
+        creating={creating}
+        targetOptions={targetOptions}
+        targets={createConfirmConfig?.targets ?? []}
+        modules={createConfirmConfig?.modules ?? []}
+        aiModel={createConfirmConfig?.aiModel ?? "gpt-4o-mini"}
+        isCover={createConfirmConfig?.isCover ?? false}
+        isHandle={createConfirmConfig?.isHandle ?? false}
+        includeLiquid={createConfirmConfig?.includeLiquid ?? false}
+        sourceLocale={primaryLocale}
+        estimate={createConfirmConfig?.estimate ?? null}
+        scenario={createConfirmScenario}
+        onClose={() => {
+          if (!creating) {
+            setCreateConfirmConfig(null);
+          }
+        }}
+        onConfirmCreate={handleCreateConfirm}
+        onBuyCredits={(detailedCredits) => {
+          if (!createConfirmConfig) return;
+          setCreateConfirmConfig(null);
+          openCreditsPurchaseModal(
+            buildCreateTaskCreditsPurchaseContext({
+              estimatedCredits:
+                detailedCredits ?? createConfirmConfig.estimate?.estimatedCredits ?? null,
+              currentRemainingCredits: remainingCredits,
+              targetsCount: createConfirmConfig.targets.length,
+              modulesCount: createConfirmConfig.modules.length,
+            }),
+          );
+        }}
       />
     </Page>
   );

@@ -4,8 +4,10 @@ import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { BlockStack, Button, InlineStack, Page, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
+import { useSelector } from "react-redux";
 import { message } from "~/ui/message";
 import { authenticate } from "~/shopify.server";
+import type { RootState } from "~/store";
 import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
 import type { CoverageSummary } from "~/server/translateV4/coverage.server";
 import {
@@ -20,12 +22,17 @@ import {
 import { formatV4CreateTasksMessage } from "~/routes/app.translate-v4/v4I18n";
 import { localeRegionCode } from "~/routes/app.translate-v4/localeDisplay";
 import { CreateTaskCard } from "~/routes/app.translate-v4/components/CreateTaskCard";
+import { CreateTaskConfirmModal } from "~/routes/app.translate-v4/components/CreateTaskConfirmModal";
+import { CreateTaskQuotaGateModal } from "~/routes/app.translate-v4/components/CreateTaskQuotaGateModal";
 import { v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
 import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
 import { normalizeShopQuota, type ShopQuota } from "~/lib/translationQuota";
+import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
+import { buildCreateTaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
 
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -84,6 +91,8 @@ export default function TranslateV4MvpCustomRoute() {
   const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const plan = useSelector((state: RootState) => state.userConfig.plan);
+  const isNew = useSelector((state: RootState) => state.userConfig.isNew);
 
   const targetOptions = useMemo(
     () =>
@@ -95,7 +104,7 @@ export default function TranslateV4MvpCustomRoute() {
     () => new Set(targetOptions.map((option) => option.value)),
     [targetOptions],
   );
-  const validModules = useMemo(() => new Set(DEFAULT_MODULE_KEYS), []);
+  const validModules = useMemo(() => new Set<string>(DEFAULT_MODULE_KEYS), []);
 
   const initialTargets = useMemo(() => {
     const parsed = parseListParam(searchParams.get("targets")).filter((item) =>
@@ -124,6 +133,10 @@ export default function TranslateV4MvpCustomRoute() {
   const [quota, setQuota] = useState<ShopQuota | null>(null);
   const [, setQuotaLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
+  const [createQuotaGateOpen, setCreateQuotaGateOpen] = useState<"trial" | "pricing" | null>(
+    null,
+  );
 
   const [targets, setTargets] = useState<string[]>(initialTargets);
   const [modules, setModules] = useState<string[]>(initialModules);
@@ -135,8 +148,23 @@ export default function TranslateV4MvpCustomRoute() {
   );
 
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
+  const remainingCredits = normalizedQuota?.remaining ?? null;
+  const planType = plan?.type?.trim() || null;
+  const normalizedPlanType = planType?.trim().toLowerCase() || "";
+  const hasPaidPlan =
+    normalizedPlanType !== "" && normalizedPlanType !== "free";
   const createDisabledMessage =
     normalizedQuota == null ? t("v4.create.quotaUnavailable") : null;
+  const createShouldGateByCredits = shouldBlockCreateTaskByCredits({
+    remainingCredits,
+  });
+  const createQuotaGatePending = createShouldGateByCredits && isNew == null;
+  const createQuotaGateMode: "trial" | "pricing" | null =
+    createShouldGateByCredits && isNew != null
+      ? isNew
+        ? "trial"
+        : "pricing"
+      : null;
   const untranslatedRatioByLocale = useMemo(
     () => buildUntranslatedRatioByLocale(coverage.locales),
     [coverage.locales],
@@ -148,8 +176,20 @@ export default function TranslateV4MvpCustomRoute() {
     isCover,
     includeLiquid,
     untranslatedRatioByLocale,
-    remainingCredits: normalizedQuota?.remaining ?? null,
+    remainingCredits,
   });
+  const createConfirmScenario:
+    | "ready"
+    | "insufficient_paid"
+    | "insufficient_trial"
+    | "insufficient_pricing" =
+    taskEstimate.needsMoreCredits
+      ? hasPaidPlan
+        ? "insufficient_paid"
+        : createQuotaGateMode === "trial"
+          ? "insufficient_trial"
+          : "insufficient_pricing"
+      : "ready";
 
   const refreshCoverage = useCallback(async () => {
     setCoverageLoading(true);
@@ -190,7 +230,32 @@ export default function TranslateV4MvpCustomRoute() {
     void Promise.all([refreshCoverage(), refreshQuota()]);
   }, [refreshCoverage, refreshQuota]);
 
-  const handleCreate = useCallback(async () => {
+  const handleCreateRequest = useCallback(() => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+
+    if (createQuotaGateMode !== null) {
+      setCreateQuotaGateOpen(createQuotaGateMode);
+      return;
+    }
+
+    setCreateConfirmOpen(true);
+  }, [createQuotaGateMode, createQuotaGatePending, t]);
+
+  const handleCreateConfirm = useCallback(async () => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (createQuotaGateMode !== null) return;
+
+    setCreateConfirmOpen(false);
     setCreating(true);
     try {
       const result = await createTranslateV4Tasks({
@@ -220,6 +285,8 @@ export default function TranslateV4MvpCustomRoute() {
     }
   }, [
     aiModel,
+    createQuotaGateMode,
+    createQuotaGatePending,
     includeLiquid,
     isCover,
     isHandle,
@@ -260,7 +327,7 @@ export default function TranslateV4MvpCustomRoute() {
             creating={creating}
             createDisabled={normalizedQuota == null}
             disabledMessage={createDisabledMessage}
-            onCreate={() => void handleCreate()}
+            onCreate={handleCreateRequest}
             aiModel={aiModel}
             onAiModelChange={setAiModel}
             isCover={isCover}
@@ -273,6 +340,39 @@ export default function TranslateV4MvpCustomRoute() {
           />
         </BlockStack>
       </div>
+      <CreateTaskQuotaGateModal
+        open={createQuotaGateOpen !== null}
+        mode={createQuotaGateOpen ?? "pricing"}
+        onClose={() => setCreateQuotaGateOpen(null)}
+      />
+      <CreateTaskConfirmModal
+        open={createConfirmOpen}
+        creating={creating}
+        targetOptions={targetOptions}
+        targets={targets}
+        modules={modules}
+        aiModel={aiModel}
+        isCover={isCover}
+        isHandle={isHandle}
+        includeLiquid={includeLiquid}
+        sourceLocale={primaryLocale}
+        estimate={taskEstimate}
+        scenario={createConfirmScenario}
+        onClose={() => setCreateConfirmOpen(false)}
+        onConfirmCreate={handleCreateConfirm}
+        onBuyCredits={(detailedCredits) => {
+          setCreateConfirmOpen(false);
+          openCreditsPurchaseModal(
+            buildCreateTaskCreditsPurchaseContext({
+              estimatedCredits:
+                detailedCredits ?? taskEstimate?.estimatedCredits ?? null,
+              currentRemainingCredits: remainingCredits,
+              targetsCount: targets.length,
+              modulesCount: modules.length,
+            }),
+          );
+        }}
+      />
     </Page>
   );
 }
