@@ -1,56 +1,31 @@
 import {
   json,
+  redirect,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
 import { authenticate } from "~/shopify.server";
 import {
-  buildOnboardingSummary,
-  getOnboardingState,
   markOnboardingCompleted,
-  markOnboardingEntered,
   markOnboardingSkipped,
   markOnboardingTrialStarted,
-  saveOnboardingRecommendation,
 } from "~/server/onboarding/onboarding.server";
 import { enqueueShopScan } from "~/server/shopScan/trigger.server";
-import { OnboardingFlow } from "./components/OnboardingFlow";
+import { withEmbeddedSearch } from "~/utils/embeddedAction";
 
 /**
- * GET /app/onboarding —— 首次翻译新手引导（方案 A：聚合 loader 一次性返回全部展示数据）。
- * 直接访问但已 skipped/completed 的用户仍返回数据（页面允许再次跳过/完成），
- * 入口重定向由 `/app` (app._index) 负责，此处不再二次拦截，避免嵌入式重定向问题。
+ * GET /app/onboarding —— 首次翻译新手引导（暂时关闭，重定向到翻译首页）。
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const shop = session.shop;
 
-  // 再次确保 install 扫描已入队（幂等；直接打开 /app/onboarding 时也能触发）。
-  void enqueueShopScan({ shop, trigger: "install" }).catch((err) => {
-    console.error("[onboarding] install scan enqueue failed:", err);
-  });
+  void enqueueShopScan({ shop: session.shop, trigger: "install" }).catch(
+    (err) => {
+      console.error("[onboarding] install scan enqueue failed:", err);
+    },
+  );
 
-  // 进入即把 not_started 推进为 preparing（幂等），记录首次进入时间。
-  const state =
-    (await markOnboardingEntered(shop)) ?? (await getOnboardingState(shop));
-
-  const summary = await buildOnboardingSummary({
-    shop,
-    accessToken: session.accessToken as string | undefined,
-    state,
-  });
-
-  // 持久化推荐快照，供埋点/转化追踪（best-effort，失败不影响展示）。
-  await saveOnboardingRecommendation(shop, {
-    recommendedTargets: summary.locales.suggestedTargets,
-    recommendedModules: summary.recommendation.suggestedModuleKeys,
-    estimateCredits: summary.estimate?.credits ?? null,
-    estimateMinutes: summary.estimate?.minutes ?? null,
-    sourceScanId: summary.onboardingState?.sourceScanId ?? null,
-  });
-
-  return json({ summary });
+  throw redirect(withEmbeddedSearch("/app", new URL(request.url).search));
 };
 
 type OnboardingIntent = "skip" | "complete" | "trial";
@@ -82,6 +57,5 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function OnboardingRoute() {
-  const { summary } = useLoaderData<typeof loader>();
-  return <OnboardingFlow summary={summary} />;
+  return null;
 }

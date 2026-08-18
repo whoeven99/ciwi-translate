@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { looksLikeAutoLiquidJunk } from "./autoLiquidJunk.js";
+import {
+  looksLikeAutoLiquidJunk,
+  looksLikeProductModelCode,
+} from "./autoLiquidJunk.js";
 import { translationRuleJudgment } from "./judgeTranslateUtils.js";
 
 describe("looksLikeAutoLiquidJunk", () => {
@@ -16,17 +19,28 @@ describe("looksLikeAutoLiquidJunk", () => {
     assert.equal(looksLikeAutoLiquidJunk("EUR €"), true);
   });
 
+  it("rejects product / vehicle model codes", () => {
+    assert.equal(looksLikeProductModelCode("R NineT"), true);
+    assert.equal(looksLikeProductModelCode("AIO-5 Play"), true);
+    assert.equal(looksLikeProductModelCode("CGOS"), true);
+    assert.equal(looksLikeProductModelCode("F900 R"), true);
+    assert.equal(looksLikeProductModelCode("S1000 RR"), true);
+    assert.equal(looksLikeAutoLiquidJunk("R NineT"), true);
+  });
+
   it("keeps real storefront copy", () => {
     assert.equal(looksLikeAutoLiquidJunk("Add to cart"), false);
     assert.equal(looksLikeAutoLiquidJunk("Buying Guide"), false);
     assert.equal(looksLikeAutoLiquidJunk("Money-back guarantee"), false);
     assert.equal(looksLikeAutoLiquidJunk("Let customers speak for us"), false);
-    assert.equal(looksLikeAutoLiquidJunk("R NineT"), false);
     assert.equal(looksLikeAutoLiquidJunk("Checkout"), false);
+    assert.equal(looksLikeAutoLiquidJunk("Cart"), false);
+    assert.equal(looksLikeAutoLiquidJunk("Accessories"), false);
   });
 
   it("is wired into translationRuleJudgment for liquid collect", () => {
     assert.equal(translationRuleJudgment("liquid", "2747 reviews"), false);
+    assert.equal(translationRuleJudgment("liquid", "R NineT"), false);
     assert.equal(translationRuleJudgment("liquid", "Buying Guide"), true);
   });
 });

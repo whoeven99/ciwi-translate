@@ -4,6 +4,7 @@ import {
   setIsNew,
   setPlan,
   setTotalChars,
+  setTrialCredits,
   setUpdateTime,
 } from "~/store/modules/userConfig";
 import type { AppBootstrapData } from "~/server/appBootstrap.server";
@@ -31,6 +32,7 @@ export async function refreshBillingBootstrap(
       dispatch(setPlan({ plan: bootstrap.plan }));
       dispatch(setChars({ chars: bootstrap.chars }));
       dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
+      dispatch(setTrialCredits({ trialCredits: bootstrap.trialCredits ?? 0 }));
       if (bootstrap.updateTime) {
         dispatch(setUpdateTime({ updateTime: bootstrap.updateTime }));
       } else {

@@ -17,17 +17,18 @@ import {
   loadShopLocalesForTranslation,
   type ShopLocaleRow,
 } from "~/server/translateV4/shopLocales.server";
+import { getCoverageSummaryFromCache } from "~/server/translateV4/coverage.server";
 import { estimateCreateTaskCredits } from "~/server/translateV4/creditEstimate.server";
-import { listV4Jobs } from "~/server/translateV4/cosmos.server";
-import { getLatestShopScanJob } from "~/server/shopScan/cosmos.server";
-import { loadShopScanArtifacts } from "~/server/shopScan/artifacts.server";
 import type {
-  OnboardingMarket,
   OnboardingLocaleOption,
   OnboardingStatus,
   OnboardingSummary,
   SerializedOnboardingState,
 } from "~/routes/app.onboarding/types";
+import {
+  ONBOARDING_FAST_COVERAGE_LABELS,
+  pickOnboardingFastCoverageLocale,
+} from "~/server/onboarding/fastCoverage.server";
 
 export type {
   OnboardingLocaleOption,
@@ -198,55 +199,30 @@ export async function saveOnboardingRecommendation(
 
 /**
  * `/app` 入口决策：是否重定向到 `/app/onboarding`。
- * 规则（对齐方案 7.1）：
- * - 已 skipped / completed → 不再打断，进默认流程。
- * - 已创建过任何 v4 任务 → 视为老用户，标记 completed 后进默认流程（省下次判断）。
- * - 否则 → 进入引导。
+ * 新手引导已暂时关闭，始终返回 false。
  */
 export async function shouldRedirectToOnboarding(
-  shop: string,
+  _shop: string,
 ): Promise<boolean> {
-  const state = await getOnboardingState(shop);
-  if (state && (state.status === "skipped" || state.status === "completed")) {
-    return false;
-  }
-
-  // 有任何历史任务 → 老用户，不打扰；顺手落一个 completed，避免每次进 /app 都查 Cosmos。
-  try {
-    const jobs = await listV4Jobs(shop, 1);
-    if (jobs.length > 0) {
-      await markOnboardingCompleted(shop);
-      return false;
-    }
-  } catch (err) {
-    // Cosmos 查询失败不应阻塞入口；保守起见仍展示引导（可跳过）。
-    console.error("[onboarding] first-task check failed:", err);
-  }
-
-  return true;
+  return false;
 }
 
-function chooseSuggestedTargets(
-  targets: ShopLocaleRow[],
-  markets: OnboardingMarket[],
-): string[] {
-  const marketLocales = [...new Set(markets.flatMap((market) => market.locales))];
-  const localeMatches = (targetLocale: string, marketLocale: string) => {
-    const target = targetLocale.trim().toLowerCase();
-    const market = marketLocale.trim().toLowerCase();
-    if (target === market) return true;
-    return target.split(/[-_]/)[0] === market.split(/[-_]/)[0];
-  };
-  const matched = targets
-    .filter((target) =>
-      marketLocales.some((marketLocale) => localeMatches(target.locale, marketLocale)),
-    )
-    .map((target) => target.locale);
-  if (matched.length > 0) return matched;
-
+function chooseSuggestedTargets(targets: ShopLocaleRow[]): string[] {
   const published = targets.filter((t) => t.published).map((t) => t.locale);
   if (published.length > 0) return published;
   return targets.map((t) => t.locale);
+}
+
+/** 覆盖率缺口最大的语言（未译比例最高优先）。 */
+function computeTopGaps(
+  untranslatedRatioByLocale: Record<string, number | null>,
+  labelByLocale: Map<string, string>,
+): string[] {
+  return Object.entries(untranslatedRatioByLocale)
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number")
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([locale]) => labelByLocale.get(locale) ?? locale);
 }
 
 /** 由展示用积分粗估耗时（纯展示，非真实排队时间）。 */
@@ -293,7 +269,6 @@ export async function buildOnboardingSummary(args: {
   let availableTargets: OnboardingLocaleOption[] = [];
   let suggestedTargets: string[] = [];
   let targetRows: ShopLocaleRow[] = [];
-  let markets: OnboardingMarket[] = [];
   try {
     if (accessToken) {
       const loaded = await loadShopLocalesForTranslation({ shop, accessToken });
@@ -304,31 +279,45 @@ export async function buildOnboardingSummary(args: {
         label: `${r.name} (${r.locale})`,
         published: r.published,
       }));
+      suggestedTargets = chooseSuggestedTargets(targetRows);
     }
   } catch (err) {
     console.error("[onboarding] locales load failed:", err);
   }
 
-  try {
-    const latestScan = await getLatestShopScanJob(shop);
-    if (latestScan) {
-      const artifacts = await loadShopScanArtifacts(
-        latestScan.blobPrefix,
-        latestScan.summary,
-      );
-      markets = artifacts.markets;
-    }
-  } catch (err) {
-    console.error("[onboarding] markets load failed:", err);
-  }
-
-  suggestedTargets = chooseSuggestedTargets(targetRows, markets);
-
   const labelByLocale = new Map(
     availableTargets.map((t) => [t.value, t.label] as const),
   );
 
-  // 3) recommendation（模块 + 理由 + 店铺画像上下文）
+  // 3) coverage（只读缓存，非阻塞；未统计则降级为 null 比例）
+  let coverage: OnboardingSummary["coverage"] = null;
+  let untranslatedRatioByLocale: Record<string, number | null> = {};
+  try {
+    if (suggestedTargets.length > 0) {
+      const summary = await getCoverageSummaryFromCache({
+        shop,
+        targetLocales: suggestedTargets.map((value) => ({
+          value,
+          label: labelByLocale.get(value) ?? value,
+        })),
+        includeRuntimeSignals: false,
+      });
+      for (const row of summary.locales) {
+        const pct = row.cacheMissing ? null : row.percent;
+        untranslatedRatioByLocale[row.locale] =
+          pct == null ? null : Math.min(1, Math.max(0, (100 - pct) / 100));
+      }
+      coverage = {
+        overallPercent: summary.overallPercent,
+        untranslatedRatioByLocale,
+        topGaps: computeTopGaps(untranslatedRatioByLocale, labelByLocale),
+      };
+    }
+  } catch (err) {
+    console.error("[onboarding] coverage load failed:", err);
+  }
+
+  // 4) recommendation（模块 + 理由 + 店铺画像上下文）
   let shopProfile: OnboardingSummary["recommendation"]["shopProfile"] = null;
   try {
     const profile = await prisma.shopProfile.findUnique({
@@ -372,7 +361,7 @@ export async function buildOnboardingSummary(args: {
     shopProfile,
   };
 
-  // 4) estimate（仅供 CTA 决策与建任务复用，不参与 onboarding 展示）
+  // 5) estimate（复用创建任务预估，增量口径）
   let estimate: OnboardingSummary["estimate"] = null;
   try {
     if (suggestedTargets.length > 0) {
@@ -381,7 +370,7 @@ export async function buildOnboardingSummary(args: {
         v2ModuleKeys: recommendation.suggestedModuleKeys,
         targets: suggestedTargets,
         isCover: false,
-        untranslatedRatioByLocale: {},
+        untranslatedRatioByLocale,
       });
       estimate = {
         credits: est.estimatedCredits,
@@ -394,12 +383,25 @@ export async function buildOnboardingSummary(args: {
     console.error("[onboarding] estimate failed:", err);
   }
 
+  const picked = pickOnboardingFastCoverageLocale({
+    suggestedTargets,
+    availableTargets,
+  });
+  const fastCoveragePlan = picked
+    ? {
+        locale: picked.locale,
+        localeLabel: picked.localeLabel,
+        labels: [...ONBOARDING_FAST_COVERAGE_LABELS],
+      }
+    : null;
+
   return {
     shop,
     onboardingState: args.state ?? null,
     bootstrap,
     locales: { source, availableTargets, suggestedTargets },
-    markets,
+    coverage,
+    fastCoveragePlan,
     recommendation,
     estimate,
   };

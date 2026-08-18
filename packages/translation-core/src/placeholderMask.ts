@@ -38,23 +38,24 @@ function restorePlaceholders(text: string, tokens: string[]): string {
   return text.replace(SENT_RE, (_m, d: string) => tokens[Number(d)] ?? "");
 }
 
-/** Recover common LLM corruptions of ⟦n⟧ (e.g. [number]0[number]) before giving up. */
+/**
+ * Recover common LLM corruptions of ⟦n⟧ (e.g. [number]0[number]) before giving up.
+ * Previously built 3 separate RegExp objects per token and ran test()+replace()
+ * (two full-string scans) for each, i.e. up to 6 scans per token. A single
+ * combined alternation regex does it in one construction + one scan per token,
+ * and — unlike the old "stop at first matching pattern type" logic — also
+ * fixes any corruption type present, not just the first one tried.
+ */
 function restorePlaceholdersLenient(text: string, tokens: string[]): string {
   let out = text;
   for (let i = 0; i < tokens.length; i++) {
     const sentinel = `${SENT_OPEN}${i}${SENT_CLOSE}`;
     if (out.includes(sentinel)) continue;
-    const corruptPatterns = [
-      new RegExp(`\\[number\\]${i}\\[number\\]`, "gi"),
-      new RegExp(`\\[${i}\\]`, "g"),
-      new RegExp(`\\{${i}\\}`, "g"),
-    ];
-    for (const re of corruptPatterns) {
-      if (re.test(out)) {
-        out = out.replace(re, tokens[i] ?? sentinel);
-        break;
-      }
-    }
+    const combined = new RegExp(
+      `\\[number\\]${i}\\[number\\]|\\[${i}\\]|\\{${i}\\}`,
+      "gi",
+    );
+    out = out.replace(combined, tokens[i] ?? sentinel);
   }
   return out;
 }

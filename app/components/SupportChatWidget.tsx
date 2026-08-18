@@ -3,17 +3,27 @@ import {
   useEffect,
   useRef,
   useState,
+  type ClipboardEvent,
   type FormEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { v4Colors } from "~/routes/app.translate-v4/v4Styles";
 import { SUPPORT_CHAT_OPEN_EVENT } from "~/utils/supportChat";
 
+type SupportImageAttachment = {
+  type: "image";
+  url: string;
+  mime: string;
+  size: number;
+  name?: string;
+};
+
 type SupportMessage = {
   id: string;
   sender: string;
   senderName: string | null;
   content: string;
+  attachments?: SupportImageAttachment[];
   createdAt: string;
 };
 
@@ -74,8 +84,25 @@ async function postSupport(body: Record<string, unknown>): Promise<{
   };
 }
 
+async function uploadSupportImage(file: File): Promise<SupportImageAttachment | null> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/support/upload", {
+    method: "POST",
+    body: form,
+    credentials: "same-origin",
+  });
+  const data = (await res.json().catch(() => ({ ok: false }))) as {
+    ok: boolean;
+    attachment?: SupportImageAttachment;
+    error?: string;
+  };
+  if (!data.ok || !data.attachment) return null;
+  return data.attachment;
+}
+
 export function SupportChatWidget() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const [open, setOpen] = useState(false);
   const [conversation, setConversation] = useState<SupportConversation | null>(null);
@@ -88,7 +115,12 @@ export function SupportChatWidget() {
   const [emailSaved, setEmailSaved] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
 
+  const [pendingAttachment, setPendingAttachment] = useState<SupportImageAttachment | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const textInputRef = useRef<HTMLInputElement | null>(null);
 
   const openPanel = useCallback(() => setOpen(true), []);
 
@@ -160,20 +192,63 @@ export function SupportChatWidget() {
     if (open) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation?.messages.length, open]);
 
+  const handleImageFile = useCallback(
+    async (file: File | null) => {
+      if (!file || uploadingImage || sending) return;
+      setUploadingImage(true);
+      setError(null);
+      try {
+        const attachment = await uploadSupportImage(file);
+        if (!attachment) {
+          setError(t("v4.support.uploadFailed"));
+          return;
+        }
+        setPendingAttachment(attachment);
+      } catch (_error) {
+        setError(t("v4.support.uploadFailed"));
+      } finally {
+        setUploadingImage(false);
+      }
+    },
+    [uploadingImage, sending, t],
+  );
+
+  const handlePaste = useCallback(
+    (event: ClipboardEvent<HTMLInputElement>) => {
+      const items = event.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (!item.type.startsWith("image/")) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        event.preventDefault();
+        void handleImageFile(file);
+        break;
+      }
+    },
+    [handleImageFile],
+  );
+
   const handleSend = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
       const content = draft.trim();
-      if (!content || sending) return;
+      if ((!content && !pendingAttachment) || sending || uploadingImage) return;
       setSending(true);
       setError(null);
       try {
-        const result = await postSupport({ intent: "send", content });
+        const result = await postSupport({
+          intent: "send",
+          content,
+          locale: i18n.language,
+          ...(pendingAttachment ? { attachments: [pendingAttachment] } : {}),
+        });
         if (!result.ok) {
           setError(t("v4.support.sendFailed"));
           return;
         }
         setDraft("");
+        setPendingAttachment(null);
         await refresh(true);
       } catch (_error) {
         setError(t("v4.support.sendFailed"));
@@ -181,7 +256,7 @@ export function SupportChatWidget() {
         setSending(false);
       }
     },
-    [draft, sending, refresh, t],
+    [draft, pendingAttachment, sending, uploadingImage, refresh, t, i18n.language],
   );
 
   const handleSaveEmail = useCallback(async () => {
@@ -276,7 +351,24 @@ export function SupportChatWidget() {
                     {!mine && (
                       <div style={styles.senderName}>{m.senderName || t("v4.support.agent")}</div>
                     )}
-                    <div style={styles.msgContent}>{m.content}</div>
+                    {m.attachments?.map((attachment) =>
+                      attachment.type === "image" ? (
+                        <a
+                          key={attachment.url}
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={styles.imageLink}
+                        >
+                          <img
+                            src={attachment.url}
+                            alt={t("v4.support.imageAlt")}
+                            style={styles.msgImage}
+                          />
+                        </a>
+                      ) : null,
+                    )}
+                    {m.content ? <div style={styles.msgContent}>{m.content}</div> : null}
                   </div>
                 </div>
               );
@@ -286,21 +378,61 @@ export function SupportChatWidget() {
 
           {error && <div style={styles.errorBar}>{error}</div>}
 
+          {pendingAttachment && (
+            <div style={styles.pendingBar}>
+              <img
+                src={pendingAttachment.url}
+                alt={t("v4.support.imageAlt")}
+                style={styles.pendingThumb}
+              />
+              <button
+                type="button"
+                style={styles.pendingRemove}
+                onClick={() => setPendingAttachment(null)}
+                aria-label={t("v4.support.removeImage")}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           <form style={styles.inputBar} onSubmit={handleSend}>
             <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                e.target.value = "";
+                void handleImageFile(file);
+              }}
+            />
+            <button
+              type="button"
+              aria-label={t("v4.support.attachImage")}
+              style={styles.attachBtn}
+              disabled={sending || uploadingImage || pendingAttachment != null}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              📎
+            </button>
+            <input
+              ref={textInputRef}
               type="text"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onPaste={handlePaste}
               placeholder={t("v4.support.messagePlaceholder")}
               style={styles.textInput}
-              disabled={sending}
+              disabled={sending || uploadingImage}
             />
             <button
               type="submit"
               style={styles.sendBtn}
-              disabled={sending || !draft.trim()}
+              disabled={sending || uploadingImage || (!draft.trim() && !pendingAttachment)}
             >
-              {t("v4.support.send")}
+              {uploadingImage ? "…" : t("v4.support.send")}
             </button>
           </form>
         </div>
@@ -484,6 +616,49 @@ const styles: Record<string, React.CSSProperties> = {
   },
   senderName: { fontSize: 11, color: v4Colors.textMuted, marginBottom: 2, fontWeight: 600 },
   msgContent: { whiteSpace: "pre-wrap" },
+  imageLink: { display: "block", lineHeight: 0 },
+  msgImage: {
+    maxWidth: "100%",
+    maxHeight: 200,
+    borderRadius: 8,
+    marginBottom: 4,
+    display: "block",
+  },
+  pendingBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 10px",
+    borderTop: `1px solid ${v4Colors.cardBorder}`,
+    background: v4Colors.cardSubdued,
+  },
+  pendingThumb: {
+    width: 48,
+    height: 48,
+    objectFit: "cover",
+    borderRadius: 6,
+    border: `1px solid ${v4Colors.cardBorder}`,
+  },
+  pendingRemove: {
+    background: "transparent",
+    border: "none",
+    color: v4Colors.textMuted,
+    cursor: "pointer",
+    fontSize: 14,
+    lineHeight: 1,
+  },
+  attachBtn: {
+    background: v4Colors.cardBg,
+    color: v4Colors.textMuted,
+    border: `1px solid ${v4Colors.cardBorder}`,
+    borderRadius: 8,
+    width: 36,
+    height: 36,
+    cursor: "pointer",
+    fontSize: 16,
+    lineHeight: 1,
+    flexShrink: 0,
+  },
   errorBar: {
     fontSize: 12,
     color: v4Colors.danger,

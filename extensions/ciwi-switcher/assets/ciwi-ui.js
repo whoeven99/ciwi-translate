@@ -2929,6 +2929,19 @@ function looksLikeAutoLiquidJunk(text) {
   if (!/\s/.test(t) && /^[A-Z0-9]{4,12}$/i.test(t) && /\d/.test(t)) return true;
   if (/^\d+\s*%\s*OFF$/i.test(t)) return true;
   if (/^(EUR|USD|GBP|JPY|CNY|RMB)\s*[€$£¥]?$/i.test(t)) return true;
+  // Product / vehicle model codes (keep aligned with autoLiquidJunk.ts)
+  if (/\b[A-Z]{2,}-\d+\b/i.test(t)) return true;
+  if (/^[A-Z]*\d+[A-Z]*\s+[A-Z]{1,4}$/i.test(t)) return true;
+  if (/^[A-Z]\d{3,4}(\s+[A-Z]{1,4})?$/i.test(t)) return true;
+  if (/^[A-Z]\s+[A-Z][a-z]+[A-Z][a-zA-Z0-9]*$/.test(t)) return true;
+  if (
+    !/\s/.test(t) &&
+    /^[A-Z0-9]{4,8}$/.test(t) &&
+    /^[A-Z]{4,8}$/.test(t) &&
+    !/^(CART|SHOP|SALE|FREE|APP|USB|GPS|FAQ|PDF|HTML|HTTP|WIFI)$/.test(t)
+  ) {
+    return true;
+  }
   return false;
 }
 

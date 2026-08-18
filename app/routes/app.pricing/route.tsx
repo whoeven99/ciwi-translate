@@ -46,8 +46,8 @@ import {
 } from "~/utils/billingReturn";
 import { redirectToBillingConfirmation } from "~/utils/billingConfirmation.client";
 import { buildShopifyEmbeddedAppReturnUrl } from "~/lib/shopifyAppHandle.server";
-
 const { Title, Text, Link } = Typography;
+
 
 //计划名与其对应价格Map
 const priceTable: Record<
@@ -259,7 +259,7 @@ const Index = () => {
     }
   };
 
-  const { plan, updateTime, chars, totalChars, isNew } = useSelector(
+  const { plan, updateTime, chars, totalChars, trialCredits, isNew } = useSelector(
     (state: any) => state.userConfig,
   );
 
@@ -583,6 +583,7 @@ const Index = () => {
         disabled: plan.type === "Basic" && yearly === !!(plan.feeType === 2),
         features: [
           t("{{credits}} credits/month", { credits: "1,500,000" }),
+          t("pricing.launchCredits", { credits: "4,000,000" }),
           t("Glossary ({{count}} entries)", { count: 10 }),
           t("basic_features1"),
           t("basic_features2"),
@@ -610,6 +611,7 @@ const Index = () => {
         features: [
           t("all in Basic Plan"),
           t("{{credits}} credits/month", { credits: "3,000,000" }),
+          t("pricing.launchCredits", { credits: "8,000,000" }),
           t("Glossary ({{count}} entries)", { count: 50 }),
           t("pro_features1"),
           t("pro_features2"),
@@ -637,6 +639,7 @@ const Index = () => {
         features: [
           t("all in Pro Plan"),
           t("{{credits}} credits/month", { credits: "8,000,000" }),
+          t("pricing.launchCredits", { credits: "16,000,000" }),
           t("Glossary ({{count}} entries)", { count: 100 }),
           t("premium_features1"),
           t("premium_features2"),
@@ -698,6 +701,15 @@ const Index = () => {
         basic: t("{{credits}} credits/month", { credits: "1,500,000" }),
         pro: t("{{credits}} credits/month", { credits: "3,000,000" }),
         premium: t("{{credits}} credits/month", { credits: "8,000,000" }),
+        type: "text",
+      },
+      {
+        key: "launch_credits",
+        features: t("pricing.launchCreditsRow"),
+        free: "—",
+        basic: "4,000,000",
+        pro: "8,000,000",
+        premium: "16,000,000",
         type: "text",
       },
       {
@@ -1094,6 +1106,7 @@ const Index = () => {
             <AcountInfoCard
               loading={isLoading || creditsRefreshing}
               translation_balance={totalChars - chars || 0}
+              trialCredits={typeof trialCredits === "number" ? trialCredits : 0}
               onBuyCredits={handleOpenAddCreditsModal}
             />
 
