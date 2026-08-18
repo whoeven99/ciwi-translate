@@ -104,6 +104,25 @@ export async function uploadImageBuffer(args: {
   return putObject({ key, body: args.buffer, contentType });
 }
 
+export function toCdnImageUrl(url: string): string {
+  return url.replace(PICTURE_COS_URL, PICTURE_CDN_URL);
+}
+
+/** 客服聊天图片：support-chat/{shop}/{id}.ext → CDN URL。 */
+export async function uploadSupportChatImage(args: {
+  shop: string;
+  buffer: Buffer;
+  contentType: string;
+  filename?: string;
+}): Promise<string> {
+  const contentType = assertAllowedImageMime(args.contentType);
+  const ext = extensionFromName(args.filename, contentType);
+  const id = `${Date.now().toString(36)}${random8()}`;
+  const key = `support-chat/${args.shop}/${id}${ext}`;
+  const cosUrl = await putObject({ key, body: args.buffer, contentType });
+  return toCdnImageUrl(cosUrl);
+}
+
 /** 从临时 URL 下载再上传 COS（图译第二步）。 */
 export async function uploadImageFromUrl(args: {
   shop: string;
