@@ -15,6 +15,8 @@ interface UserConfigState {
   updateTime: string | null;
   chars: number | undefined;
   totalChars: number | undefined;
+  /** 试用 / Launch Credits 池（Account.trialCredits）。 */
+  trialCredits: number | undefined;
   userConfigIsLoading: boolean;
   isNew: boolean | null;
 }
@@ -34,6 +36,7 @@ const initialState: UserConfigState = {
   updateTime: null,
   chars: 0,
   totalChars: 0,
+  trialCredits: 0,
   userConfigIsLoading: true,
   isNew: null,
 };
@@ -81,6 +84,12 @@ const userConfigSlice = createSlice({
     ) => {
       state.totalChars = action.payload.totalChars;
     },
+    setTrialCredits: (
+      state,
+      action: PayloadAction<{ trialCredits: number | undefined }>,
+    ) => {
+      state.trialCredits = action.payload.trialCredits;
+    },
     setUserConfigIsLoading: (
       state,
       action: PayloadAction<{ isLoading: boolean }>,
@@ -100,6 +109,7 @@ export const {
   setShop,
   setChars,
   setTotalChars,
+  setTrialCredits,
   setUserConfigIsLoading,
   setIsNew,
 } = userConfigSlice.actions;

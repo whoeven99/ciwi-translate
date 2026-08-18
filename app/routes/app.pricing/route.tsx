@@ -34,6 +34,7 @@ import {
   setIsNew,
   setPlan,
   setTotalChars,
+  setTrialCredits,
   setUpdateTime,
 } from "~/store/modules/userConfig";
 import type { AppBootstrapData } from "~/server/appBootstrap.server";
@@ -78,6 +79,7 @@ async function refreshBillingBootstrap(
       dispatch(setPlan({ plan: bootstrap.plan }));
       dispatch(setChars({ chars: bootstrap.chars }));
       dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
+      dispatch(setTrialCredits({ trialCredits: bootstrap.trialCredits ?? 0 }));
       if (bootstrap.updateTime) {
         dispatch(setUpdateTime({ updateTime: bootstrap.updateTime }));
       } else {
@@ -311,7 +313,7 @@ const Index = () => {
     }
   };
 
-  const { plan, updateTime, chars, totalChars, isNew } = useSelector(
+  const { plan, updateTime, chars, totalChars, trialCredits, isNew } = useSelector(
     (state: any) => state.userConfig,
   );
 
@@ -635,6 +637,7 @@ const Index = () => {
         disabled: plan.type === "Basic" && yearly === !!(plan.feeType === 2),
         features: [
           t("{{credits}} credits/month", { credits: "1,500,000" }),
+          t("pricing.launchCredits", { credits: "4,000,000" }),
           t("Glossary ({{count}} entries)", { count: 10 }),
           t("basic_features1"),
           t("basic_features2"),
@@ -662,6 +665,7 @@ const Index = () => {
         features: [
           t("all in Basic Plan"),
           t("{{credits}} credits/month", { credits: "3,000,000" }),
+          t("pricing.launchCredits", { credits: "8,000,000" }),
           t("Glossary ({{count}} entries)", { count: 50 }),
           t("pro_features1"),
           t("pro_features2"),
@@ -689,6 +693,7 @@ const Index = () => {
         features: [
           t("all in Pro Plan"),
           t("{{credits}} credits/month", { credits: "8,000,000" }),
+          t("pricing.launchCredits", { credits: "16,000,000" }),
           t("Glossary ({{count}} entries)", { count: 100 }),
           t("premium_features1"),
           t("premium_features2"),
@@ -750,6 +755,15 @@ const Index = () => {
         basic: t("{{credits}} credits/month", { credits: "1,500,000" }),
         pro: t("{{credits}} credits/month", { credits: "3,000,000" }),
         premium: t("{{credits}} credits/month", { credits: "8,000,000" }),
+        type: "text",
+      },
+      {
+        key: "launch_credits",
+        features: t("pricing.launchCreditsRow"),
+        free: "—",
+        basic: "4,000,000",
+        pro: "8,000,000",
+        premium: "16,000,000",
         type: "text",
       },
       {
@@ -1146,6 +1160,7 @@ const Index = () => {
             <AcountInfoCard
               loading={isLoading || creditsRefreshing}
               translation_balance={totalChars - chars || 0}
+              trialCredits={typeof trialCredits === "number" ? trialCredits : 0}
               onBuyCredits={handleOpenAddCreditsModal}
             />
 

@@ -14,6 +14,8 @@ export type AppBootstrapData = {
   updateTime: string | null;
   chars?: number;
   totalChars?: number;
+  /** 试用 / Launch Credits 池余额（有值时 Pricing 账户卡展示）。 */
+  trialCredits?: number;
   isNew: boolean | null;
 };
 
