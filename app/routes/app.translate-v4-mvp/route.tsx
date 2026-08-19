@@ -45,6 +45,14 @@ import { TaskQueueSection } from "~/routes/app.translate-v4/components/TaskQueue
 import { PageHeaderBar } from "~/routes/app.translate-v4/components/SummaryAndHeader";
 import { CreateTaskConfirmModal } from "~/routes/app.translate-v4/components/CreateTaskConfirmModal";
 import { v4CardStyle, v4Colors, v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
+import {
+  AppMetricTile,
+  AppPill,
+  AppProgressRing,
+  AppSectionCard,
+  AppStatusBadge,
+} from "~/ui/components";
+import { appColors } from "~/ui/tokens";
 import { localeRegionCode, localeShortName } from "~/routes/app.translate-v4/localeDisplay";
 import { shouldPollV4Job } from "~/routes/app.translate-v4/jobFilters";
 import {
@@ -69,6 +77,8 @@ const EMPTY_COVERAGE: CoverageSummary = {
 
 const SUMMARY_VIDEO_URL = "https://www.youtube.com/watch?v=AJ0RZkCQMd0&t=9s";
 
+type RecommendationTone = "success" | "attention" | "info";
+
 type Recommendation = {
   id: string;
   title: string;
@@ -77,8 +87,9 @@ type Recommendation = {
   targets: string[];
   modules: string[];
   pendingItems: number;
+  coveragePercent: number | null;
   contentChanged: boolean;
-  tone: "success" | "attention" | "info";
+  tone: RecommendationTone;
 };
 
 type PendingCreateConfig = {
@@ -214,55 +225,37 @@ function getCoverageRating(
   if (percent == null) {
     return {
       label: t("v4.coverage.notScanned"),
-      accent: "#94a3b8",
-      track: "rgba(148, 163, 184, 0.18)",
+      accent: appColors.textTertiary,
     };
   }
+
+  const accent = v4Colors.primary;
 
   if (percent >= 100) {
     return {
       label: t("v4Mvp.coverageCard.ratingAmazing"),
-      accent: "#2563eb",
-      track: "rgba(37, 99, 235, 0.16)",
+      accent,
     };
   }
 
   if (percent >= 80) {
     return {
       label: t("v4Mvp.coverageCard.ratingExcellent"),
-      accent: "#2563eb",
-      track: "rgba(37, 99, 235, 0.16)",
+      accent,
     };
   }
 
   if (percent >= 60) {
     return {
       label: t("v4Mvp.coverageCard.ratingQualified"),
-      accent: "#2563eb",
-      track: "rgba(37, 99, 235, 0.16)",
+      accent,
     };
   }
 
   return {
     label: t("v4.coverage.needsImprovement"),
-    accent: "#2563eb",
-    track: "rgba(37, 99, 235, 0.16)",
+    accent,
   };
-}
-
-function summaryProgressCircleStyle(percent: number | null, accent: string, track: string) {
-  const safePercent = Math.max(0, Math.min(percent ?? 0, 100));
-  return {
-    width: "100px",
-    height: "100px",
-    borderRadius: "999px",
-    background: `conic-gradient(${accent} 0deg ${safePercent * 3.6}deg, ${track} ${safePercent * 3.6}deg 360deg)`,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.65)",
-    flexShrink: 0,
-  } satisfies CSSProperties;
 }
 
 function buildCustomTranslationPath({
@@ -331,6 +324,7 @@ function buildRecommendations(
         targets: [row.locale],
         modules: DEFAULT_MODULE_KEYS,
         pendingItems: row.pendingItems,
+        coveragePercent: coverageInsufficient ? (row.percent ?? 0) : null,
         contentChanged,
         tone: contentChanged ? "info" : coverageTone(row.percent),
       } satisfies Recommendation;
@@ -394,6 +388,7 @@ export default function TranslateV4MvpRoute() {
     () => getCoverageRating(coverage.overallPercent, t),
     [coverage.overallPercent, t],
   );
+  const hasCoverageData = !(coverageLoading && coverage.locales.length === 0);
   const summaryVideoThumbnailUrl = useMemo(
     () => buildYoutubeThumbnailUrl(SUMMARY_VIDEO_URL),
     [],
@@ -876,45 +871,48 @@ export default function TranslateV4MvpRoute() {
             <div style={summaryHeroCardStyle}>
               <div style={summaryHeroLayoutStyle}>
                 <div style={summaryProgressWrapStyle}>
-                  <div
-                    style={summaryProgressCircleStyle(
-                      coverageLoading && coverage.locales.length === 0
-                        ? null
-                        : coverage.overallPercent,
-                      coverageRating.accent,
-                      coverageRating.track,
-                    )}
-                  >
-                    <div style={summaryProgressCircleInnerStyle}>
-                      <Text as="p" variant="heading2xl" style={summaryProgressPercentStyle}>
-                        {coverageLoading && coverage.locales.length === 0
-                          ? "—"
-                          : `${coverage.overallPercent ?? 0}%`}
-                      </Text>
-                    </div>
-                  </div>
+                  <AppProgressRing
+                    percent={hasCoverageData ? coverage.overallPercent : null}
+                    tone="primary"
+                    size={100}
+                    loading={!hasCoverageData}
+                  />
                 </div>
 
                 <div style={summaryContentStyle}>
-                  <BlockStack gap="150">
+                  <BlockStack gap="100">
                     <Text as="p" tone="subdued" variant="bodyMd">
                       {t("v4Mvp.coverageCard.title")}
                     </Text>
                     <Text as="p" variant="headingMd">
                       {t("v4Mvp.coverageCard.summary", {
-                        percent:
-                          coverageLoading && coverage.locales.length === 0
-                            ? "—"
-                            : `${coverage.overallPercent ?? 0}%`,
+                        percent: hasCoverageData ? `${coverage.overallPercent ?? 0}%` : "—",
                       })}
                     </Text>
-                    <Text
-                      as="p"
-                      variant="bodyMd"
-                      style={summaryProgressLabelStyle(coverageRating.accent)}
-                    >
-                      {coverageRating.label}
-                    </Text>
+                    <InlineStack gap="150" blockAlign="center" wrap={false}>
+                      <Text
+                        as="p"
+                        variant="headingMd"
+                        style={summaryProgressLabelStyle(coverageRating.accent)}
+                      >
+                        {coverageRating.label}
+                      </Text>
+                      {coverage.languageCount > 0 ? (
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          {`· ${t("v4Mvp.coverageCard.languageCount", {
+                            total: coverage.languageCount,
+                          })}`}
+                        </Text>
+                      ) : null}
+                    </InlineStack>
+                    {hasCoverageData && coverage.totalItems > 0 ? (
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        {t("v4Mvp.overview.progress", {
+                          translated: coverage.translatedItems.toLocaleString(),
+                          total: coverage.totalItems.toLocaleString(),
+                        })}
+                      </Text>
+                    ) : null}
                   </BlockStack>
                   <div style={summaryButtonWrapStyle}>
                     <Button variant="secondary" onClick={() => setCoverageDetailOpen(true)}>
@@ -959,140 +957,141 @@ export default function TranslateV4MvpRoute() {
             </a>
           </div>
 
-          <div style={batchEntryCardStyle}>
-            <InlineStack align="space-between" blockAlign="center">
-              <BlockStack gap="100">
-                <Text as="span" variant="bodySm" tone="subdued">
-                  {t("v4Mvp.custom.title")}
-                </Text>
-                <Text as="p" variant="headingMd">
-                  {t("v4Mvp.custom.description")}
-                </Text>
-              </BlockStack>
-              <div style={sectionActionWrapStyle}>
-                <Button
-                  variant="primary"
-                  onClick={() => navigate(buildCustomTranslationPath({
-                    targets: customTargets,
-                    modules: customModules,
-                  }))}
-                >
-                  {t("v4Mvp.custom.translate")}
-                </Button>
-              </div>
-            </InlineStack>
-          </div>
+          <AppSectionCard
+            title={t("v4Mvp.custom.title")}
+            description={t("v4Mvp.custom.description")}
+            extra={
+              <Button
+                variant="primary"
+                onClick={() => navigate(buildCustomTranslationPath({
+                  targets: customTargets,
+                  modules: customModules,
+                }))}
+              >
+                {t("v4Mvp.custom.translate")}
+              </Button>
+            }
+            bodyPadding="20px 24px"
+            style={{ boxShadow: "var(--app-shadow-card)" }}
+          />
 
-          <div ref={queueSectionRef} style={workbenchShellStyle}>
-            <BlockStack gap="400">
-              <div style={workbenchHeaderStyle}>
-                <InlineStack align="space-between" blockAlign="center">
-                  <div style={tabListStyle}>
-                    <button
-                      type="button"
-                      onClick={() => setWorkbenchTab("recommended")}
-                      style={tabButtonStyle(workbenchTab === "recommended")}
-                    >
-                        {t("v4Mvp.tabs.recommended", { count: visibleRecommendations.length })}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWorkbenchTab("queue")}
-                      style={tabButtonStyle(workbenchTab === "queue")}
-                    >
-                      {t("v4Mvp.tabs.queue", { count: activeTaskCount })}
-                    </button>
-                  </div>
-
-                  {workbenchTab === "recommended" ? (
-                    <InlineStack gap="200">
-                      <Button
-                        variant="secondary"
-                        onClick={() => void refreshCoverage(true)}
-                        loading={scanLoading}
+          <div ref={queueSectionRef}>
+            <AppSectionCard
+              bodyPadding="20px 24px"
+              style={{ boxShadow: "var(--app-shadow-card-strong)" }}
+            >
+              <BlockStack gap="400">
+                <div style={workbenchHeaderStyle}>
+                  <InlineStack align="space-between" blockAlign="center">
+                    <div style={tabListStyle}>
+                      <button
+                        type="button"
+                        onClick={() => setWorkbenchTab("recommended")}
+                        style={tabButtonStyle(workbenchTab === "recommended")}
                       >
-                        {t("v4Mvp.scan.rescan")}
-                      </Button>
-                    </InlineStack>
-                  ) : null}
-                </InlineStack>
-              </div>
+                        {t("v4Mvp.tabs.recommended", { count: visibleRecommendations.length })}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWorkbenchTab("queue")}
+                        style={tabButtonStyle(workbenchTab === "queue")}
+                      >
+                        {t("v4Mvp.tabs.queue", { count: activeTaskCount })}
+                      </button>
+                    </div>
 
-              {workbenchTab === "recommended" ? (
-                <BlockStack gap="300">
-                  {scanSummary ? (
-                    <div style={scanSummaryStyle}>
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {scanSummary}
-                      </Text>
-                    </div>
-                  ) : null}
-                  {visibleRecommendations.length > 0 ? (
-                    visibleRecommendations.map((item) => (
-                      <RecommendationCard
-                        key={item.id}
-                        title={item.title}
-                        reasons={item.reasons}
-                        pendingItems={item.pendingItems}
-                        estimatedCredits={recommendationEstimates[item.id] ?? null}
-                        estimatedTime={estimateTimeLabel(item.pendingItems, t)}
-                        loading={submittingRecommendationIds.includes(item.id)}
-                        onTranslate={() => void handleRecommendationTranslate(item)}
-                      />
-                    ))
-                  ) : (
-                    <div style={emptyStateStyle}>
-                      <div style={emptyStateInnerStyle}>
-                        <BlockStack gap="300">
-                          <BlockStack gap="100">
-                            <Text as="h3" variant="headingMd" alignment="center">
-                              {t("v4Mvp.recommended.emptyTitle")}
-                            </Text>
-                            <Text as="p" tone="subdued" alignment="center">
-                              {t("v4Mvp.recommended.emptyDescription")}
-                            </Text>
-                          </BlockStack>
-                          <InlineStack align="center">
-                            <Button
-                              variant="primary"
-                              size="large"
-                              onClick={() =>
-                                navigate(
-                                  buildCustomTranslationPath({
-                                    targets: customTargets,
-                                    modules: customModules,
-                                  }),
-                                )
-                              }
-                            >
-                              {t("v4Mvp.custom.translate")}
-                            </Button>
-                          </InlineStack>
-                          <InlineStack align="center">
-                            <Button
-                              variant="secondary"
-                              size="large"
-                              onClick={() => void refreshCoverage(true)}
-                              loading={scanLoading}
-                            >
-                              {t("v4Mvp.scan.scanStore")}
-                            </Button>
-                          </InlineStack>
-                        </BlockStack>
+                    {workbenchTab === "recommended" ? (
+                      <InlineStack gap="200">
+                        <Button
+                          variant="secondary"
+                          onClick={() => void refreshCoverage(true)}
+                          loading={scanLoading}
+                        >
+                          {t("v4Mvp.scan.rescan")}
+                        </Button>
+                      </InlineStack>
+                    ) : null}
+                  </InlineStack>
+                </div>
+
+                {workbenchTab === "recommended" ? (
+                  <BlockStack gap="200">
+                    {scanSummary ? (
+                      <div style={scanSummaryStyle}>
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          {scanSummary}
+                        </Text>
                       </div>
-                    </div>
-                  )}
-                </BlockStack>
-              ) : (
-                <TaskQueueSection
-                  jobs={jobs}
-                  translateSlotBusy={translateSlotBusy}
-                  loading={jobsLoading}
-                  onBuyCredits={openTaskCreditsModal}
-                  onAction={handleTaskAction}
-                />
-              )}
-            </BlockStack>
+                    ) : null}
+                    {visibleRecommendations.length > 0 ? (
+                      visibleRecommendations.map((item) => (
+                        <RecommendationCard
+                          key={item.id}
+                          title={item.title}
+                          tone={item.tone}
+                          coveragePercent={item.coveragePercent}
+                          contentChanged={item.contentChanged}
+                          pendingItems={item.pendingItems}
+                          estimatedCredits={recommendationEstimates[item.id] ?? null}
+                          estimatedTime={estimateTimeLabel(item.pendingItems, t)}
+                          loading={submittingRecommendationIds.includes(item.id)}
+                          onTranslate={() => void handleRecommendationTranslate(item)}
+                        />
+                      ))
+                    ) : (
+                      <div style={emptyStateStyle}>
+                        <div style={emptyStateInnerStyle}>
+                          <BlockStack gap="300">
+                            <BlockStack gap="100">
+                              <Text as="h3" variant="headingMd" alignment="center">
+                                {t("v4Mvp.recommended.emptyTitle")}
+                              </Text>
+                              <Text as="p" tone="subdued" alignment="center">
+                                {t("v4Mvp.recommended.emptyDescription")}
+                              </Text>
+                            </BlockStack>
+                            <InlineStack align="center">
+                              <Button
+                                variant="primary"
+                                size="large"
+                                onClick={() =>
+                                  navigate(
+                                    buildCustomTranslationPath({
+                                      targets: customTargets,
+                                      modules: customModules,
+                                    }),
+                                  )
+                                }
+                              >
+                                {t("v4Mvp.custom.translate")}
+                              </Button>
+                            </InlineStack>
+                            <InlineStack align="center">
+                              <Button
+                                variant="secondary"
+                                size="large"
+                                onClick={() => void refreshCoverage(true)}
+                                loading={scanLoading}
+                              >
+                                {t("v4Mvp.scan.scanStore")}
+                              </Button>
+                            </InlineStack>
+                          </BlockStack>
+                        </div>
+                      </div>
+                    )}
+                  </BlockStack>
+                ) : (
+                  <TaskQueueSection
+                    jobs={jobs}
+                    translateSlotBusy={translateSlotBusy}
+                    loading={jobsLoading}
+                    onBuyCredits={openTaskCreditsModal}
+                    onAction={handleTaskAction}
+                  />
+                )}
+              </BlockStack>
+            </AppSectionCard>
           </div>
         </BlockStack>
       </div>
@@ -1106,18 +1105,14 @@ export default function TranslateV4MvpRoute() {
           <div style={coverageModalShellStyle}>
             <BlockStack gap="350">
               <div style={coverageModalHeroStyle}>
-                <BlockStack gap="150">
-                  <div style={coverageModalStatStyle}>
-                    <Text as="p" tone="subdued" variant="bodySm">
-                      {t("v4.translationProgress")}
-                    </Text>
-                    <Text as="p" variant="headingLg">
-                      {coverageLoading && coverage.locales.length === 0
-                        ? "—"
-                        : `${coverage.overallPercent ?? 0}%`}
-                    </Text>
-                  </div>
-                </BlockStack>
+                <AppMetricTile
+                  label={t("v4.translationProgress")}
+                  value={
+                    coverageLoading && coverage.locales.length === 0
+                      ? "—"
+                      : `${coverage.overallPercent ?? 0}%`
+                  }
+                />
               </div>
 
               <BlockStack gap="200">
@@ -1206,7 +1201,9 @@ export default function TranslateV4MvpRoute() {
 
 function RecommendationCard({
   title,
-  reasons,
+  tone,
+  coveragePercent,
+  contentChanged,
   pendingItems,
   estimatedCredits,
   estimatedTime,
@@ -1214,7 +1211,9 @@ function RecommendationCard({
   onTranslate,
 }: {
   title: string;
-  reasons: string[];
+  tone: RecommendationTone;
+  coveragePercent: number | null;
+  contentChanged: boolean;
   pendingItems: number;
   estimatedCredits: number | null;
   estimatedTime: string;
@@ -1222,82 +1221,62 @@ function RecommendationCard({
   onTranslate: () => void;
 }) {
   const { t } = useTranslation();
-  const primaryReason = reasons[0] ?? null;
 
   return (
-    <div style={recommendationCardStyle}>
-      <BlockStack gap="400">
-        <InlineStack align="space-between" blockAlign="start" wrap={false}>
-          <BlockStack gap="250">
-            <InlineStack gap="200" blockAlign="center" wrap>
-              <span style={recommendationTonePillStyle}>
-                {t("v4Mvp.recommended.priority")}
-              </span>
-            </InlineStack>
-            <BlockStack gap="150">
-              <Text as="h3" variant="headingLg">
-                {title}
-              </Text>
-              {primaryReason ? (
-                <Text as="p" tone="subdued" variant="bodyMd">
-                  {primaryReason}
-                </Text>
-              ) : null}
-            </BlockStack>
-          </BlockStack>
-          <div style={recommendationActionWrapStyle}>
-            <Button variant="secondary" loading={loading} onClick={onTranslate}>
-              {t("v4Mvp.recommended.translate")}
-            </Button>
-          </div>
+    <div style={recommendationRowStyle}>
+      <div style={recommendationMainStyle}>
+        <InlineStack gap="150" blockAlign="center" wrap={false}>
+          <span style={recommendationToneDotStyle(tone)} />
+          <Text as="h3" variant="headingSm" truncate>
+            {title}
+          </Text>
+          {contentChanged ? (
+            <AppStatusBadge tone="info">{t("v4Mvp.recommended.reasonChanged")}</AppStatusBadge>
+          ) : null}
         </InlineStack>
-
-        <div style={recommendationMetricsGridStyle}>
-          <MetricStat
-            label={t("v4Mvp.recommended.pendingItems")}
-            value={pendingItems.toLocaleString()}
-          />
-          <MetricStat
-            label={t("v4.createTask.confirmCreditsRequired")}
-            value={
-              estimatedCredits != null ? formatMvpEstimateCredits(estimatedCredits) : "—"
-            }
-          />
-          <MetricStat
-            label={t("v4Mvp.recommended.estimateTime")}
-            value={estimatedTime}
-          />
+        <div style={recommendationMetaListStyle}>
+          {coveragePercent != null ? (
+            <AppPill
+              style={{
+                background: v4Colors.infoBg,
+                color: v4Colors.info,
+                border: "1px solid transparent",
+              }}
+            >
+              {t("v4Mvp.recommended.metaCoverage", { percent: coveragePercent })}
+            </AppPill>
+          ) : null}
+          <AppPill tone="warning">
+            {t("v4Mvp.recommended.metaPending", {
+              items: pendingItems.toLocaleString(),
+            })}
+          </AppPill>
+          {estimatedCredits != null ? (
+            <AppPill tone="info">
+              {t("v4Mvp.recommended.metaCredits", {
+                credits: formatMvpEstimateCredits(estimatedCredits),
+              })}
+            </AppPill>
+          ) : null}
+          <AppPill tone="success">{estimatedTime}</AppPill>
         </div>
-      </BlockStack>
-    </div>
-  );
-}
-
-function MetricStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div style={recommendationMetricCardStyle}>
-      <BlockStack gap="100">
-        <Text as="p" tone="subdued" variant="bodyMd">
-          {label}
-        </Text>
-        <Text as="p" variant="headingLg">
-          {value}
-        </Text>
-      </BlockStack>
+      </div>
+      <div style={recommendationActionWrapStyle}>
+        <Button size="slim" variant="secondary" loading={loading} onClick={onTranslate}>
+          {t("v4Mvp.recommended.translate")}
+        </Button>
+      </div>
     </div>
   );
 }
 
 const tabListStyle = {
   display: "inline-flex",
-  gap: "8px",
-  padding: "0",
+  flexWrap: "wrap",
+  gap: 8,
+  padding: 4,
+  borderRadius: 999,
+  background: appColors.surfaceSecondary,
 } satisfies CSSProperties;
 
 const emptyStateStyle = {
@@ -1312,8 +1291,8 @@ const coverageRowStyle = {
   padding: "14px 16px",
   border: `1px solid ${v4Colors.cardBorder}`,
   borderRadius: "14px",
-  background: "#ffffff",
-  boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)",
+  background: appColors.surface,
+  boxShadow: "var(--app-shadow-card)",
 } satisfies CSSProperties;
 
 const coverageModalShellStyle = {
@@ -1327,18 +1306,10 @@ const coverageModalHeroStyle = {
   boxShadow: "var(--app-shadow-card)",
 } satisfies CSSProperties;
 
-const coverageModalStatStyle = {
-  minWidth: "180px",
-  padding: "12px 14px",
-  borderRadius: "14px",
-  background: "rgba(255,255,255,0.74)",
-  border: `1px solid ${v4Colors.cardBorder}`,
-} satisfies CSSProperties;
-
 const coverageModalEmptyStyle = {
   padding: "28px 18px",
   borderRadius: "14px",
-  background: "rgba(247,248,250,0.96)",
+  background: appColors.surfaceSecondary,
   border: `1px dashed ${v4Colors.cardBorder}`,
 } satisfies CSSProperties;
 
@@ -1352,10 +1323,11 @@ const summaryHeroGridStyle = {
 
 const summaryHeroCardStyle = {
   ...v4CardStyle,
-  padding: "10px 14px",
+  padding: "20px 24px",
   background: v4Colors.summaryBg,
   boxShadow: "var(--app-shadow-card-strong)",
-  minHeight: "60%",
+  display: "flex",
+  alignItems: "center",
   flex: "0.95 1 450px",
   minWidth: "320px",
 } satisfies CSSProperties;
@@ -1375,24 +1347,19 @@ const videoPreviewLayerStyle = {
   width: "322px",
 } satisfies CSSProperties;
 
-const sectionActionWrapStyle = {
-  flexShrink: 0,
-  paddingLeft: "16px",
-} satisfies CSSProperties;
-
 const summaryHeroLayoutStyle = {
-  display: "grid",
-  gridTemplateColumns: "auto minmax(0, 1fr)",
+  display: "flex",
   alignItems: "center",
-  gap: "14px",
+  flexWrap: "wrap",
+  gap: "20px",
+  width: "100%",
 } satisfies CSSProperties;
 
 const summaryContentStyle = {
   minWidth: 0,
+  flex: "1 1 180px",
   display: "grid",
-  gap: "26px",
-  width: "400px",
-  paddingLeft: "30px",
+  gap: "4px",
 } satisfies CSSProperties;
 
 const summaryProgressWrapStyle = {
@@ -1402,31 +1369,11 @@ const summaryProgressWrapStyle = {
   flexShrink: 0,
 } satisfies CSSProperties;
 
-const summaryProgressCircleInnerStyle = {
-  width: "54px",
-  height: "54px",
-  borderRadius: "999px",
-  background: "rgba(255,255,255,0.96)",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
-  display: "grid",
-  alignContent: "center",
-  justifyItems: "center",
-  gap: "2px",
-  textAlign: "center",
-  padding: "8px",
-} satisfies CSSProperties;
-
-const summaryProgressPercentStyle = {
-  fontSize: "20px",
-  lineHeight: 1,
-  fontWeight: 700,
-  letterSpacing: "-0.03em",
-} satisfies CSSProperties;
-
 const summaryButtonWrapStyle = {
   display: "flex",
   alignItems: "center",
-  paddingTop: "2px",
+  flexShrink: 0,
+  marginLeft: "auto",
 } satisfies CSSProperties;
 
 function summaryProgressLabelStyle(accent: string): CSSProperties {
@@ -1441,7 +1388,7 @@ function summaryProgressLabelStyle(accent: string): CSSProperties {
 const videoPreviewSurfaceStyle = {
   position: "relative",
   width: "100%",
-  height: "80%",
+  height: "100%",
   minHeight: "100px",
   overflow: "hidden",
   background: "#0f172a",
@@ -1496,10 +1443,8 @@ const videoPreviewCaptionStyle = {
 } satisfies CSSProperties;
 
 const videoPreviewCaptionTextStyle = {
-  color: "#ffffff",
+  color: appColors.surface,
   fontWeight: 600,
-  fontSize: "14px",
-  lineHeight: "20px",
   textShadow: "0 1px 2px rgba(15, 23, 42, 0.24)",
 } satisfies CSSProperties;
 
@@ -1514,22 +1459,6 @@ const videoPreviewFallbackStyle = {
     "linear-gradient(180deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.96) 100%)",
 } satisfies CSSProperties;
 
-const batchEntryCardStyle = {
-  ...v4CardStyle,
-  padding: "18px 20px",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(247,248,250,0.96) 100%)",
-  boxShadow: "var(--app-shadow-card)",
-} satisfies CSSProperties;
-
-const workbenchShellStyle = {
-  ...v4CardStyle,
-  padding: "18px",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(250,251,253,0.98) 100%)",
-  boxShadow: "var(--app-shadow-card-strong)",
-} satisfies CSSProperties;
-
 const workbenchHeaderStyle = {
   paddingBottom: "4px",
   borderBottom: `1px solid ${v4Colors.divider}`,
@@ -1538,7 +1467,7 @@ const workbenchHeaderStyle = {
 const scanSummaryStyle = {
   padding: "12px 14px",
   borderRadius: "12px",
-  background: "rgba(240, 244, 255, 0.72)",
+  background: v4Colors.primarySoft,
   border: `1px solid ${v4Colors.cardBorder}`,
 } satisfies CSSProperties;
 
@@ -1548,58 +1477,52 @@ const emptyStateInnerStyle = {
   padding: "28px 24px",
   borderRadius: "16px",
   border: `1px dashed ${v4Colors.cardBorder}`,
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(247,248,250,0.96) 100%)",
+  background: appColors.surface,
 } satisfies CSSProperties;
 
-const recommendationBlueStyles = {
-  border: "rgb(169 169 169 / 18%)",
-  background:
-    "linear-gradient(180deg, rgb(255, 255, 255) 0%, rgb(255 239 239 / 18%) 100%)",
-  accent: "#2563eb",
-  accentSoft: "rgba(59, 130, 246, 0.10)",
-} as const;
-
-const recommendationCardStyle: CSSProperties = {
-  padding: "22px 22px 20px",
-  borderRadius: "16px",
-  border: `1px solid ${recommendationBlueStyles.border}`,
-  background: recommendationBlueStyles.background,
-  boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
-  position: "relative",
-  overflow: "hidden",
-};
-
-const recommendationTonePillStyle = {
-  display: "inline-flex",
+const recommendationRowStyle = {
+  display: "flex",
   alignItems: "center",
-  padding: "6px 12px",
-  borderRadius: "999px",
-  background: "rgba(220, 38, 38, 0.12)",
-  color: "#dc2626",
-  fontSize: "13px",
-  fontWeight: 700,
-  lineHeight: "18px",
+  justifyContent: "space-between",
+  gap: "16px",
+  padding: "12px 16px",
+  borderRadius: "12px",
+  border: `1px solid ${v4Colors.cardBorder}`,
+  background: v4Colors.cardBg,
+} satisfies CSSProperties;
+
+const recommendationMainStyle = {
+  minWidth: 0,
+  display: "grid",
+  gap: "6px",
+} satisfies CSSProperties;
+
+const recommendationMetaListStyle = {
+  display: "flex",
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: "6px",
 } satisfies CSSProperties;
 
 const recommendationActionWrapStyle = {
   flexShrink: 0,
-  paddingLeft: "20px",
 } satisfies CSSProperties;
 
-const recommendationMetricsGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-  gap: "16px",
-} satisfies CSSProperties;
-
-const recommendationMetricCardStyle = {
-  padding: "16px 18px",
-  borderRadius: "12px",
-  background: "#ffffff",
-  border: "1px solid rgba(138, 142, 145, 0.16)",
-  boxShadow: "0 1px 0 rgba(255,255,255,0.8)",
-} satisfies CSSProperties;
+function recommendationToneDotStyle(tone: RecommendationTone): CSSProperties {
+  const color =
+    tone === "success"
+      ? v4Colors.success
+      : tone === "info"
+        ? v4Colors.info
+        : v4Colors.warning;
+  return {
+    width: "8px",
+    height: "8px",
+    borderRadius: "999px",
+    background: color,
+    flexShrink: 0,
+  };
+}
 
 function tabButtonStyle(active: boolean): CSSProperties {
   return {
