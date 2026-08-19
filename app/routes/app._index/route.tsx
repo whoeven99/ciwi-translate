@@ -3,8 +3,6 @@
 // `/app/translate-v4` 保留为别名。
 // 新手引导已暂时关闭；新安装用户直接进入翻译首页。
 //
-// 这里直接复用 translate-v4 的 loader，不再单独 `authenticate.admin`：本路由曾为了拿
-// `session.shop` 去入队 install 计量扫描而多鉴权一次，而 `app.tsx` 的
-// `runAppInitialization` 已经在同一个请求里幂等入队，多出来的那次鉴权只是在关键路径上
-// 多读一次 Turso `Session`。
+// 页面 loader 已不再二次鉴权/拉语言：父级 `app.tsx` 统一提供 `shopLocales`，
+// 本文件只 re-export translate-v4 的轻量 loader + 页面组件。
 export { default, loader } from "../app.translate-v4/route";

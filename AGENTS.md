@@ -1742,11 +1742,14 @@ const { logs } = await res.json();
 - `coldLoad`：由 `scriptCachedCount < scriptCount/2` 推出。**首次安装冷加载和回访
  热加载的 LCP 能差 3 倍**，混在一起看分位数会得出错误结论。
 - `element`：LCP 元素的短选择器（标签 + class + nth-child）。首屏卡片带
- `.v4-enter` / `.v4-enter-d1` / `.v4-lift`，据此能定位到具体卡片。
- **有意不采文本内容** —— manage_translation 等页面的 LCP 元素可能是商户商品文案。
+  `.v4-enter` / `.v4-enter-d1` / `.v4-lift`，据此能定位到具体卡片。
+  **有意不采文本内容** —— manage_translation 等页面的 LCP 元素可能是商户商品文案。
+- `/app` 与 `/app/translate-v4`：鉴权 + Shopify 语言列表只在父级 `app.tsx` loader
+  跑一次；子页经 `useRouteLoaderData("routes/app")` 读 `shopLocales`，避免同文档
+  双鉴权把 TTFB 抬到 ~2s。标题区 `PageHeaderBar` 固定尺寸并预留积分 pill 宽度。
 - `ttfbMs` vs `fcpMs` vs `lcpMs`：TTFB 高 → 服务端 loader（鉴权 / Shopify GraphQL）；
- FCP 与 TTFB 差距大 → 阻塞 CSS/JS；LCP 明显晚于 FCP → 骨架屏换真实内容太晚
- （对照 `context.resources.apiTimings` 里首屏接口的 `responseEnd`）。
+  FCP 与 TTFB 差距大 → 阻塞 CSS/JS；LCP 明显晚于 FCP → 骨架屏换真实内容太晚
+  （对照 `context.resources.apiTimings` 里首屏接口的 `responseEnd`）。
 - `effectiveType` / `rttMs`：排除「其实是商户网络慢」。
 
 `app/utils/perf.ts` 的 `markPerfStart` / `logReactProfilerRender` 是另一条**按需**

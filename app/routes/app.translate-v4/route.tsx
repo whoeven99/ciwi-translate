@@ -11,19 +11,22 @@ import { message } from "~/ui/message";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useLocation, useNavigate } from "@remix-run/react";
+import {
+  useLoaderData,
+  useLocation,
+  useNavigate,
+  useRouteLoaderData,
+} from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
-import { authenticate } from "~/shopify.server";
 import type { RootState } from "~/store";
-import { ensureShopV4Settings } from "~/server/translateV4/migration.server";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import type { ShopQuota } from "~/lib/translationQuota";
 import type { CoverageSummary } from "~/server/translateV4/coverage.server";
 import {
   createTranslateV4Tasks,
-  type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
+import type { loader as appLoader } from "~/routes/app";
 import { normalizeShopQuota } from "~/lib/translationQuota";
 import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import {
@@ -47,8 +50,6 @@ import {
 } from "./useCreateTaskEstimate";
 import { notifyTranslationStatsUpdated } from "~/lib/translationStatsSync";
 import { selectShopTargetLocales } from "~/lib/shopTargetLocales";
-import { syncShopTargetLocalesFromShopify } from "~/server/translateV4/targetLocale.server";
-import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
 import { isCurrentV4Job } from "./jobFilters";
 import {
   finishClientLogTrace,
@@ -108,63 +109,18 @@ async function readJsonResponse<T = any>(res: Response): Promise<T> {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const reqStart = Date.now();
+  // 鉴权 + Shopify 语言列表由父级 `routes/app` loader 统一完成。
+  // 同文档再跑一次 authenticate + loadShopLocales 会把 TTFB 抬到 ~2s（见 LCP 归因）。
   const perfDebug = new URL(request.url).searchParams.get("perf") === "1";
-  const { session } = await authenticate.admin(request);
-  const authMs = Date.now() - reqStart;
-
-  let locales: ShopLocaleOption[] = [];
-  let primaryLocale = "en";
-  let shopLocaleRows: Array<{ locale: string; primary: boolean }> = [];
-  const localeStart = Date.now();
-  try {
-    const loaded = await loadShopLocalesForTranslation({
-      shop: session.shop,
-      accessToken: session.accessToken as string,
-    });
-    shopLocaleRows = loaded.rows;
-    locales = loaded.localeOptions;
-    primaryLocale = loaded.primaryLocale;
-  } catch (err) {
-    console.error("[translateV4] load shopLocales failed:", err);
-  }
-  const localeMs = Date.now() - localeStart;
-
-  // 同步店铺语言到 TSF 是纯写操作，返回值不参与渲染 —— 移出关键路径，
-  // 后台执行，避免 N 个串行 upsert 阻塞首屏。
-  void syncShopTargetLocalesFromShopify(
-    session.shop,
-    shopLocaleRows,
-    primaryLocale,
-  ).catch((syncErr) => {
-    console.error("[translateV4] syncShopTargetLocales failed:", syncErr);
-  });
-
-  // 首屏文档只等渲染骨架必需的语言列表。任务列表与覆盖率改由客户端首帧并行拉取
-  // （`/api/translate-v4/tasks` + `coverage?cache=1`），把 Cosmos/Redis/Turso 往返
-  // 移出 LCP 关键路径。ensureShopV4Settings 是 Turso 写、返回值不参与渲染，后台执行。
-  void ensureShopV4Settings(session.shop, primaryLocale).catch((err) => {
-    console.error("[translateV4] ensureShopV4Settings failed:", err);
-  });
-
   if (perfDebug) {
     console.log(
       `[perf][loader] translate-v4 ${JSON.stringify({
-        shop: session.shop,
-        authMs,
-        localeMs,
-        totalMs: Date.now() - reqStart,
-        localeCount: locales.length,
+        skippedAuthLocales: true,
+        totalMs: 0,
       })}`,
     );
   }
-
-  return json({
-    shop: session.shop,
-    locales,
-    primaryLocale,
-    perfDebug,
-  });
+  return json({ perfDebug });
 };
 
 export default function AppTranslateV4() {
@@ -175,8 +131,11 @@ export default function AppTranslateV4() {
     | { spotlightTaskIds?: string[] }
     | null
     | undefined;
-  const { shop, locales, primaryLocale, perfDebug } =
-    useLoaderData<typeof loader>();
+  const appData = useRouteLoaderData<typeof appLoader>("routes/app");
+  const { perfDebug } = useLoaderData<typeof loader>();
+  const shop = appData?.shop ?? "";
+  const locales = appData?.shopLocales?.localeOptions ?? [];
+  const primaryLocale = appData?.shopLocales?.primaryLocale ?? "en";
   const [perfDebugEnabled, setPerfDebugEnabled] = useState(perfDebug);
 
   useEffect(() => {
@@ -903,7 +862,7 @@ export default function AppTranslateV4() {
         }}
       >
         <div className="v4-page" style={v4ContentStyle}>
-          <div className="v4-enter">
+          <div>
             <PageHeaderBar credits={remainingCredits} planType={planType} />
           </div>
 
