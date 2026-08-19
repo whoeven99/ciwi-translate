@@ -10,7 +10,6 @@
     "deployTest": "npx shopify app deploy -c shopify.app.test.toml --allow-updates --allow-deletes",
     "deployProd": "npx shopify app deploy -c shopify.app.prod.toml --allow-updates --allow-deletes",
     "translate": "node scripts/translate.js",
-    "i18n:key": "ts-node ./i18n.js",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
