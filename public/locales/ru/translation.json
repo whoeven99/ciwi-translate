@@ -798,6 +798,7 @@
   "userGuide.title": "Узнайте, как это работает",
   "v4.actionFailed": "Действие не выполнено",
   "v4.actionFailedRetry": "Действие не выполнено. Повторите попытку позже.",
+  "v4.back": "Назад",
   "v4.auto.lastUpdate": "Последнее обновление {{time}}",
   "v4.auto.lastUpdateJustNow": "Последнее обновление: только что",
   "v4.auto.nextScan": "Следующее сканирование {{time}}",

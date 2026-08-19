@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useNavigate } from "@remix-run/react";
-import { Button, Page, Text } from "@shopify/polaris";
+import { BlockStack, Button, Page, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import AppPageHeader from "~/ui/components/AppPageHeader";
 import { message } from "~/ui/message";
@@ -151,19 +151,22 @@ export default function AppTranslateV4History() {
       />
       <Page>
         <div style={v4ContentStyle}>
-          <AppPageHeader
-            style={{ marginBottom: 18 }}
-            title={t("v4.tasks.historyPageTitle", { count: historyJobs.length })}
-            description={t("v4.tasks.historyHelper")}
-            extra={
+          <BlockStack gap="200">
+            <div>
               <Button
                 variant="plain"
+                size="slim"
                 onClick={() => navigate("/app/translate-v4")}
               >
-                {t("v4.tasks.backToCurrent")}
+                {t("v4.back")}
               </Button>
-            }
-          />
+            </div>
+            <AppPageHeader
+              style={{ marginBottom: 18 }}
+              title={t("v4.tasks.historyPageTitle", { count: historyJobs.length })}
+              description={t("v4.tasks.historyHelper")}
+            />
+          </BlockStack>
 
           <div style={{ ...v4CardStyle, padding: "16px" }}>
             {historyJobs.length === 0 ? (

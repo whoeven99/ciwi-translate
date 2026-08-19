@@ -798,6 +798,7 @@
   "userGuide.title": "Découvrir le fonctionnement",
   "v4.actionFailed": "Échec de l'action",
   "v4.actionFailedRetry": "Échec de l'action. Veuillez réessayer plus tard.",
+  "v4.back": "Retour",
   "v4.auto.lastUpdate": "Dernière mise à jour {{time}}",
   "v4.auto.lastUpdateJustNow": "Dernière mise à jour à l'instant",
   "v4.auto.nextScan": "Prochaine analyse {{time}}",

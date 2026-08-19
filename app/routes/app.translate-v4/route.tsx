@@ -1028,6 +1028,16 @@ export default function AppTranslateV4() {
                     spotlightTaskIds={spotlightTaskIds}
                     translateSlotBusy={translateSlotBusy}
                     loading={jobsLoading}
+                    emptyStateActionLabel={t("onboarding.action.createTask")}
+                    onEmptyStateAction={() => {
+                      setActiveWorkbenchTab("create");
+                      setTimeout(() => {
+                        createTaskSectionRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
+                      }, 0);
+                    }}
                     onBuyCredits={openTaskCreditsModal}
                     onAction={handleAction}
                   />

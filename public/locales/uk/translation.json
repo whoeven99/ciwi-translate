@@ -798,6 +798,7 @@
   "userGuide.title": "Дізнайтеся, як це працює",
   "v4.actionFailed": "Дію не виконано",
   "v4.actionFailedRetry": "Дію не виконано. Спробуйте пізніше.",
+  "v4.back": "Назад",
   "v4.auto.lastUpdate": "Останнє оновлення {{time}}",
   "v4.auto.lastUpdateJustNow": "Останнє оновлення: щойно",
   "v4.auto.nextScan": "Наступне сканування {{time}}",

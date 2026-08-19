@@ -798,6 +798,7 @@
   "userGuide.title": "Ontdek hoe het werkt",
   "v4.actionFailed": "Actie mislukt",
   "v4.actionFailedRetry": "Actie mislukt. Probeer het later opnieuw.",
+  "v4.back": "Terug",
   "v4.auto.lastUpdate": "Laatst bijgewerkt {{time}}",
   "v4.auto.lastUpdateJustNow": "Laatst bijgewerkt zojuist",
   "v4.auto.nextScan": "Volgende scan {{time}}",

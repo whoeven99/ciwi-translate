@@ -218,6 +218,14 @@ function coverageTone(percent: number | null): "success" | "attention" | "info" 
   return "attention";
 }
 
+function coverageStatusBadgeTone(
+  percent: number | null,
+): "info" | "success" | "caution" {
+  if (percent == null) return "info";
+  if (percent >= 90) return "success";
+  return "caution";
+}
+
 function getCoverageRating(
   percent: number | null,
   t: ReturnType<typeof useTranslation>["t"],
@@ -386,6 +394,7 @@ export default function TranslateV4MvpRoute() {
     [coverage.overallPercent, t],
   );
   const hasCoverageData = !(coverageLoading && coverage.locales.length === 0);
+  const pendingCoverageItems = Math.max(coverage.totalItems - coverage.translatedItems, 0);
   const summaryVideoThumbnailUrl = useMemo(
     () => buildYoutubeThumbnailUrl(SUMMARY_VIDEO_URL),
     [],
@@ -1077,6 +1086,15 @@ export default function TranslateV4MvpRoute() {
                     jobs={jobs}
                     translateSlotBusy={translateSlotBusy}
                     loading={jobsLoading}
+                    emptyStateActionLabel={t("v4Mvp.custom.translate")}
+                    onEmptyStateAction={() =>
+                      navigate(
+                        buildCustomTranslationPath({
+                          targets: customTargets,
+                          modules: customModules,
+                        }),
+                      )
+                    }
                     onBuyCredits={openTaskCreditsModal}
                     onAction={handleTaskAction}
                   />
@@ -1096,14 +1114,41 @@ export default function TranslateV4MvpRoute() {
           <div style={coverageModalShellStyle}>
             <BlockStack gap="350">
               <div style={coverageModalHeroStyle}>
-                <AppMetricTile
-                  label={t("v4.translationProgress")}
-                  value={
-                    coverageLoading && coverage.locales.length === 0
-                      ? "—"
-                      : `${coverage.overallPercent ?? 0}%`
-                  }
-                />
+                <BlockStack gap="300">
+                  <Text as="p" tone="subdued" variant="bodyMd">
+                    {t("v4Mvp.coverageModal.description")}
+                  </Text>
+                  <div style={coverageMetricGridStyle}>
+                    <AppMetricTile
+                      label={t("v4.translationProgress")}
+                      value={
+                        hasCoverageData
+                          ? `${coverage.overallPercent ?? 0}%`
+                          : "—"
+                      }
+                      caption={coverageRating.label}
+                    />
+                    <AppMetricTile
+                      label={t("v4Mvp.coverageCard.languageCount", {
+                        total: coverage.languageCount,
+                      })}
+                      value={hasCoverageData ? coverage.languageCount.toLocaleString() : "—"}
+                      caption={t("v4Mvp.coverageCard.title")}
+                    />
+                    <AppMetricTile
+                      label={t("v4.pendingItems")}
+                      value={hasCoverageData ? pendingCoverageItems.toLocaleString() : "—"}
+                      caption={
+                        hasCoverageData && coverage.totalItems > 0
+                          ? t("v4Mvp.overview.progress", {
+                              translated: coverage.translatedItems.toLocaleString(),
+                              total: coverage.totalItems.toLocaleString(),
+                            })
+                          : t("v4Mvp.coverageModal.empty")
+                      }
+                    />
+                  </div>
+                </BlockStack>
               </div>
 
               <BlockStack gap="200">
@@ -1112,15 +1157,20 @@ export default function TranslateV4MvpRoute() {
                     .sort((a, b) => (a.percent ?? 0) - (b.percent ?? 0))
                     .map((locale) => (
                       <div key={locale.locale} style={coverageRowStyle}>
-                        <InlineStack align="space-between" blockAlign="center">
+                        <InlineStack align="space-between" blockAlign="start" wrap={false}>
                           <BlockStack gap="050">
                             <InlineStack gap="150" blockAlign="center" wrap>
                               <Text as="p" variant="bodyMd">
                                 {localeShortName(locale.locale, locale.label)}
                               </Text>
-                              <Badge tone={(locale.percent ?? 0) >= 90 ? "success" : "attention"}>
+                              <AppPill tone="neutral">
                                 {localeRegionCode(locale.locale)}
-                              </Badge>
+                              </AppPill>
+                              <AppStatusBadge
+                                tone={coverageStatusBadgeTone(locale.percent)}
+                              >
+                                {getCoverageRating(locale.percent, t).label}
+                              </AppStatusBadge>
                             </InlineStack>
                             <Text as="p" tone="subdued" variant="bodySm">
                               {t("v4Mvp.coverageModal.progressText", {
@@ -1129,9 +1179,11 @@ export default function TranslateV4MvpRoute() {
                               })}
                             </Text>
                           </BlockStack>
-                          <Text as="p" variant="headingMd">
-                            {`${locale.percent ?? 0}%`}
-                          </Text>
+                          <div style={coveragePercentWrapStyle}>
+                            <Text as="p" variant="headingMd">
+                              {`${locale.percent ?? 0}%`}
+                            </Text>
+                          </div>
                         </InlineStack>
                         <ProgressBar progress={locale.percent ?? 0} size="small" tone="primary" />
                       </div>
@@ -1293,11 +1345,23 @@ const coverageModalHeroStyle = {
   boxShadow: "var(--app-shadow-card)",
 } satisfies CSSProperties;
 
+const coverageMetricGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+  gap: "12px",
+} satisfies CSSProperties;
+
 const coverageModalEmptyStyle = {
   padding: "28px 18px",
   borderRadius: "14px",
   background: appColors.surfaceSecondary,
   border: `1px dashed ${v4Colors.cardBorder}`,
+} satisfies CSSProperties;
+
+const coveragePercentWrapStyle = {
+  flexShrink: 0,
+  minWidth: "68px",
+  textAlign: "right",
 } satisfies CSSProperties;
 
 const summaryHeroGridStyle = {

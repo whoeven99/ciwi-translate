@@ -798,6 +798,7 @@
   "userGuide.title": "了解其工作原理",
   "v4.actionFailed": "操作失敗",
   "v4.actionFailedRetry": "操作失敗，請稍後再試。",
+  "v4.back": "返回",
   "v4.auto.lastUpdate": "上次更新 {{time}}",
   "v4.auto.lastUpdateJustNow": "上次更新：剛剛",
   "v4.auto.nextScan": "下次掃描 {{time}}",

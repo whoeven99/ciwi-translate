@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useLocation, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { BlockStack, Button, InlineStack, Page, Text } from "@shopify/polaris";
+import { BlockStack, Button, Page, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
 import { message } from "~/ui/message";
@@ -385,14 +385,18 @@ export default function TranslateV4MvpCustomRoute() {
       <div style={v4ContentStyle}>
         <BlockStack gap="500">
           <BlockStack gap="200">
-            <InlineStack gap="300" blockAlign="center">
-              <Button onClick={() => navigate("/app/translate-v4-mvp")}>
-                {t("v4Mvp.customPage.back")}
+            <div>
+              <Button
+                variant="plain"
+                size="slim"
+                onClick={() => navigate("/app/translate-v4-mvp")}
+              >
+                {t("v4.back")}
               </Button>
-              <Text as="h1" variant="headingLg">
-                {t("v4Mvp.customPage.title")}
-              </Text>
-            </InlineStack>
+            </div>
+            <Text as="h1" variant="headingLg">
+              {t("v4Mvp.customPage.title")}
+            </Text>
             <Text as="p" tone="subdued" variant="bodyMd">
               {t("v4Mvp.customPage.subtitle")}
             </Text>

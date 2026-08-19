@@ -798,6 +798,7 @@
   "userGuide.title": "Lär dig hur det fungerar",
   "v4.actionFailed": "Åtgärden misslyckades",
   "v4.actionFailedRetry": "Åtgärden misslyckades. Försök igen senare.",
+  "v4.back": "Tillbaka",
   "v4.auto.lastUpdate": "Senast uppdaterad {{time}}",
   "v4.auto.lastUpdateJustNow": "Senast uppdaterad just nu",
   "v4.auto.nextScan": "Nästa skanning {{time}}",

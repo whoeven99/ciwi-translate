@@ -798,6 +798,7 @@
   "userGuide.title": "使い方を学ぶ",
   "v4.actionFailed": "操作に失敗しました",
   "v4.actionFailedRetry": "操作に失敗しました。しばらくしてから再試行してください。",
+  "v4.back": "戻る",
   "v4.auto.lastUpdate": "最終更新 {{time}}",
   "v4.auto.lastUpdateJustNow": "たった今更新",
   "v4.auto.nextScan": "次のスキャン {{time}}",

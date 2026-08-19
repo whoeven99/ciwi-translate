@@ -798,6 +798,7 @@
   "userGuide.title": "Nasıl çalıştığını öğrenin",
   "v4.actionFailed": "İşlem başarısız oldu",
   "v4.actionFailedRetry": "İşlem başarısız oldu. Lütfen daha sonra tekrar deneyin.",
+  "v4.back": "Geri",
   "v4.auto.lastUpdate": "Son güncelleme {{time}}",
   "v4.auto.lastUpdateJustNow": "Az önce güncellendi",
   "v4.auto.nextScan": "Sonraki tarama {{time}}",

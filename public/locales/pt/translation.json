@@ -798,6 +798,7 @@
   "userGuide.title": "Saiba como funciona",
   "v4.actionFailed": "Falha na ação",
   "v4.actionFailedRetry": "Falha na ação. Tente novamente mais tarde.",
+  "v4.back": "Voltar",
   "v4.auto.lastUpdate": "Última atualização {{time}}",
   "v4.auto.lastUpdateJustNow": "Última atualização agora mesmo",
   "v4.auto.nextScan": "Próxima verificação {{time}}",

@@ -798,6 +798,7 @@
   "userGuide.title": "Scopri come funziona",
   "v4.actionFailed": "Azione non riuscita",
   "v4.actionFailedRetry": "Azione non riuscita. Riprova più tardi.",
+  "v4.back": "Indietro",
   "v4.auto.lastUpdate": "Ultimo aggiornamento {{time}}",
   "v4.auto.lastUpdateJustNow": "Ultimo aggiornamento adesso",
   "v4.auto.nextScan": "Prossima scansione {{time}}",
