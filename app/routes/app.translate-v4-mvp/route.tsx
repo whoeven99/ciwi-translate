@@ -359,9 +359,11 @@ export default function TranslateV4MvpRoute() {
   const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const initialWorkbenchTabParam = searchParams.get("tab");
   const plan = useSelector((state: RootState) => state.userConfig.plan);
   const isNew = useSelector((state: RootState) => state.userConfig.isNew);
   const queueSectionRef = useRef<HTMLDivElement | null>(null);
+  const defaultWorkbenchTabResolvedRef = useRef(false);
 
   const targetOptions = useMemo(
     () =>
@@ -378,7 +380,7 @@ export default function TranslateV4MvpRoute() {
   const [changedLocaleCodes, setChangedLocaleCodes] = useState<string[]>([]);
   const [scanLoading, setScanLoading] = useState(false);
   const [workbenchTab, setWorkbenchTab] = useState<"recommended" | "queue">(
-    searchParams.get("tab") === "queue" ? "queue" : "recommended",
+    initialWorkbenchTabParam === "queue" ? "queue" : "recommended",
   );
   const [coverageDetailOpen, setCoverageDetailOpen] = useState(false);
   const [createConfirmConfig, setCreateConfirmConfig] = useState<PendingCreateConfig | null>(
@@ -709,7 +711,9 @@ export default function TranslateV4MvpRoute() {
   );
 
   const jobsRef = useRef<TranslationJobProgressSummary[]>([]);
-  const previousActiveTaskIdsRef = useRef<string[]>([]);
+  const previousJobStatusesRef = useRef<Record<string, TranslationJobProgressSummary["status"]>>(
+    {},
+  );
 
   useEffect(() => {
     jobsRef.current = jobs;
@@ -744,16 +748,39 @@ export default function TranslateV4MvpRoute() {
   }, [refreshQuota, refreshTasks]);
 
   useEffect(() => {
-    const previousIds = previousActiveTaskIdsRef.current;
-    const nextIds = currentJobs.map((job) => job.taskId);
-    const finishedTaskDetected =
-      previousIds.length > 0 && previousIds.some((taskId) => !nextIds.includes(taskId));
+    const previousStatuses = previousJobStatusesRef.current;
+    const completedTaskDetected = jobs.some((job) => {
+      const previousStatus = previousStatuses[job.taskId];
+      return previousStatus != null && previousStatus !== "COMPLETED" && job.status === "COMPLETED";
+    });
 
-    previousActiveTaskIdsRef.current = nextIds;
+    previousJobStatusesRef.current = Object.fromEntries(
+      jobs.map((job) => [job.taskId, job.status]),
+    );
 
-    if (!finishedTaskDetected) return;
+    if (!completedTaskDetected) return;
     void refreshCoverage(true);
-  }, [currentJobs, refreshCoverage]);
+  }, [jobs, refreshCoverage]);
+
+  useEffect(() => {
+    if (defaultWorkbenchTabResolvedRef.current) return;
+    if (initialWorkbenchTabParam === "queue" || initialWorkbenchTabParam === "recommended") {
+      defaultWorkbenchTabResolvedRef.current = true;
+      return;
+    }
+    if (jobsLoading || coverageLoading) return;
+
+    defaultWorkbenchTabResolvedRef.current = true;
+    if (visibleRecommendations.length === 0 && activeTaskCount > 0) {
+      setWorkbenchTab("queue");
+    }
+  }, [
+    activeTaskCount,
+    coverageLoading,
+    initialWorkbenchTabParam,
+    jobsLoading,
+    visibleRecommendations.length,
+  ]);
 
   const handleRecommendationTranslate = useCallback(async (item: Recommendation) => {
     if (createQuotaGatePending) {

@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import type {
-  TranslationJobProgressSummary,
-  V4InitActiveModule,
-  V4InitCompletedModule,
-} from "~/server/translateV4/progress.server";
+import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import type { StageName } from "~/server/translateV4/types";
-import { capTranslateUnitsByResources } from "~/server/translateV4/metricsUtils";
 import { MODULE_LABELS, QUOTA_TOKEN_MULTIPLIER } from "../constants";
 import { v4Colors } from "../v4Styles";
 import {
@@ -22,8 +17,8 @@ import {
   formatV4Elapsed,
   formatV4JobStartTime,
   getV4ModuleLabel,
-  V4_STAGE_KEYS,
 } from "../v4I18n";
+import type { V4_STAGE_KEYS } from "../v4I18n";
 
 type StageMetrics = TranslationJobProgressSummary["metrics"];
 
@@ -67,16 +62,15 @@ function stageDetail(
     if (total > 0 && (m.initModulesTotal > 0 || (jobModules?.length ?? 0) > 0)) {
       return `${done}/${total}`;
     }
-    return `${m.initDone}/${m.initTotal}`;
+    return m.initTotal > 0 ? `${m.initDone}/${m.initTotal}` : "";
   }
   if (idx === 1) {
-    const res = `${m.translateDone}/${m.translateTotal}`;
-    return m.translateUnitTotal > 0
-      ? `${res} · ${capTranslateUnitsByResources(m).toLocaleString()}/${m.translateUnitTotal.toLocaleString()}`
-      : res;
+    const total = m.translateTotal || taskResourceTotal(m);
+    return total > 0 ? `${m.translateDone}/${total}` : "";
   }
   const total = taskResourceTotal(m);
-  return `${m.writebackDone}/${total || m.writebackTotal}`;
+  const writebackTotal = total || m.writebackTotal;
+  return writebackTotal > 0 ? `${m.writebackDone}/${writebackTotal}` : "";
 }
 
 function stageElapsedMs(
@@ -127,73 +121,75 @@ export function JobSummaryStats({ job }: { job: TranslationJobProgressSummary })
       : nowMs != null
         ? jobElapsedMs(job, nowMs)
         : null;
-  const credits = jobQuotaCredits(job.usedTokens, QUOTA_TOKEN_MULTIPLIER);
   const startTime = formatV4JobStartTime(job.createdAt, i18n.language);
+  const summaryItems = [
+    {
+      key: "progress",
+      label: t("v4.job.translatedResources"),
+      value:
+        resourceTotal > 0
+          ? `${translatedResources.toLocaleString()} / ${resourceTotal.toLocaleString()}`
+          : translatedResources.toLocaleString(),
+    },
+    startTime
+      ? {
+          key: "startTime",
+          label: t("v4.job.startTime"),
+          value: startTime,
+        }
+      : null,
+    elapsed != null
+      ? {
+          key: "elapsed",
+          label: t("v4.job.elapsed"),
+          value: formatV4Elapsed(elapsed, t),
+        }
+      : null,
+  ].filter((item): item is { key: string; label: string; value: string } => item !== null);
 
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 12,
-          fontSize: 12,
-          color: v4Colors.textMuted,
-          rowGap: 8,
-          lineHeight: 1.5,
-        }}
-      >
-        {startTime ? (
-          <span>
-            {t("v4.job.startTime")}{" "}
-            <strong style={{ color: v4Colors.text }}>{startTime}</strong>
-          </span>
-        ) : null}
-        <span>
-          {t("v4.job.translatedResources")}{" "}
-          <strong style={{ color: v4Colors.text }}>
-            {translatedResources.toLocaleString()}
-            {resourceTotal > 0 ? ` / ${resourceTotal.toLocaleString()}` : ""}
-          </strong>
-        </span>
-        {elapsed != null ? (
-          <span>
-            {t("v4.job.elapsed")}{" "}
-            <strong style={{ color: v4Colors.text }}>{formatV4Elapsed(elapsed, t)}</strong>
-          </span>
-        ) : null}
-        {job.usedTokens > 0 ? (
-          <span>
-            {t("v4.job.creditsUsed")}{" "}
-            <strong style={{ color: v4Colors.text }}>
-              {t("v4.job.creditsShort", {
-                formattedCount: formatCreditsCount(credits, i18n.language),
-              })}
-            </strong>
-            <TaskIdSuffix taskId={job.taskId} />
-          </span>
-        ) : (
-          <TaskIdSuffix taskId={job.taskId} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TaskIdSuffix({ taskId }: { taskId: string }) {
-  const prefix = taskId.split("-")[0] ?? taskId.slice(0, 8);
-  return (
-    <span
+    <div
       style={{
-        marginLeft: 8,
-        color: v4Colors.textFaint,
-        fontFamily: v4Colors.mono,
-        fontSize: 11,
-        letterSpacing: "0.02em",
+        marginBottom: 14,
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+        gap: 10,
       }}
     >
-      #{prefix}
-    </span>
+      {summaryItems.map((item) => (
+        <div
+          key={item.key}
+          style={{
+            borderRadius: 10,
+            border: `1px solid ${v4Colors.cardBorder}`,
+            background: v4Colors.cardBg,
+            padding: "10px 12px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              lineHeight: 1.4,
+              color: v4Colors.textMuted,
+              marginBottom: 4,
+            }}
+          >
+            {item.label}
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              lineHeight: 1.5,
+              color: v4Colors.text,
+              fontWeight: 600,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {item.value}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -339,10 +335,6 @@ export function JobStageProgressList({ job }: { job: TranslationJobProgressSumma
                   moduleLabel={
                     m.currentModule ? moduleLabel(m.currentModule, t) : null
                   }
-                  usedCredits={jobQuotaCredits(
-                    job.usedTokens,
-                    QUOTA_TOKEN_MULTIPLIER,
-                  )}
                 />
               ) : (
                 <>
@@ -388,11 +380,15 @@ export function JobStageProgressList({ job }: { job: TranslationJobProgressSumma
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
-                    {stageDetail(idx, m, job.modules, job.status)}
-                    {complete ? " ✓" : ""}
-                    {ms != null
-                      ? ` · ${t("v4.job.elapsedShort", { time: formatV4Elapsed(ms, t) })}`
-                      : ""}
+                    {[
+                      stageDetail(idx, m, job.modules, job.status),
+                      complete ? "✓" : null,
+                      ms != null
+                        ? t("v4.job.elapsedShort", { time: formatV4Elapsed(ms, t) })
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </>
               )}
@@ -439,106 +435,34 @@ function InitScanIndicator({
   );
 }
 
-type InitLogLine = {
-  verbKey: string;
-  detail: string;
-  meta?: string;
-  kind: "done" | "active" | "pending";
-  parallel?: boolean;
-};
-
 function InitActivityLog({ job }: { job: TranslationJobProgressSummary }) {
   const { t } = useTranslation();
   const m = job.metrics;
-  const active: V4InitActiveModule[] = m.initActiveModules ?? [];
-  const completed: V4InitCompletedModule[] = m.initCompletedModules ?? [];
-  const activeSet = new Set(active.map((a) => a.module));
-  const completedSet = new Set(completed.map((c) => c.module));
-  const waiting = job.modules.filter(
+  const activeModules = (m.initActiveModules ?? []).map((item) => item.module);
+  const completedModules = (m.initCompletedModules ?? []).map((item) => item.module);
+  const activeSet = new Set(activeModules);
+  const completedSet = new Set(completedModules);
+  const waitingModules = job.modules.filter(
     (mod) => !activeSet.has(mod) && !completedSet.has(mod),
   );
-  const lines: InitLogLine[] = [];
-
-  if (job.status === "INIT_QUEUED" && active.length === 0 && completed.length === 0) {
-    lines.push({
-      verbKey: "v4.initLog.verb.queued",
-      detail: t("v4.initLog.waitingInitializer"),
-      kind: "active",
-    });
-  }
-
-  const recentCompleted = completed.slice(-4);
-  for (const c of recentCompleted) {
-    lines.push({
-      verbKey: "v4.initLog.verb.saved",
-      detail: moduleLabel(c.module, t),
-      meta:
-        c.items > 0
-          ? t("v4.initLog.plusItems", { count: c.items })
-          : undefined,
-      kind: "done",
-    });
-  }
-
-  if (active.length > 1) {
-    lines.push({
-      verbKey: "v4.initLog.verb.parallel",
-      detail: t("v4.initLog.queryingShopifyN", { count: active.length }),
-      kind: "active",
-    });
-  }
-
-  for (const a of active) {
-    const phaseVerb =
-      a.phase === "saving"
-        ? "v4.initLog.verb.saving"
-        : "v4.initLog.verb.querying";
-    lines.push({
-      verbKey: phaseVerb,
-      detail: moduleLabel(a.module, t),
-      kind: "active",
-      parallel: active.length > 1,
-    });
-  }
-
-  if (m.initPhase === "writing_manifest") {
-    lines.push({
-      verbKey: "v4.initLog.verb.writing",
-      detail: t("v4.initLog.writingManifest"),
-      kind: "active",
-    });
-  }
-
-  if (waiting.length > 0 && job.status === "INITIALIZING") {
-    const shown = waiting.slice(0, 3).map((mod) => moduleLabel(mod, t));
-    const extra = waiting.length - shown.length;
-    const modulesText =
-      extra > 0 ? `${shown.join(" · ")} +${extra}` : shown.join(" · ");
-    // No active modules yet: worker is usually already on Shopify bulk submit/poll
-    // (activity used to appear only after JSONL download). Prefer that copy over
-    // "waiting for slot", which reads like the task is idle in our queue.
-    if (active.length === 0 && completed.length === 0) {
-      lines.push({
-        verbKey: "v4.initLog.verb.querying",
-        detail: t("v4.initLog.fetchingShopifyBulk", { modules: modulesText }),
-        kind: "active",
-      });
-    } else {
-      lines.push({
-        verbKey: "v4.initLog.verb.queued",
-        detail: t("v4.initLog.waitingForSlot", { modules: modulesText }),
-        kind: "pending",
-      });
-    }
-  }
-
-  if (lines.length === 0) {
-    lines.push({
-      verbKey: "v4.initLog.verb.querying",
-      detail: t("v4.initLog.waitingInitializer"),
-      kind: "active",
-    });
-  }
+  const uniqueModules = [...activeModules, ...waitingModules, ...completedModules].filter(
+    (mod, index, list) => list.indexOf(mod) === index,
+  );
+  const visibleModules = uniqueModules.slice(0, 2).map((mod) => moduleLabel(mod, t));
+  const extraModulesCount = uniqueModules.length - visibleModules.length;
+  const modulesText =
+    visibleModules.length > 0
+      ? extraModulesCount > 0
+        ? `${visibleModules.join(" · ")} +${extraModulesCount}`
+        : visibleModules.join(" · ")
+      : null;
+  const primaryText = modulesText
+    ? t("v4.job.preparingModules", { modules: modulesText })
+    : t("v4.job.preparingStore");
+  const secondaryText =
+    m.initDone > 0
+      ? t("v4.job.itemsFound", { count: m.initDone })
+      : t("v4.job.preparingHint");
 
   return (
     <div
@@ -551,106 +475,33 @@ function InitActivityLog({ job }: { job: TranslationJobProgressSummary }) {
     >
       <div
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-          alignItems: "center",
-          marginBottom: 6,
+          background: v4Colors.cardBg,
+          borderRadius: 10,
+          border: `1px solid ${v4Colors.cardBorder}`,
+          padding: "10px 12px",
         }}
       >
-        <span
+        <div
+          style={{
+            fontSize: 12,
+            color: v4Colors.text,
+            lineHeight: 1.5,
+            marginBottom: 4,
+          }}
+        >
+          {primaryText}
+          <span className="v4-dots" />
+        </div>
+        <div
           style={{
             fontSize: 11,
             color: v4Colors.textMuted,
             lineHeight: 1.45,
+            overflowWrap: "anywhere",
           }}
         >
-          {t("v4.job.itemsFound", { count: m.initDone })}
-        </span>
-        {active.length > 1 ? (
-          <span
-            style={{
-              fontSize: 11,
-              color: v4Colors.warning,
-              fontWeight: 600,
-              lineHeight: 1.45,
-            }}
-          >
-            {t("v4.initLog.inFlight", { count: active.length })}
-          </span>
-        ) : null}
-      </div>
-      <div
-        style={{
-          background: v4Colors.cardSubdued,
-          borderRadius: 8,
-          border: `1px solid ${v4Colors.cardBorder}`,
-          padding: "8px 10px",
-          maxHeight: 180,
-          overflow: "auto",
-        }}
-      >
-        {lines.map((line, i) => (
-          <div
-            key={`${line.verbKey}-${line.detail}-${i}`}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              paddingLeft: line.parallel ? 12 : 0,
-              borderLeft: line.parallel
-                ? `2px solid ${v4Colors.primary}`
-                : undefined,
-              marginBottom: i === lines.length - 1 ? 0 : 6,
-              fontSize: 12,
-              lineHeight: 1.45,
-            }}
-          >
-            <span
-              style={{
-                width: 56,
-                flexShrink: 0,
-                fontWeight: line.kind === "active" ? 600 : 400,
-                color:
-                  line.kind === "active"
-                    ? v4Colors.text
-                    : line.kind === "done"
-                      ? v4Colors.textMuted
-                      : v4Colors.textFaint,
-              }}
-            >
-              {t(line.verbKey)}
-            </span>
-            <span
-              style={{
-                flex: 1,
-                color:
-                  line.kind === "pending"
-                    ? v4Colors.textFaint
-                    : line.kind === "active"
-                      ? v4Colors.text
-                      : v4Colors.textMuted,
-                overflowWrap: "anywhere",
-              }}
-            >
-              {line.detail}
-              {line.kind === "active" ? <span className="v4-dots" /> : null}
-            </span>
-            {line.meta ? (
-              <span
-                style={{
-                  flexShrink: 0,
-                  color: line.meta.startsWith("+")
-                    ? v4Colors.success
-                    : v4Colors.textFaint,
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {line.meta}
-              </span>
-            ) : null}
-          </div>
-        ))}
+          {secondaryText}
+        </div>
       </div>
     </div>
   );
@@ -658,12 +509,10 @@ function InitActivityLog({ job }: { job: TranslationJobProgressSummary }) {
 
 function TranslateWorkingIndicator({
   moduleLabel,
-  usedCredits,
 }: {
   moduleLabel: string | null;
-  usedCredits: number;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   return (
     <>
       <div className="v4-indet-track" style={{ flex: 1 }}>
@@ -680,13 +529,9 @@ function TranslateWorkingIndicator({
           overflowWrap: "anywhere",
         }}
       >
-        {t("v4.job.callingModel")}
-        {moduleLabel ? ` · ${moduleLabel}` : ""}
-        {usedCredits > 0
-          ? ` · ${t("v4.job.creditsUsedShort", {
-              formattedCount: formatCreditsCount(usedCredits, i18n.language),
-            })}`
-          : ""}
+        {moduleLabel
+          ? t("v4.job.translatingModule", { module: moduleLabel })
+          : t("v4.job.translatingNow")}
         <span className="v4-dots" />
       </span>
     </>
