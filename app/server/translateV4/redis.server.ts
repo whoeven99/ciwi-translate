@@ -5,7 +5,7 @@ import {
   isRenderKvSoleClientMode,
   warnIfMigrationEnvIncomplete,
   wrapRedisPair,
-} from "./redisDualClient.server";
+} from "@ciwi/translation-core/redis-dual-client";
 
 /**
  * TsFrontend 专用 Redis 客户端。
@@ -16,7 +16,7 @@ import {
  * 迁移期双端:
  *   Primary = `REDIS_URL_V4` / `REDIS_URL` / host+password
  *   Secondary = `RENDER_KV`
- *   `REDIS_DUAL_WRITE` / `REDIS_CUTOVER` 见 redisDualClient.server.ts
+ *   `REDIS_DUAL_WRITE` / `REDIS_CUTOVER` 见 `@ciwi/translation-core/redis-dual-client`
  */
 let singleton: Redis | undefined;
 

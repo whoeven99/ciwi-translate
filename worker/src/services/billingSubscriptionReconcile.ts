@@ -15,7 +15,7 @@ import {
   collectGrantedAnnualCreditCycleIndexes,
   decideAnnualCreditGrant,
   getAnnualCreditWindow,
-} from "./annualCreditCycle.js";
+} from "@ciwi/translation-core/annual-credit-cycle";
 import {
   getOfflineAccessTokenFromTsf,
   getTsfDb,

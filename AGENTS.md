@@ -386,10 +386,17 @@ then `api.translate-v4.tasks.ts`.
 - Runtime ports: `packages/translation-core/src/runtime.ts`.
 - TM 读走批量：`translationMemory.ts` `tmMGet` / `tmMGetByValue`（`mgetAligned`
  按 index 对齐、500 一批、异常整批当 miss），`llmTranslate.ts` 的 digest / value /
- leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同步两份
- `MigratingRedis`**（`app/server/translateV4/redisDualClient.server.ts` 与
- `worker/src/services/redisDualClient.ts`）：sole mode 下 core 拿到的是原生
- ioredis，但双写兼容层是手写代理，缺方法会让 TM 静默整批 miss（只烧钱不报错）。
+ leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同时在
+ `MigratingRedis` / pipeline / multi 代理里实现**（单一来源
+ `packages/translation-core/src/redisDualClient.ts`，App/Worker 经
+ `@ciwi/translation-core/redis-dual-client` 引用，不再有两份副本）：sole mode 下 core
+ 拿到的是原生 ioredis，但双写兼容层是手写代理，缺方法会让 TM 静默整批 miss
+ （只烧钱不报错）。
+- **新增 core 子路径导出要改四处**，漏一处就会掉到 `.d.ts` 上（esbuild 剥掉类型 →
+ 运行时空模块 → rollup 报 `"x" is not exported by ...d.ts`）：
+ `packages/translation-core/package.json` 的 `exports`、根 `tsconfig.json` paths、
+ `worker/tsconfig.json` paths、**以及 `vite.config.ts` 的 `translationCoreAliases`**
+ （App 侧靠这份 alias 指向 `src/*.ts` 源码，不走 `.build`）。
 - App adapter: `app/server/translateV4/translationCoreRuntime.server.ts`.
 - Worker adapter: `worker/src/services/translationCoreRuntime.ts`.
 - EMAIL / packing-slip Liquid HTML: `packages/translation-core/src/liquidHtmlTranslate.ts`
@@ -752,9 +759,12 @@ the same first-subscribe Feishu notify (`lifecycleFeishuNotify.ts`).
 Syncs `AppSubscription.currentPeriodEnd/Start` from Shopify for MONTHLY and
 ANNUAL; for ANNUAL also grants monthly credits every 30 days (max 12 per
 Shopify year) derived from `currentPeriodEnd` (never from `createdAt`).
-- `worker/src/services/annualCreditCycle.ts` and
-`app/server/billing/subscription/annualCreditCycle.server.ts`: shared pure
-helpers for annual credit-cycle math.
+- `packages/translation-core/src/annualCreditCycle.ts`: **single source** of the
+annual credit-cycle pure math, imported by both sides as
+`@ciwi/translation-core/annual-credit-cycle` (App via
+`app/server/billing/index.server.ts` barrel, Worker via
+`billingSubscriptionReconcile.ts`). The old per-side copies were deleted; do not
+recreate them.
 - `worker/src/services/accountBalance.ts`: credit pool settle helpers for renewals.
 - `app/routes/webhooks.tsx`: Shopify webhook branching.
 - `app/routes/app.pricing/route.tsx`: pricing UI/actions. `action` 现在
@@ -814,7 +824,7 @@ not overwrite `currentPeriodEnd`. After 12 grants, wait for Shopify year renewal
 30-day window vs TSF `creditCycleIndex` watermark only (`maxGranted + 1`).
 Migrated shops with no TSF cycle logs (or a large gap vs the current window)
 are assumed already granted elsewhere; Worker writes `grantKind: migration_assumed` (`creditsDelta: 0`) as a baseline so the *next* window can
-fire normally. See `annualCreditCycle.ts` / `annualCreditCycle.server.ts`.
+fire normally. See `packages/translation-core/src/annualCreditCycle.ts`.
 - Worker runs a near-due reconciliation every 30 minutes (includes all ACTIVE
 ANNUAL shops for credit-cycle checks) and a full subscription reconciliation
 every 12 hours by default (both configurable) inside the worker process when
@@ -1518,13 +1528,13 @@ translation memory cache.
 - App、Worker、运维脚本、Agent 诊断：**只连** `RENDER_KV`。
 - **不要**再使用 `REDIS_URL` / `REDIS_URL_V4`（Azure Cache 已弃用；本地 `.env*` 里若仍残留可忽略或删除）。
 - 不要打印 URL/密码；只打印脱敏 host。
-- **新增 Redis 用法前先查 `RedisLike` 支持哪些命令**（`worker/src/services/redisDualClient.ts`
-  与 `app/server/translateV4/redisDualClient.server.ts`）。`getRedis()` 的返回类型标成
+- **新增 Redis 用法前先查 `RedisLike` 支持哪些命令**（单一来源
+  `packages/translation-core/src/redisDualClient.ts`）。`getRedis()` 的返回类型标成
   `IORedis`，但双写模式下实际是手写代理 `MigratingRedis`：类型检查会放过
   `sadd`/`smembers`/`srem` 之类未实现的命令，运行时才崩。目前代理只有
   get/mget/set/del/hset/hget/hgetall/hdel/expire/lpush/rpush/lpop/ltrim/ping/pipeline/multi
   ——需要集合语义时用 Hash 代替 Set（见 `translate:v4:email:pending:*`），
-  或先把命令补进两份代理。
+  或先把命令补进代理（`MigratingRedis` + pipeline + multi 三处）。
 - Render 服务内用 **Internal** URL（通常 `redis://…`）；本机 / Agent `.env*` 用 **External**
   `rediss://…`（需 Dashboard 放行 Inbound IP）。
 - 交互 CLI：Dashboard **Valkey CLI Command**，或服务同区 Shell 里

@@ -9,7 +9,10 @@
  * Sole-client mode: REDIS_DUAL_WRITE off + REDIS_CUTOVER=all → 只连 RENDER_KV，
  * 不再创建 REDIS_URL / REDIS_URL_V4 client（可删 Azure Redis）。
  *
- * KEEP IN SYNC with worker/src/services/redisDualClient.ts
+ * App 与 Worker 的**唯一来源**（曾经是两份 576 行副本靠 KEEP IN SYNC 注释维持）。
+ * 本模块不依赖 ioredis：具体客户端由调用方注入 `wrapRedisPair(primary, secondary)`。
+ * 给 `RedisLike` 加方法时必须同时在 `MigratingRedis` / pipeline / multi 代理里实现 ——
+ * 类型上是 IORedis、运行时是手写代理，缺方法会让 TM 静默整批 miss（只烧钱不报错）。
  */
 
 export type RedisLike = {

@@ -54,6 +54,14 @@
       "types": "./.build/translationFilter/index.d.ts",
       "import": "./.build/translationFilter/index.js"
     },
+    "./redis-dual-client": {
+      "types": "./.build/redisDualClient.d.ts",
+      "import": "./.build/redisDualClient.js"
+    },
+    "./annual-credit-cycle": {
+      "types": "./.build/annualCreditCycle.d.ts",
+      "import": "./.build/annualCreditCycle.js"
+    },
     "./translation-filter/*": {
       "types": "./.build/translationFilter/*.d.ts",
       "import": "./.build/translationFilter/*.js"

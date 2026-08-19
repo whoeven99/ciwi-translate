@@ -4,7 +4,7 @@ import {
   isRenderKvSoleClientMode,
   warnIfMigrationEnvIncomplete,
   wrapRedisPair,
-} from "./redisDualClient.js";
+} from "@ciwi/translation-core/redis-dual-client";
 
 let _redis: IORedis | undefined;
 let _lastRedisErrorLogAt = 0;
@@ -110,7 +110,7 @@ function createPrimaryRedis(): IORedis {
 
 /**
  * Sole mode（REDIS_DUAL_WRITE off + REDIS_CUTOVER=all）→ 只连 RENDER_KV。
- * 否则 Primary = REDIS_URL*；Secondary = RENDER_KV。见 redisDualClient.ts。
+ * 否则 Primary = REDIS_URL*；Secondary = RENDER_KV。见 `@ciwi/translation-core/redis-dual-client`。
  */
 export function getRedis(): IORedis {
   if (_redis) return _redis;
