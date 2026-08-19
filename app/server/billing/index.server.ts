@@ -28,7 +28,7 @@ export {
   getExpectedAnnualGrants,
   getNextAnnualCreditGrantAt,
   MAX_ANNUAL_CREDIT_GRANTS,
-} from "./subscription/annualCreditCycle.server";
+} from "@ciwi/translation-core/annual-credit-cycle";
 export { cancelSubscription } from "./subscription/cancelSubscription.server";
 export { cleanupBillingOnUninstall } from "./subscription/cleanupOnUninstall.server";
 export {

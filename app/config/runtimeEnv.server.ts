@@ -167,15 +167,7 @@ function cosmosV4Ok(): boolean {
 }
 
 function redisV4Ok(): boolean {
-  const dual = (process.env.REDIS_DUAL_WRITE?.trim() || "").toLowerCase();
-  const dualOn = dual === "1" || dual === "true" || dual === "yes";
-  const cutover = (process.env.REDIS_CUTOVER?.trim() || "").toLowerCase();
-  const cutoverAll =
-    cutover === "all" ||
-    cutover === "*" ||
-    cutover.split(",").some((t) => t.trim() === "all" || t.trim() === "*");
-  if (!dualOn && cutoverAll && process.env.RENDER_KV?.trim()) return true;
-
+  if (process.env.RENDER_KV?.trim()) return true;
   if (process.env.REDIS_URL_V4?.trim() || process.env.REDIS_URL?.trim()) {
     return true;
   }
@@ -243,14 +235,10 @@ function logCriticalEnvStatus(): void {
   ]);
 
   logEnvCheck("Redis (V4)", redisV4Ok(), [
+    ["RENDER_KV", process.env.RENDER_KV],
     ["REDIS_URL_V4", process.env.REDIS_URL_V4],
     ["REDIS_HOSTNAME_V4", process.env.REDIS_HOSTNAME_V4],
     ["REDIS_PASSWORD_V4", process.env.REDIS_PASSWORD_V4],
-    ["REDIS_PORT_V4", process.env.REDIS_PORT_V4, "6380"],
-    ["REDIS_TLS_V4", process.env.REDIS_TLS_V4, "true"],
-    ["RENDER_KV", process.env.RENDER_KV],
-    ["REDIS_DUAL_WRITE", process.env.REDIS_DUAL_WRITE, "false"],
-    ["REDIS_CUTOVER", process.env.REDIS_CUTOVER, "(empty)"],
   ]);
 
   logOptionalV4InfraKeys(/^(AZURE_STORAGE|AZURE_BLOB|BLOB_).*_V4$/i, "Blob (V4)");
