@@ -7,6 +7,7 @@ export type CreateTaskEstimateView = {
   isUpperBound: boolean;
   needsMoreCredits: boolean;
   loading: boolean;
+  loaded: boolean;
 };
 
 const EMPTY_ESTIMATE: CreateTaskEstimateView = {
@@ -15,6 +16,7 @@ const EMPTY_ESTIMATE: CreateTaskEstimateView = {
   isUpperBound: true,
   needsMoreCredits: false,
   loading: false,
+  loaded: false,
 };
 
 /** 展示用额度简写：1200 → 1K，1_500_000 → 1.5M */
@@ -69,6 +71,7 @@ export function useCreateTaskEstimate(args: {
         estimatedCredits: null,
         remainingCredits: remainingCredits ?? prev.remainingCredits,
         loading: false,
+        loaded: false,
         needsMoreCredits: false,
         isUpperBound: true,
       }));
@@ -76,7 +79,7 @@ export function useCreateTaskEstimate(args: {
     }
 
     let cancelled = false;
-    setEstimate((prev) => ({ ...prev, loading: true }));
+    setEstimate((prev) => ({ ...prev, loading: true, loaded: false }));
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
@@ -95,7 +98,7 @@ export function useCreateTaskEstimate(args: {
           const data = text.trim()
             ? (JSON.parse(text) as {
                 ok?: boolean;
-                estimate?: Omit<CreateTaskEstimateView, "loading">;
+                estimate?: Omit<CreateTaskEstimateView, "loading" | "loaded">;
               })
             : null;
           if (cancelled) return;
@@ -106,12 +109,14 @@ export function useCreateTaskEstimate(args: {
               isUpperBound: data.estimate.isUpperBound ?? true,
               needsMoreCredits: data.estimate.needsMoreCredits,
               loading: false,
+              loaded: true,
             });
           } else {
             setEstimate((prev) => ({
               ...prev,
               estimatedCredits: null,
               loading: false,
+              loaded: true,
             }));
           }
         } catch (err) {
@@ -121,6 +126,7 @@ export function useCreateTaskEstimate(args: {
               ...prev,
               estimatedCredits: null,
               loading: false,
+              loaded: true,
             }));
           }
         }

@@ -156,7 +156,11 @@ export function CreateTaskConfirmModal({
     : aiModel;
 
   const detailedDone = detailed.progress.status === "done";
+  const hasEstimateInputs =
+    targets.length > 0 && (modules.length > 0 || includeLiquid);
   const coarseEstimatedCredits = estimate?.estimatedCredits ?? null;
+  const coarseEstimatePending =
+    !detailedDone && hasEstimateInputs && (!estimate?.loaded || !!estimate?.loading);
   const estimatedCredits = detailedDone
     ? detailed.progress.estimatedCredits
     : coarseEstimatedCredits;
@@ -233,13 +237,13 @@ export function CreateTaskConfirmModal({
             total: detailed.progress.totalCount,
             label: detailed.progress.currentLabel,
           })
-        : estimate?.loading && !detailedDone
+        : coarseEstimatePending
           ? t("v4.createTask.estimateLoading")
           : estimatedCreditsLabel,
     },
     {
       label: t("v4.createTask.confirmCreditsAvailable"),
-      value: estimate?.loading && !detailedDone && !detailedRunning
+      value: coarseEstimatePending && !detailedRunning
         ? t("v4.createTask.estimateLoading")
         : remainingCreditsLabel,
     },

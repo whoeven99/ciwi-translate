@@ -747,6 +747,7 @@ export default function TranslateV4MvpRoute() {
           remainingCredits != null &&
           estimatedCredits > remainingCredits,
         loading: false,
+        loaded: true,
       },
     });
   }, [
