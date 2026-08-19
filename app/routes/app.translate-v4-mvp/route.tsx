@@ -92,6 +92,16 @@ type Recommendation = {
   tone: RecommendationTone;
 };
 
+type InitializingRecommendation = {
+  id: string;
+  title: string;
+  locale: string;
+  targets: string[];
+  modules: string[];
+  tone: RecommendationTone;
+  statusText: string;
+};
+
 type PendingCreateConfig = {
   recommendationId: string | null;
   targets: string[];
@@ -419,6 +429,31 @@ export default function TranslateV4MvpRoute() {
     () => buildRecommendations(coverage, jobs, changedLocaleCodes, t),
     [changedLocaleCodes, coverage, jobs, t],
   );
+  const isCoverageInitializing =
+    targetOptions.length > 0 &&
+    jobs.length === 0 &&
+    coverage.overallPercent == null &&
+    coverage.locales.length === 0 &&
+    !scanSummary;
+  const initializationRecommendations = useMemo(
+    () =>
+      isCoverageInitializing
+        ? targetOptions.map((option) => ({
+            id: `init-${option.value}`,
+            title: t("v4Mvp.recommended.localeTaskTitle", {
+              locale: localeShortName(option.value, option.label),
+            }),
+            locale: option.value,
+            targets: [option.value],
+            modules: DEFAULT_MODULE_KEYS,
+            tone: "info" as const,
+            statusText: t("v4Mvp.recommended.statusComputing", {
+              defaultValue: "Status: calculating...",
+            }),
+          }))
+        : [],
+    [isCoverageInitializing, t, targetOptions],
+  );
   const [submittingRecommendationIds, setSubmittingRecommendationIds] = useState<string[]>([]);
   const [recommendationEstimates, setRecommendationEstimates] = useState<
     Record<string, number | null>
@@ -569,6 +604,10 @@ export default function TranslateV4MvpRoute() {
     () => recommendations.filter((item) => !submittingRecommendationIds.includes(item.id)),
     [recommendations, submittingRecommendationIds],
   );
+  const displayedRecommendations: Array<Recommendation | InitializingRecommendation> =
+    isCoverageInitializing && visibleRecommendations.length === 0
+      ? initializationRecommendations
+      : visibleRecommendations;
   const createConfirmScenario:
     | "ready"
     | "insufficient_paid"
@@ -899,10 +938,10 @@ export default function TranslateV4MvpRoute() {
               <div style={summaryHeroLayoutStyle}>
                 <div style={summaryProgressWrapStyle}>
                   <AppProgressRing
-                    percent={hasCoverageData ? coverage.overallPercent : null}
+                    percent={isCoverageInitializing ? null : hasCoverageData ? coverage.overallPercent : null}
                     tone="primary"
                     size={100}
-                    loading={!hasCoverageData}
+                    loading={isCoverageInitializing || !hasCoverageData}
                   />
                 </div>
 
@@ -912,9 +951,13 @@ export default function TranslateV4MvpRoute() {
                       {t("v4Mvp.coverageCard.title")}
                     </Text>
                     <Text as="p" variant="headingMd">
-                      {t("v4Mvp.coverageCard.summary", {
-                        percent: hasCoverageData ? `${coverage.overallPercent ?? 0}%` : "—",
-                      })}
+                      {isCoverageInitializing
+                        ? t("v4Mvp.coverageCard.summaryComputing", {
+                            defaultValue: "Store translation status is being calculated...",
+                          })
+                        : t("v4Mvp.coverageCard.summary", {
+                            percent: hasCoverageData ? `${coverage.overallPercent ?? 0}%` : "—",
+                          })}
                     </Text>
                     <InlineStack gap="150" blockAlign="center" wrap={false}>
                       <Text
@@ -922,7 +965,11 @@ export default function TranslateV4MvpRoute() {
                         variant="headingMd"
                         style={summaryProgressLabelStyle(coverageRating.accent)}
                       >
-                        {coverageRating.label}
+                        {isCoverageInitializing
+                          ? t("v4Mvp.coverageCard.statusComputing", {
+                              defaultValue: "Calculating...",
+                            })
+                          : coverageRating.label}
                       </Text>
                       {coverage.languageCount > 0 ? (
                         <Text as="span" tone="subdued" variant="bodySm">
@@ -932,7 +979,14 @@ export default function TranslateV4MvpRoute() {
                         </Text>
                       ) : null}
                     </InlineStack>
-                    {hasCoverageData && coverage.totalItems > 0 ? (
+                    {isCoverageInitializing ? (
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        {t("v4Mvp.coverageCard.descriptionComputing", {
+                          defaultValue:
+                            "We are scanning your store content and will show overall coverage once the first calculation finishes.",
+                        })}
+                      </Text>
+                    ) : hasCoverageData && coverage.totalItems > 0 ? (
                       <Text as="p" tone="subdued" variant="bodySm">
                         {t("v4Mvp.overview.progress", {
                           translated: coverage.translatedItems.toLocaleString(),
@@ -942,7 +996,11 @@ export default function TranslateV4MvpRoute() {
                     ) : null}
                   </BlockStack>
                   <div style={summaryButtonWrapStyle}>
-                    <Button variant="secondary" onClick={() => setCoverageDetailOpen(true)}>
+                    <Button
+                      variant="secondary"
+                      disabled={isCoverageInitializing}
+                      onClick={() => setCoverageDetailOpen(true)}
+                    >
                       {t("v4Mvp.coverageCard.viewDetails")}
                     </Button>
                   </div>
@@ -1016,7 +1074,7 @@ export default function TranslateV4MvpRoute() {
                         onClick={() => setWorkbenchTab("recommended")}
                         style={tabButtonStyle(workbenchTab === "recommended")}
                       >
-                        {t("v4Mvp.tabs.recommended", { count: visibleRecommendations.length })}
+                        {t("v4Mvp.tabs.recommended", { count: displayedRecommendations.length })}
                       </button>
                       <button
                         type="button"
@@ -1050,20 +1108,39 @@ export default function TranslateV4MvpRoute() {
                         </Text>
                       </div>
                     ) : null}
-                    {visibleRecommendations.length > 0 ? (
-                      visibleRecommendations.map((item) => (
-                        <RecommendationCard
-                          key={item.id}
-                          title={item.title}
-                          tone={item.tone}
-                          coveragePercent={item.coveragePercent}
-                          contentChanged={item.contentChanged}
-                          pendingItems={item.pendingItems}
-                          estimatedCredits={recommendationEstimates[item.id] ?? null}
-                          estimatedTime={estimateTimeLabel(item.pendingItems, t)}
-                          loading={submittingRecommendationIds.includes(item.id)}
-                          onTranslate={() => void handleRecommendationTranslate(item)}
-                        />
+                    {displayedRecommendations.length > 0 ? (
+                      displayedRecommendations.map((item) => (
+                          <RecommendationCard
+                            key={item.id}
+                            title={item.title}
+                            tone={item.tone}
+                            coveragePercent={"coveragePercent" in item ? item.coveragePercent : null}
+                            contentChanged={"contentChanged" in item ? item.contentChanged : false}
+                            pendingItems={"pendingItems" in item ? item.pendingItems : null}
+                            estimatedCredits={"pendingItems" in item ? (recommendationEstimates[item.id] ?? null) : null}
+                            estimatedTime={"pendingItems" in item ? estimateTimeLabel(item.pendingItems, t) : null}
+                            loading={submittingRecommendationIds.includes(item.id)}
+                            statusText={"statusText" in item ? item.statusText : null}
+                            onTranslate={() => {
+                              if ("pendingItems" in item) {
+                                void handleRecommendationTranslate(item);
+                                return;
+                              }
+
+                              void handleRecommendationTranslate({
+                                id: item.id,
+                                title: item.title,
+                                locale: item.locale,
+                                reasons: [],
+                                targets: item.targets,
+                                modules: item.modules,
+                                pendingItems: 0,
+                                coveragePercent: null,
+                                contentChanged: false,
+                                tone: item.tone,
+                              });
+                            }}
+                          />
                       ))
                     ) : (
                       <div style={emptyStateStyle}>
@@ -1274,16 +1351,18 @@ function RecommendationCard({
   estimatedCredits,
   estimatedTime,
   loading = false,
+  statusText = null,
   onTranslate,
 }: {
   title: string;
   tone: RecommendationTone;
   coveragePercent: number | null;
   contentChanged: boolean;
-  pendingItems: number;
+  pendingItems: number | null;
   estimatedCredits: number | null;
-  estimatedTime: string;
+  estimatedTime: string | null;
   loading?: boolean;
+  statusText?: string | null;
   onTranslate: () => void;
 }) {
   const { t } = useTranslation();
@@ -1312,11 +1391,13 @@ function RecommendationCard({
               {t("v4Mvp.recommended.metaCoverage", { percent: coveragePercent })}
             </AppPill>
           ) : null}
-          <AppPill tone="warning">
-            {t("v4Mvp.recommended.metaPending", {
-              items: pendingItems.toLocaleString(),
-            })}
-          </AppPill>
+          {pendingItems != null ? (
+            <AppPill tone="warning">
+              {t("v4Mvp.recommended.metaPending", {
+                items: pendingItems.toLocaleString(),
+              })}
+            </AppPill>
+          ) : null}
           {estimatedCredits != null ? (
             <AppPill tone="info">
               {t("v4Mvp.recommended.metaCredits", {
@@ -1324,11 +1405,21 @@ function RecommendationCard({
               })}
             </AppPill>
           ) : null}
-          <AppPill tone="success">{estimatedTime}</AppPill>
+          {estimatedTime ? <AppPill tone="success">{estimatedTime}</AppPill> : null}
         </div>
+        {statusText ? (
+          <Text as="p" tone="subdued" variant="bodySm" style={recommendationStatusTextStyle}>
+            {statusText}
+          </Text>
+        ) : null}
       </div>
       <div style={recommendationActionWrapStyle}>
-        <Button size="slim" variant="secondary" loading={loading} onClick={onTranslate}>
+        <Button
+          size="slim"
+          variant="secondary"
+          loading={loading}
+          onClick={onTranslate}
+        >
           {t("v4Mvp.recommended.translate")}
         </Button>
       </div>
@@ -1584,6 +1675,10 @@ const recommendationMetaListStyle = {
 
 const recommendationActionWrapStyle = {
   flexShrink: 0,
+} satisfies CSSProperties;
+
+const recommendationStatusTextStyle = {
+  minHeight: "20px",
 } satisfies CSSProperties;
 
 function recommendationToneDotStyle(tone: RecommendationTone): CSSProperties {
