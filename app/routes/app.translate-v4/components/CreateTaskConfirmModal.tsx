@@ -180,13 +180,6 @@ export function CreateTaskConfirmModal({
       ? resolveScenarioFromOfferMode(quotaOfferMode)
       : "ready"
     : parentScenario;
-  const progressPercent =
-    estimatedCredits != null && estimatedCredits > 0 && remainingCredits != null
-      ? Math.max(0, Math.min(100, (remainingCredits / estimatedCredits) * 100))
-      : scenario === "ready"
-        ? 100
-        : 0;
-  const coveragePercent = Math.round(progressPercent);
 
   const detailItems = [
     {
@@ -227,27 +220,16 @@ export function CreateTaskConfirmModal({
     remainingCredits != null ? formatCreditsFull(remainingCredits) : "--";
   const shortfallCreditsLabel =
     shortfallCredits > 0 ? formatCreditsFull(shortfallCredits) : "0";
-  const coverageLabel = `${coveragePercent}%`;
-  const estimateSummaryItems = [
-    {
-      label: t("v4.createTask.confirmCreditsRequired"),
-      value: detailedRunning
-        ? t("v4.createTask.detailedEstimateRunning", {
-            current: detailed.progress.doneCount,
-            total: detailed.progress.totalCount,
-            label: detailed.progress.currentLabel,
-          })
-        : coarseEstimatePending
-          ? t("v4.createTask.estimateLoading")
-          : estimatedCreditsLabel,
-    },
-    {
-      label: t("v4.createTask.confirmCreditsAvailable"),
-      value: coarseEstimatePending && !detailedRunning
-        ? t("v4.createTask.estimateLoading")
-        : remainingCreditsLabel,
-    },
-  ];
+  const estimateComputingLabel = t("v4.createTask.confirmEstimateComputing", {
+    defaultValue: "Calculating...",
+  });
+  const requiredCreditsValue =
+    detailedRunning || coarseEstimatePending
+      ? estimateComputingLabel
+      : estimatedCreditsLabel;
+  const availableCreditsValue = coarseEstimatePending && !detailedRunning
+    ? estimateComputingLabel
+    : remainingCreditsLabel;
 
   const isReady = scenario === "ready";
   const isInsufficientPaid = scenario === "insufficient_paid";
@@ -462,64 +444,38 @@ export function CreateTaskConfirmModal({
               {t("v4.createTask.confirmEstimatePanelTitle")}
             </div>
             <div style={summaryStatsRowStyle}>
-              {estimateSummaryItems.map((item) => (
-                <div key={item.label} style={summaryStatStyle}>
-                  <div style={summaryStatLabelStyle}>{item.label}</div>
-                  <div style={summaryStatValueStyle}>{item.value}</div>
+              <div style={summaryStatStyle}>
+                <div style={summaryStatLabelStyle}>
+                  {t("v4.createTask.confirmCreditsRequired")}
                 </div>
-              ))}
+                <div style={summaryStatValueStyle}>{requiredCreditsValue}</div>
+                <div style={requiredActionRowStyle}>
+                  <Button
+                    size="slim"
+                    variant="secondary"
+                    onClick={handleDetailedEstimate}
+                    loading={detailedRunning}
+                    disabled={creating || detailedRunning || targets.length === 0}
+                  >
+                    {detailedDone
+                      ? t("v4.createTask.detailedEstimateRerun")
+                      : t("v4.createTask.detailedEstimateAction")}
+                  </Button>
+                </div>
+              </div>
+              <div style={summaryStatStyle}>
+                <div style={summaryStatLabelStyle}>
+                  {t("v4.createTask.confirmCreditsAvailable")}
+                  </div>
+                  <div style={summaryStatValueStyle}>{availableCreditsValue}</div>
+              </div>
             </div>
-            <div style={progressSectionStyle}>
-              <div style={progressHeaderStyle}>
-                <span style={progressLabelStyle}>
-                  {t("v4.createTask.confirmCoverageLabel")}
-                </span>
-                <span
-                  style={{
-                    ...progressValueStyle,
-                    color: scenarioMeta.accent,
-                  }}
-                >
-                  {coverageLabel}
-                </span>
-              </div>
-              <div style={progressTrackStyle}>
-                <div
-                  style={{
-                    ...progressFillStyle,
-                    width: `${progressPercent}%`,
-                    background: scenarioMeta.progressBar,
-                  }}
-                />
-              </div>
-              <div style={estimateHintStyle}>
-                {detailedDone
-                  ? t("v4.createTask.detailedEstimateDoneHint")
-                  : detailed.progress.status === "error"
-                    ? t("v4.createTask.detailedEstimateErrorHint")
-                    : t("v4.createTask.confirmEstimateExactHint")}
-              </div>
-              <div style={detailedEstimateRowStyle}>
-                <Button
-                  size="slim"
-                  onClick={handleDetailedEstimate}
-                  loading={detailedRunning}
-                  disabled={creating || detailedRunning || targets.length === 0}
-                >
-                  {detailedDone
-                    ? t("v4.createTask.detailedEstimateRerun")
-                    : t("v4.createTask.detailedEstimateAction")}
-                </Button>
-                {detailedRunning ? (
-                  <span style={detailedEstimateProgressStyle}>
-                    {t("v4.createTask.detailedEstimateProgress", {
-                      current: detailed.progress.doneCount,
-                      total: detailed.progress.totalCount,
-                      label: detailed.progress.currentLabel,
-                    })}
-                  </span>
-                ) : null}
-              </div>
+            <div style={estimateHintStyle}>
+              {detailedDone
+                ? t("v4.createTask.detailedEstimateDoneHint")
+                : detailed.progress.status === "error"
+                  ? t("v4.createTask.detailedEstimateErrorHint")
+                  : t("v4.createTask.confirmEstimateExactHint")}
             </div>
           </section>
 
@@ -674,7 +630,6 @@ function getScenarioMeta(
         title: t("v4.createTask.confirmPartialTitle"),
         accent: "#2180ff",
         headlineBg: "rgba(33, 128, 255, 0.1)",
-        progressBar: "linear-gradient(90deg, #8dc5ff 0%, #2180ff 100%)",
       };
     }
 
@@ -683,7 +638,6 @@ function getScenarioMeta(
         title: t("v4.createTask.confirmPartialTitle"),
         accent: "#7a3cff",
         headlineBg: "rgba(122, 60, 255, 0.1)",
-        progressBar: "linear-gradient(90deg, #c6a4ff 0%, #7a3cff 100%)",
       };
     }
   }
@@ -693,7 +647,6 @@ function getScenarioMeta(
       title: t("v4.createTask.confirmReadyTitle"),
       accent: "#0a934c",
       headlineBg: "rgba(10, 147, 76, 0.1)",
-      progressBar: "linear-gradient(90deg, #0a934c 0%, #2180ff 100%)",
     };
   }
 
@@ -704,7 +657,6 @@ function getScenarioMeta(
         : t("v4.createTask.confirmNoCreditsTitle"),
       accent: "#df5a00",
       headlineBg: "rgba(223, 90, 0, 0.1)",
-      progressBar: "linear-gradient(90deg, #ffb84d 0%, #df5a00 100%)",
     };
   }
 
@@ -713,7 +665,6 @@ function getScenarioMeta(
       title: t("v4.createTask.confirmTrialTitle"),
       accent: "#2180ff",
       headlineBg: "rgba(33, 128, 255, 0.1)",
-      progressBar: "linear-gradient(90deg, #8dc5ff 0%, #2180ff 100%)",
     };
   }
 
@@ -721,7 +672,6 @@ function getScenarioMeta(
     title: t("v4.createTask.confirmPricingTitle"),
     accent: "#7a3cff",
     headlineBg: "rgba(122, 60, 255, 0.1)",
-    progressBar: "linear-gradient(90deg, #c6a4ff 0%, #7a3cff 100%)",
   };
 }
 
@@ -960,12 +910,12 @@ const detailLineStyle = {
 
 const detailLabelStyle = {
   color: v4Colors.textMuted,
-  fontWeight: 600,
+  fontWeight: 500,
 } as const;
 
 const detailValueStyle = {
   color: v4Colors.text,
-  fontWeight: 600,
+  fontWeight: 400,
   wordBreak: "break-word",
 } as const;
 
@@ -1018,44 +968,10 @@ const summaryStatValueStyle = {
   wordBreak: "break-word",
 } as const;
 
-const progressSectionStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 10,
-  marginTop: 18,
-} as const;
-
-const progressHeaderStyle = {
+const requiredActionRowStyle = {
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-} as const;
-
-const progressLabelStyle = {
-  color: v4Colors.text,
-  fontSize: 14,
-  fontWeight: 600,
-  lineHeight: "22px",
-} as const;
-
-const progressValueStyle = {
-  fontSize: 16,
-  fontWeight: 700,
-  lineHeight: "24px",
-} as const;
-
-const progressTrackStyle = {
-  width: "100%",
-  height: 12,
-  borderRadius: 999,
-  overflow: "hidden",
-  background: "rgba(15, 23, 42, 0.08)",
-} as const;
-
-const progressFillStyle = {
-  height: "100%",
-  borderRadius: 999,
+  marginTop: 10,
 } as const;
 
 const estimateHintStyle = {
@@ -1063,21 +979,7 @@ const estimateHintStyle = {
   fontSize: 12,
   fontWeight: 500,
   lineHeight: "18px",
-} as const;
-
-const detailedEstimateRowStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  marginTop: 10,
-  flexWrap: "wrap",
-} as const;
-
-const detailedEstimateProgressStyle = {
-  color: v4Colors.textMuted,
-  fontSize: 12,
-  fontWeight: 500,
-  lineHeight: "18px",
+  marginTop: 12,
 } as const;
 
 const offerFeatureGridStyle = {

@@ -567,16 +567,6 @@ export default function AppTranslateV4() {
         ? "trial"
         : "pricing"
       : null;
-  const handleCreateRequest = useCallback(() => {
-    if (createQuotaGatePending) {
-      message.info(
-        t("Checking your trial eligibility. Please try again in a moment."),
-      );
-      return;
-    }
-    setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, t]);
-
   // After Shopify billing return: restore create-task selections and reopen confirm.
   useEffect(() => {
     if (billingDraftRestoredRef.current) return;
@@ -858,6 +848,21 @@ export default function AppTranslateV4() {
           ? "insufficient_trial"
           : "insufficient_pricing"
       : "ready";
+  const shouldSkipCreateConfirm = (remainingCredits ?? 0) > 30_000;
+
+  const handleCreateRequest = useCallback(() => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (shouldSkipCreateConfirm) {
+      void handleCreateConfirm();
+      return;
+    }
+    setCreateConfirmOpen(true);
+  }, [createQuotaGatePending, handleCreateConfirm, shouldSkipCreateConfirm, t]);
 
   useEffect(() => {
     if (spotlightTaskIds.length === 0) return;

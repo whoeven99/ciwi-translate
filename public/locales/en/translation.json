@@ -941,6 +941,7 @@
   "v4.createTask.confirmDefaultOptions": "No extra options selected",
   "v4.createTask.confirmDescription": "Please review this task configuration before we start creating translation tasks.",
   "v4.createTask.confirmEstimatedCredits": "Estimated usage: {{credits}} credits",
+  "v4.createTask.confirmEstimateComputing": "Calculating...",
   "v4.createTask.confirmEstimateExactHint": "This is only an upper-bound estimate. Actual billing is based on translation usage.",
   "v4.createTask.detailedEstimateAction": "Precise estimate",
   "v4.createTask.detailedEstimateRerun": "Re-run precise estimate",

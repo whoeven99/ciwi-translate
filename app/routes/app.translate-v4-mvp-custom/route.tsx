@@ -197,6 +197,7 @@ export default function TranslateV4MvpCustomRoute() {
           ? "insufficient_trial"
           : "insufficient_pricing"
       : "ready";
+  const shouldSkipCreateConfirm = (remainingCredits ?? 0) > 30_000;
 
   const persistCreateTaskDraft = useCallback(() => {
     saveCreateTaskDraft(shop, {
@@ -293,17 +294,6 @@ export default function TranslateV4MvpCustomRoute() {
     targetOptions,
   ]);
 
-  const handleCreateRequest = useCallback(() => {
-    if (createQuotaGatePending) {
-      message.info(
-        t("Checking your trial eligibility. Please try again in a moment."),
-      );
-      return;
-    }
-
-    setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, t]);
-
   const handleCreateConfirm = useCallback(async () => {
     if (createQuotaGatePending) {
       message.info(
@@ -378,6 +368,20 @@ export default function TranslateV4MvpCustomRoute() {
     targetOptions,
     targets,
   ]);
+
+  const handleCreateRequest = useCallback(() => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (shouldSkipCreateConfirm) {
+      void handleCreateConfirm();
+      return;
+    }
+    setCreateConfirmOpen(true);
+  }, [createQuotaGatePending, handleCreateConfirm, shouldSkipCreateConfirm, t]);
 
   return (
     <Page>
