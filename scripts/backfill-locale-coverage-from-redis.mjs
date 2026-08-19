@@ -17,15 +17,19 @@
  * 前置：migration `20260730000000_shop_target_locale_coverage`
  *   （测试：`npm run turso:migrate:test` / 生产：`npm run turso:migrate:prod`）。
  *
- * 凭据：`--env=` 指向的文件；Turso 认 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
- * （兼容 TSF_TURSO_* / TURSO_TEST_* / TURSO_PROD_*）；
- * Redis 认同文件 REDIS_URL_V4 / REDIS_URL（测试一般为 sparkredistest）。
+ * 凭据：默认测环境；`--env=.env.prod` 查生产。写产须再加 `--confirm-prod`。
+ * Redis：RENDER_KV → REDIS_URL_V4 → REDIS_URL
  */
-import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@libsql/client/http";
 import Redis from "ioredis";
+import {
+  loadStackedEnv,
+  resolveRedisUrl as resolveRedisFromEnv,
+  resolveTurso,
+  assertProdWriteAllowed,
+} from "./lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -52,15 +56,13 @@ const COVERAGE_MODULES = new Set([
   "ONLINE_STORE_THEME_LOCALE_CONTENT",
 ]);
 
-const TSF_WEB_SERVICE = "srv-csp2931u0jms738sfmc0";
-
 function parseArgs(argv) {
   const out = {
     write: false,
     onlyMissing: false,
     writeEmpty: false,
     shop: null,
-    envPath: resolve(ROOT, ".env.prod"),
+    envOverlay: ".env.test",
     limit: 0,
     workers: 4,
     verbose: false,
@@ -72,7 +74,7 @@ function parseArgs(argv) {
     else if (a === "--write-empty") out.writeEmpty = true;
     else if (a === "--verbose" || a === "-v") out.verbose = true;
     else if (a.startsWith("--shop=")) out.shop = a.slice("--shop=".length).trim();
-    else if (a.startsWith("--env=")) out.envPath = resolve(ROOT, a.slice("--env=".length));
+    else if (a.startsWith("--env=")) out.envOverlay = a.slice("--env=".length).trim();
     else if (a.startsWith("--limit="))
       out.limit = Math.max(0, Number(a.slice("--limit=".length)) || 0);
     else if (a.startsWith("--workers="))
@@ -82,78 +84,6 @@ function parseArgs(argv) {
     else if (a === "--help" || a === "-h") out.help = true;
   }
   return out;
-}
-
-function loadEnvFile(path) {
-  const env = {};
-  let raw;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return env;
-  }
-  for (const line of raw.split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i <= 0) continue;
-    let v = t.slice(i + 1).trim();
-    if (
-      (v.startsWith('"') && v.endsWith('"')) ||
-      (v.startsWith("'") && v.endsWith("'"))
-    ) {
-      v = v.slice(1, -1);
-    }
-    env[t.slice(0, i).trim()] = v;
-  }
-  return env;
-}
-
-function pickTurso(env) {
-  const candidates = [
-    ["TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"],
-    ["TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN"],
-    ["TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN"],
-    ["TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN"],
-  ];
-  for (const [urlKey, tokenKey] of candidates) {
-    const url = env[urlKey]?.trim();
-    const authToken = env[tokenKey]?.trim();
-    if (url && authToken) return { url, authToken, urlKey };
-  }
-  return { url: undefined, authToken: undefined, urlKey: "TURSO_DATABASE_URL" };
-}
-
-async function resolveRedisUrl(env) {
-  const local =
-    env.REDIS_URL_V4?.trim() ||
-    env.REDIS_URL?.trim() ||
-    process.env.REDIS_URL_V4?.trim() ||
-    process.env.REDIS_URL?.trim();
-  if (local) return { url: local, source: "env" };
-
-  const token = process.env.RENDER_API_KEY?.trim();
-  if (!token) return { url: null, source: null };
-
-  const res = await fetch(
-    `https://api.render.com/v1/services/${TSF_WEB_SERVICE}/env-vars?limit=100`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) {
-    throw new Error(`Render env-vars ${res.status}: ${await res.text()}`);
-  }
-  const rows = await res.json();
-  for (const row of rows) {
-    if (row?.envVar?.key === "REDIS_URL_V4" && row.envVar.value) {
-      return { url: String(row.envVar.value).trim(), source: "render:REDIS_URL_V4" };
-    }
-  }
-  for (const row of rows) {
-    if (row?.envVar?.key === "REDIS_URL" && row.envVar.value) {
-      return { url: String(row.envVar.value).trim(), source: "render:REDIS_URL" };
-    }
-  }
-  return { url: null, source: null };
 }
 
 function isMovedError(err) {
@@ -240,7 +170,7 @@ Options:
   --only-missing      仅 coverageUpdatedAt 为空
   --write-empty       Redis 为空也写成 0
   --shop=<domain>
-  --env=<path>        默认 .env.prod
+  --env=<path>        默认 .env.test（叠 .env + overlay + worker companion）
   --limit=N
   --workers=N         长连接数=并发数（默认 4）
   --verbose / -v
@@ -253,19 +183,23 @@ if (args.help) {
   process.exit(0);
 }
 
-const fileEnv = loadEnvFile(args.envPath);
-const env = { ...fileEnv, ...process.env };
-const turso = pickTurso(env);
+const { env, files, overlay } = loadStackedEnv({
+  root: ROOT,
+  overlay: args.envOverlay,
+  applyToProcess: true,
+});
+if (args.write) {
+  assertProdWriteAllowed(process.argv.slice(2), overlay);
+}
+const turso = resolveTurso(env);
 if (!turso.url || !turso.authToken) {
-  console.error("Missing Turso credentials in", args.envPath);
+  console.error("Missing Turso credentials（TURSO_DATABASE_URL / TURSO_AUTH_TOKEN）");
   process.exit(1);
 }
 
-const redisResolved = await resolveRedisUrl(env);
+const redisResolved = resolveRedisFromEnv(env);
 if (!redisResolved.url) {
-  console.error(
-    "Missing Redis URL（.env 的 REDIS_URL_V4/REDIS_URL，或设置 RENDER_API_KEY）",
-  );
+  console.error("Missing Redis（RENDER_KV 或 REDIS_URL_V4 / REDIS_URL）");
   process.exit(1);
 }
 
@@ -273,7 +207,7 @@ console.log(
   JSON.stringify(
     {
       mode: args.write ? "WRITE" : "DRY_RUN",
-      envPath: args.envPath,
+      envFiles: files,
       redisSource: redisResolved.source,
       redisHost: (() => {
         try {

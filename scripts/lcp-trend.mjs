@@ -5,19 +5,20 @@
  * → `app/routes/log.tsx` 输出 `[perf][lcp] {json}`。
  *
  * Usage:
- *   node scripts/lcp-trend.mjs                      # 默认 prod、最近 24h
+ *   node scripts/lcp-trend.mjs                      # 默认测环境凭据、最近 24h
  *   node scripts/lcp-trend.mjs --hours=72
- *   node scripts/lcp-trend.mjs --route=/app         # 只看首页
- *   node scripts/lcp-trend.mjs --service=srv-xxx --env=.env.test
- *   node scripts/lcp-trend.mjs --json               # 输出原始样本，便于二次分析
+ *   node scripts/lcp-trend.mjs --route=/app
+ *   node scripts/lcp-trend.mjs --service=srv-xxx --env=.env.prod
+ *   node scripts/lcp-trend.mjs --json
  *
  * 只读脚本：不写任何库，不打印密钥（仅打印脱敏后的 service / owner id）。
  */
-import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadStackedEnv } from "./lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, "..");
 
 const DEFAULT_OWNER_ID = "tea-csovfmhu0jms738qrra0";
 const DEFAULT_WEB_SERVICE_ID = "srv-csp2931u0jms738sfmc0";
@@ -43,32 +44,16 @@ function parseArgs(argv) {
   return args;
 }
 
-function readEnvFile(fileName) {
-  try {
-    const text = readFileSync(resolve(__dirname, "..", fileName), "utf8");
-    const env = {};
-    for (const line of text.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const index = trimmed.indexOf("=");
-      if (index <= 0) continue;
-      env[trimmed.slice(0, index).trim()] = trimmed
-        .slice(index + 1)
-        .trim()
-        .replace(/^["']|["']$/g, "");
-    }
-    return env;
-  } catch {
-    return {};
-  }
-}
-
 function resolveConfig(args) {
-  const fileEnv = readEnvFile(args.env || ".env");
+  const { env: fileEnv } = loadStackedEnv({
+    root,
+    overlay: args.env || ".env.test",
+    applyToProcess: false,
+  });
   const apiKey = process.env.RENDER_API_KEY || fileEnv.RENDER_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "缺少 RENDER_API_KEY（可放进环境变量，或用 --env=.env.prod 指定文件）",
+      "缺少 RENDER_API_KEY（放在 .env，或 --env= 指向的文件栈里）",
     );
   }
   return {

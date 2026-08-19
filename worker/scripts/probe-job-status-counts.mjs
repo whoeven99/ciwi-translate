@@ -1,34 +1,28 @@
 /**
- * Count translation_v4_jobs by status (prod via ../../.env.prod).
+ * Count translation_v4_jobs by status.
+ * 默认测环境；生产：--env=.env.prod
  */
-import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CosmosClient } from "@azure/cosmos";
+import { loadStackedEnv, resolveCosmos } from "../../scripts/lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function loadEnvProd() {
-  const envPath = resolve(__dirname, "../../.env.prod");
-  const env = {};
-  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i <= 0) continue;
-    env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
-  }
-  return env;
+const root = resolve(__dirname, "../..");
+const { env } = loadStackedEnv({ root });
+const cosmos = resolveCosmos(env);
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("缺少 Cosmos 凭据");
+  process.exit(1);
 }
 
-const env = loadEnvProd();
 const client = new CosmosClient({
-  endpoint: env.COSMOS_ENDPOINT,
-  key: env.COSMOS_KEY,
+  endpoint: cosmos.endpoint,
+  key: cosmos.key,
 });
 const container = client
-  .database(env.COSMOS_TRANSLATION_DATABASE_ID || "translation")
-  .container(env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER || "translation_v4_jobs");
+  .database(cosmos.databaseId)
+  .container(cosmos.containerId);
 
 const statuses = [
   "INIT_QUEUED",
@@ -69,32 +63,3 @@ const { resources: oldestQueued } = await container.items
   .fetchAll();
 console.log("\n=== oldest INIT_QUEUED ===");
 console.log(JSON.stringify(oldestQueued, null, 2));
-
-const headTaskId = "202c1342-5ddc-4b35-ad3f-82a10d7d2b26";
-const { resources: headJob } = await container.items
-  .query({
-    query: "SELECT * FROM c WHERE c.id = @id",
-    parameters: [{ name: "@id", value: headTaskId }],
-  })
-  .fetchAll();
-console.log(`\n=== head hint job ${headTaskId} ===`);
-if (headJob[0]) {
-  const j = headJob[0];
-  console.log(
-    JSON.stringify(
-      {
-        id: j.id,
-        shop: j.shopName,
-        status: j.status,
-        claimedBy: j.claimedBy,
-        lastHeartbeat: j.lastHeartbeat,
-        updatedAt: j.updatedAt,
-        errorMessage: j.errorMessage,
-      },
-      null,
-      2,
-    ),
-  );
-} else {
-  console.log("(not found)");
-}

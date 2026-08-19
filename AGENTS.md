@@ -85,7 +85,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `worker/src/*`                                               | Background workers and services for translation, shop scan, email, Cosmos/Blob/Redis/LLM. |
 | `extensions/ciwi-switcher/*`                                 | Storefront language/currency switcher theme extension.                                    |
 | `extensions/web-pixel/*`                                     | Shopify web pixel extension.                                                              |
-| `scripts/*`                                                  | Migration, audit, diagnostic, cleanup, and one-off operational scripts.                   |
+| `scripts/*`                                                  | 运维 / 诊断 / 迁移 / 审计脚本；共用 `scripts/lib/loadEnv.mjs`；`eventReport.ts` 为 App 运行时埋点。 |
 | `public/locales/*/translation.json`                          | App i18n strings (15 locales，清单在 `app/lib/appI18nLanguages.ts`)。手写 `en` + `zh-CN`，其余可用 `npm run translate` 机翻补齐。 |
 | `.github/workflows/tsf-deploy.yml`                           | Manual Shopify extension/config and Render app/worker deployment workflow.                |
 | `Dockerfile`                                                 | Render container build for the Remix app (`node:22-slim`); the worker is built from `worker/`. |
@@ -1330,6 +1330,10 @@ For "合入PR然后发布测试环境", the script will:
 
 ## Scripts
 
+诊断脚本默认叠 `.env.test` → `.env.worker.test` → `.env`（`scripts/lib/loadEnv.mjs`）；
+查产需 `--env=.env.prod`；写产另需 `--confirm-prod`（见
+`.cursor/rules/env-prod-safety.mdc`）。
+
 Package-backed root scripts:
 
 - `scripts/translate.js`: `npm run translate`, i18n helper.
@@ -1337,9 +1341,16 @@ Package-backed root scripts:
  `test` 读 `.env`+`.env.test`，`prod` 读 `.env`+`.env.prod`；文件内同一对
  `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（短期兼容 `TSF_TURSO_*` 与该
  target 的旧 `TURSO_{TEST|PROD}_*`）。
+- `scripts/cursor-push-pr.mjs`: `npm run push:pr` — commit（跳过敏感文件）→ push → 创建 PR；
+成功输出 `PR_URL:`。
+- `scripts/merge-deploy-test.mjs`: `npm run merge:deploy:test` — 合入当前分支 PR 并触发
+TSF Web Test + Worker Test 部署；成功输出 `MERGED_PR_URL:` 与 `DEPLOY_RUN_URL:`。
 
-Operational root scripts:
+Operational root scripts（查任务 / 队列 / 日志 / 运维，保留）：
 
+- `scripts/lib/loadEnv.mjs`: 诊断脚本共用 env 叠载 + Turso / Redis / Cosmos 解析。
+- `scripts/lib/autoScanSchedule.mjs`: helper used by auto-scan scheduling
+scripts.
 - `scripts/inspect-v4-tasks.mjs`: inspect v4 tasks in Cosmos.
 - `scripts/reset-onboarding.mjs`: 把「指定 shop」重置为可重新看到首次翻译新手引导的状态
  （删 Turso `ShopOnboarding` + Cosmos 该店 v4 任务 + `TranslateV4JobUsage` +
@@ -1356,7 +1367,6 @@ Operational root scripts:
 - `scripts/auto-tasks-72h-trend.mjs`: auto-translate trend report over the
 recent 72-hour window.
 - `scripts/next-auto-slot-shops.mjs`: preview shops in next auto-translate scan slot.
-- `scripts/smoke-shop-counts.mjs`: focused shop/item count smoke check.
 - `scripts/lcp-trend.mjs`: 首屏 LCP 归因趋势（只读）。从 Render 运行日志抓
  `[perf][lcp]` 单行，聚合 LCP / FCP / TTFB 的 p50/p75/p90，并按冷热缓存、LCP 元素、
  路由、网络档位分组。`--hours=` / `--route=/app` / `--service=srv-xxx` /
@@ -1364,11 +1374,6 @@ recent 72-hour window.
 - `scripts/backfill-locale-coverage-from-redis.mjs`: Redis `items_count` →
   Turso `ShopTargetLocale.coverage*`（默认 dry-run；`--write` 写线上；
   支持 `--shop=` / `--only-missing`；MOVED 重连重试；Redis 源用 `RENDER_KV`）。
-- `scripts/migrate-redis-azure-to-render.mjs`: **历史** Azure → Render KV 回填脚本
-  （迁移已完成；日常运维不要再依赖 `REDIS_URL*`）。
-- `scripts/smoke-user-picture-read.mjs`, `smoke-user-picture-urls.mjs`: focused
-UserPicture read/URL checks.
-- `scripts/smoke-find-juicer.mjs`: focused storefront/shop lookup smoke check.
 - `scripts/storefront-locale-audit.mjs`: public storefront multi-locale product
 field audit (competitor research). Paginates `/products.json` (or
 `/{locale}/products.json`), writes a local tree mirroring v4 blob layout under
@@ -1377,8 +1382,6 @@ field audit (competitor research). Paginates `/products.json` (or
 `report.md`), and computes obviously-untranslated ratios vs primary.
 - `scripts/eventReport.ts`: imported by app routes/components; this is runtime
 client reporting code, not a throwaway script.
-- `scripts/lib/autoScanSchedule.mjs`: helper used by auto-scan scheduling
-scripts.
 
 Storefront locale audit playbook (trigger: 「审计店面多语言」):
 
@@ -1401,25 +1404,18 @@ Storefront locale audit playbook (trigger: 「审计店面多语言」):
    the auto-generated Chinese `report.md` in the run folder.
 5. Artifacts stay under ignored `scripts/tmp/`; do not commit them.
 
-Agent / deploy helper scripts:
-
-- `scripts/cursor-push-pr.mjs`: `npm run push:pr` — commit（跳过敏感文件）→ push → 创建 PR；
-成功输出 `PR_URL:`。供 Cursor Agent 在「提个pr」时直接调用。
-- `scripts/merge-deploy-test.mjs`: `npm run merge:deploy:test` — 合入当前分支 PR 并触发
-TSF Web Test + Worker Test 部署；成功输出 `MERGED_PR_URL:` 与 `DEPLOY_RUN_URL:`。
-
 Worker scripts to keep:
 
 - `worker/scripts/check-auto-translate-modules.mjs`: package-backed module
-catalog check.
-- `worker/scripts/cleanup-stale-hints.mjs`: package-backed cleanup command.
-- `worker/scripts/probe-hint-queues.mjs`, `probe-job-redis.mjs`,
-`probe-job-progress.mjs`, `probe-job-status-counts.mjs`, `probe-prod-jobs.mjs`,
-`probe-auto-batch.mjs`: queue/job probes.
-- `worker/scripts/diag-stuck-job.mjs`, `diag-failed-jobs.mjs`, and other
-`probe-*.mjs`: worker diagnostics.
+catalog check（`npm run check:auto-translate-modules --prefix worker`）。
+- `worker/scripts/cleanup-stale-hints.mjs`: package-backed cleanup
+（`npm run cleanup:stale-hints[--apply] --prefix worker`）。
+- `worker/scripts/probe-hint-queues.mjs`（`npm run probe:hint-queues --prefix worker`）、
+`probe-job-redis.mjs`、`probe-job-progress.mjs`、`probe-job-status-counts.mjs`、
+`probe-prod-jobs.mjs`、`probe-auto-batch.mjs`: queue/job probes.
+- `worker/scripts/diag-stuck-job.mjs`, `diag-failed-jobs.mjs`: worker diagnostics.
 - `worker/scripts/resume-job.mjs` and `resume-orphaned-processing.mjs`:
-operational recovery tools.
+operational recovery tools（写产需 `--confirm-prod`）。
 - `worker/scripts/auto-tasks-24h-trend.mjs`: auto-translate volume report.
 - `worker/scripts/v4-auto-translate-modules.json`: module catalog fixture/data.
 - `worker/src/scripts/exportTranslationReport.ts`: TypeScript source for the
@@ -1427,8 +1423,10 @@ translation quality report command; compiled output lives in `worker/dist/script
 
 Temporary script policy:
 
-- `scripts/tmp/`, `worker/scripts/tmp/`, and `worker/scripts/out/` are ignored
-and should not contain committed files.
+- `scripts/tmp/`、`scripts/out/`、`worker/scripts/tmp/`、`worker/scripts/out/` 已
+gitignore，勿提交。
+- 已删除、勿恢复：一次性 `smoke-*`、历史 `migrate-redis-azure-to-render.mjs`、
+以及失效的 `npm run i18n:key`（单 key 机翻已停用；用 `npm run translate`）。
 - Prefer one-off scripts outside the repo, or delete them immediately after the
 investigation. If a one-off becomes useful twice, promote it into the
 operational list above with a clear name and dry-run behavior when it writes.

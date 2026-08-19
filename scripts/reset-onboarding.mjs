@@ -22,20 +22,26 @@
  *   - 不删 Blob `shop-profile/{shop}/latest-scan.json`（install 重扫会覆写计量段）。
  *
  * 用法：
- *   node scripts/reset-onboarding.mjs --shop=xxx.myshopify.com               （dry-run，读 .env）
+ *   node scripts/reset-onboarding.mjs --shop=xxx.myshopify.com               （dry-run，默认测环境）
  *   node scripts/reset-onboarding.mjs --shop=xxx --env=.env.test --write
- *   node scripts/reset-onboarding.mjs --shop=xxx --env=.env.prod --write     （谨慎！）
+ *   node scripts/reset-onboarding.mjs --shop=xxx --env=.env.prod --write --confirm-prod
  *   node scripts/reset-onboarding.mjs --shop=xxx --env=.env.test --write --billing
  *
- * Turso 凭据：TURSO_DATABASE_URL / TURSO_AUTH_TOKEN（兼容 TSF_TURSO_* / TURSO_TEST_* / TURSO_PROD_*）
+ * Turso 凭据：TURSO_DATABASE_URL / TURSO_AUTH_TOKEN（兼容旧键）
+ * 默认叠测环境；写产须 --env=.env.prod --confirm-prod
  *
  * 依赖：@libsql/client、@azure/cosmos、ioredis（仓库已装）。
  */
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { createClient } from "@libsql/client";
 import { CosmosClient } from "@azure/cosmos";
 import Redis from "ioredis";
+import {
+  assertProdWriteAllowed,
+  loadStackedEnv,
+  resolveCosmos,
+  resolveRedisUrl,
+  resolveTurso,
+} from "./lib/loadEnv.mjs";
 
 // ---------- 参数解析 ----------
 function parseArgs(argv) {
@@ -57,7 +63,7 @@ const args = parseArgs(process.argv.slice(2));
 const shop = String(args.shop || "").trim();
 const write = Boolean(args.write);
 const includeBilling = Boolean(args.billing);
-const envFile = String(args.env || ".env").trim();
+const envOverlay = String(args.env || ".env.test").trim();
 
 if (!shop) {
   console.error(
@@ -66,55 +72,12 @@ if (!shop) {
   process.exit(1);
 }
 
-// ---------- 读取 env 文件（不覆盖已存在的 process.env）----------
-const root = resolve(import.meta.dirname, "..");
-function loadEnvFile(file) {
-  let text;
-  try {
-    text = readFileSync(resolve(root, file), "utf8");
-  } catch {
-    console.error(`无法读取 env 文件：${file}`);
-    process.exit(1);
-  }
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (!(key in process.env)) process.env[key] = value;
-  }
-}
-loadEnvFile(envFile);
-
-// ---------- 解析 Turso 凭据（主键 TURSO_*；短期兼容旧键）----------
-function readTursoCreds() {
-  const candidates = [
-    { urlKey: "TURSO_DATABASE_URL", tokenKey: "TURSO_AUTH_TOKEN" },
-    { urlKey: "TSF_TURSO_DATABASE_URL", tokenKey: "TSF_TURSO_AUTH_TOKEN" },
-    { urlKey: "TURSO_TEST_DATABASE_URL", tokenKey: "TURSO_TEST_AUTH_TOKEN" },
-    { urlKey: "TURSO_PROD_DATABASE_URL", tokenKey: "TURSO_PROD_AUTH_TOKEN" },
-  ];
-  for (const c of candidates) {
-    const url = (process.env[c.urlKey] || "").trim();
-    const authToken = (process.env[c.tokenKey] || "").trim();
-    if (url && authToken) {
-      if (c.urlKey !== "TURSO_DATABASE_URL") {
-        console.warn(
-          `[reset-onboarding] 使用兼容键 ${c.urlKey}；请改为 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN`,
-        );
-      }
-      return { url, authToken, usedUrlKey: c.urlKey };
-    }
-  }
-  return { url: "", authToken: "", usedUrlKey: "" };
+const { env, overlay } = loadStackedEnv({
+  overlay: envOverlay,
+  applyToProcess: true,
+});
+if (write) {
+  assertProdWriteAllowed(process.argv.slice(2), overlay);
 }
 
 function maskHost(url) {
@@ -125,25 +88,27 @@ function maskHost(url) {
   }
 }
 
-const { url: tursoUrl, authToken: tursoToken, usedUrlKey } = readTursoCreds();
-if (!tursoUrl || !tursoToken) {
+const tursoResolved = resolveTurso(env);
+if (!tursoResolved.url || !tursoResolved.authToken) {
   console.error(
-    `缺少 Turso 凭据。请在 ${envFile} 配置 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN。`,
+    `缺少 Turso 凭据。请在 ${envOverlay} 配置 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN。`,
   );
   process.exit(1);
 }
 
+const tursoUrl = tursoResolved.url;
+const tursoToken = tursoResolved.authToken;
+const usedUrlKey = tursoResolved.urlKey;
 const turso = createClient({ url: tursoUrl, authToken: tursoToken });
 
 // ---------- Cosmos（v4 jobs + shop_scan_jobs，同 endpoint/key/db）----------
-const cosmosEndpoint = (process.env.COSMOS_ENDPOINT_V4 || "").trim();
-const cosmosKey = (process.env.COSMOS_KEY_V4 || "").trim();
-const cosmosDbId = (process.env.COSMOS_TRANSLATION_DATABASE_ID_V4 || "translation").trim();
-const cosmosJobsContainerId = (
-  process.env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER_V4 || "translation_v4_jobs"
-).trim();
+const cosmosResolved = resolveCosmos(env);
+const cosmosEndpoint = cosmosResolved.endpoint || "";
+const cosmosKey = cosmosResolved.key || "";
+const cosmosDbId = cosmosResolved.databaseId;
+const cosmosJobsContainerId = cosmosResolved.containerId;
 const cosmosShopScanContainerId = (
-  process.env.COSMOS_SHOP_SCAN_CONTAINER || "shop_scan_jobs"
+  env.COSMOS_SHOP_SCAN_CONTAINER || "shop_scan_jobs"
 ).trim();
 
 let cosmosJobsContainer = null;
@@ -164,9 +129,9 @@ function redisLabel(url, key) {
 }
 
 const redisTargets = [];
-const renderKvUrl = (process.env.RENDER_KV || "").trim();
+const { url: renderKvUrl, source: redisSource } = resolveRedisUrl(env);
 if (renderKvUrl) {
-  redisTargets.push({ key: "RENDER_KV", url: renderKvUrl });
+  redisTargets.push({ key: redisSource || "RENDER_KV", url: renderKvUrl });
 }
 
 // ---------- 执行 ----------
@@ -177,15 +142,15 @@ console.log(
     {
       mode: MODE,
       shop,
-      env: envFile,
+      env: overlay,
       tursoKey: usedUrlKey,
       tursoHost: maskHost(tursoUrl),
       cosmosJobs: cosmosJobsContainer
         ? `${cosmosDbId}/${cosmosJobsContainerId}`
-        : "(未配置 COSMOS_*_V4，跳过 v4 任务删除)",
+        : "(未配置 COSMOS，跳过 v4 任务删除)",
       cosmosShopScan: cosmosShopScanContainer
         ? `${cosmosDbId}/${cosmosShopScanContainerId}`
-        : "(未配置 COSMOS_*_V4，跳过 shop_scan 删除)",
+        : "(未配置 COSMOS，跳过 shop_scan 删除)",
       redis: redisTargets.length
         ? redisTargets.map((r) => redisLabel(r.url, r.key))
         : "(未配置 RENDER_KV，跳过 items_count)",
