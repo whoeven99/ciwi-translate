@@ -1,18 +1,13 @@
 /**
- * Azure Redis → Render Key Value 迁移包装。
+ * Redis 连接辅助（历史：Azure → Render KV 双写 / 切流）。
  *
- * Env:
- *   RENDER_KV          Render KV URL（服务内用 Internal；本地/Agent 用 External）
- *   REDIS_DUAL_WRITE   true/1/yes → cache 写双端；hint/shop_scan list 永不双写
- *   REDIS_CUTOVER      逗号分隔 token（tm,items_count,...）或 all/*；命中则读写走 secondary
+ * 灰度已结束：App / Worker 只连 `RENDER_KV`。
+ * `isRenderKvSoleClientMode()` = 已配置 `RENDER_KV`（不再要求
+ * `REDIS_DUAL_WRITE` / `REDIS_CUTOVER`）。
  *
- * Sole-client mode: REDIS_DUAL_WRITE off + REDIS_CUTOVER=all → 只连 RENDER_KV，
- * 不再创建 REDIS_URL / REDIS_URL_V4 client（可删 Azure Redis）。
- *
- * App 与 Worker 的**唯一来源**（曾经是两份 576 行副本靠 KEEP IN SYNC 注释维持）。
- * 本模块不依赖 ioredis：具体客户端由调用方注入 `wrapRedisPair(primary, secondary)`。
- * 给 `RedisLike` 加方法时必须同时在 `MigratingRedis` / pipeline / multi 代理里实现 ——
- * 类型上是 IORedis、运行时是手写代理，缺方法会让 TM 静默整批 miss（只烧钱不报错）。
+ * `wrapRedisPair` 与双写代理仍保留给应急/旧脚本；正常路径不再调用。
+ * 本模块不依赖 ioredis：具体客户端由调用方创建。
+ * 若仍使用 `MigratingRedis`，给 `RedisLike` 加方法须三处同步实现。
  */
 
 export type RedisLike = {
@@ -540,29 +535,19 @@ export function getRenderKvUrl(): string | undefined {
 }
 
 /**
- * 已全量切到 Render 且关闭双写：只建 RENDER_KV 一个 client，不读 REDIS_URL*。
+ * 已配置 `RENDER_KV` → sole client（只连 Render KV，不读 REDIS_URL*）。
+ * 迁移开关 `REDIS_DUAL_WRITE` / `REDIS_CUTOVER` 不再作为前置条件。
  */
 export function isRenderKvSoleClientMode(): boolean {
-  return !envFlagTrue("REDIS_DUAL_WRITE") && parseCutoverPrefixes().all;
+  return Boolean(getRenderKvUrl());
 }
 
 export function warnIfMigrationEnvIncomplete(): void {
   if (_loggedMissingSecondary) return;
-  const kv = getRenderKvUrl();
-  if (isRenderKvSoleClientMode() && !kv) {
+  if (envFlagTrue("REDIS_DUAL_WRITE") || process.env.REDIS_CUTOVER?.trim()) {
     _loggedMissingSecondary = true;
     console.warn(
-      "[redisDual] sole mode (REDIS_CUTOVER=all, REDIS_DUAL_WRITE off) but RENDER_KV missing",
-    );
-    return;
-  }
-  if (
-    (envFlagTrue("REDIS_DUAL_WRITE") || process.env.REDIS_CUTOVER?.trim()) &&
-    !kv
-  ) {
-    _loggedMissingSecondary = true;
-    console.warn(
-      "[redisDual] REDIS_DUAL_WRITE/REDIS_CUTOVER set but RENDER_KV missing; using primary only",
+      "[redisDual] REDIS_DUAL_WRITE / REDIS_CUTOVER 已废弃（sole=RENDER_KV）；可从环境变量删除",
     );
   }
 }

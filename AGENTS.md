@@ -389,9 +389,9 @@ then `api.translate-v4.tasks.ts`.
  leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同时在
  `MigratingRedis` / pipeline / multi 代理里实现**（单一来源
  `packages/translation-core/src/redisDualClient.ts`，App/Worker 经
- `@ciwi/translation-core/redis-dual-client` 引用，不再有两份副本）：sole mode 下 core
- 拿到的是原生 ioredis，但双写兼容层是手写代理，缺方法会让 TM 静默整批 miss
- （只烧钱不报错）。
+ `@ciwi/translation-core/redis-dual-client` 引用，不再有两份副本）：正常路径只连
+ `RENDER_KV`（原生 ioredis）。若仍走历史双写代理 `MigratingRedis`，缺方法会让
+ TM 静默整批 miss（只烧钱不报错）。
 - **新增 core 子路径导出要改四处**，漏一处就会掉到 `.d.ts` 上（esbuild 剥掉类型 →
  运行时空模块 → rollup 报 `"x" is not exported by ...d.ts`）：
  `packages/translation-core/package.json` 的 `exports`、根 `tsconfig.json` paths、
@@ -1528,21 +1528,16 @@ translation memory cache.
 - App、Worker、运维脚本、Agent 诊断：**只连** `RENDER_KV`。
 - **不要**再使用 `REDIS_URL` / `REDIS_URL_V4`（Azure Cache 已弃用；本地 `.env*` 里若仍残留可忽略或删除）。
 - 不要打印 URL/密码；只打印脱敏 host。
-- **新增 Redis 用法前先查 `RedisLike` 支持哪些命令**（单一来源
-  `packages/translation-core/src/redisDualClient.ts`）。`getRedis()` 的返回类型标成
-  `IORedis`，但双写模式下实际是手写代理 `MigratingRedis`：类型检查会放过
-  `sadd`/`smembers`/`srem` 之类未实现的命令，运行时才崩。目前代理只有
-  get/mget/set/del/hset/hget/hgetall/hdel/expire/lpush/rpush/lpop/ltrim/ping/pipeline/multi
-  ——需要集合语义时用 Hash 代替 Set（见 `translate:v4:email:pending:*`），
-  或先把命令补进代理（`MigratingRedis` + pipeline + multi 三处）。
+- App / Worker：`RENDER_KV` 已配置则**只连它**；不再需要 `REDIS_DUAL_WRITE` /
+  `REDIS_CUTOVER`。未配 `RENDER_KV` 时才回退 `REDIS_URL*`（本地脚本应急）。
+- 集合语义用 Hash（见 `translate:v4:email:pending:*`），不要依赖已废弃双写代理的 Set 命令。
 - Render 服务内用 **Internal** URL（通常 `redis://…`）；本机 / Agent `.env*` 用 **External**
   `rediss://…`（需 Dashboard 放行 Inbound IP）。
 - 交互 CLI：Dashboard **Valkey CLI Command**，或服务同区 Shell 里
   `redis-cli -u "$RENDER_KV"`。
 
 历史说明：曾用 `REDIS_DUAL_WRITE` / `REDIS_CUTOVER` + Azure `REDIS_URL*` 做双写切流；
-迁移已完成。代码里若仍有 `redisDualClient` 兼容分支，运行时应处于 sole
-（`RENDER_KV` 已设、不再创建 Azure client）。新脚本与文档一律按 sole / 仅 `RENDER_KV` 写。
+迁移已完成，这两个开关可从环境变量删除（残留时仅打 deprecate 警告）。
 
 **Ping Render KV from local `.env` / `.env.test` (masks host only; never echo secrets):**
 

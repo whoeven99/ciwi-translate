@@ -1,9 +1,7 @@
 import IORedis from "ioredis";
 import {
   getRenderKvUrl,
-  isRenderKvSoleClientMode,
   warnIfMigrationEnvIncomplete,
-  wrapRedisPair,
 } from "@ciwi/translation-core/redis-dual-client";
 
 let _redis: IORedis | undefined;
@@ -109,38 +107,24 @@ function createPrimaryRedis(): IORedis {
 }
 
 /**
- * Sole mode（REDIS_DUAL_WRITE off + REDIS_CUTOVER=all）→ 只连 RENDER_KV。
- * 否则 Primary = REDIS_URL*；Secondary = RENDER_KV。见 `@ciwi/translation-core/redis-dual-client`。
+ * 只连 `RENDER_KV`。未配置时回退 `REDIS_URL*`（本地脚本应急，生产勿用）。
  */
 export function getRedis(): IORedis {
   if (_redis) return _redis;
 
   warnIfMigrationEnvIncomplete();
 
-  if (isRenderKvSoleClientMode()) {
-    const kvUrl = getRenderKvUrl();
-    if (!kvUrl) {
-      throw new Error(
-        "Redis sole mode (REDIS_CUTOVER=all, REDIS_DUAL_WRITE off) requires RENDER_KV",
-      );
-    }
-    console.info("[redisV4] sole client mode: RENDER_KV only (skip REDIS_URL*)");
+  const kvUrl = getRenderKvUrl();
+  if (kvUrl) {
+    console.info("[redisV4] RENDER_KV only");
     const redis = new IORedis(kvUrl, redisClientOptions("secondary"));
     attachRedisListeners(redis, "render-kv");
     _redis = redis;
     return _redis;
   }
 
-  const primary = createPrimaryRedis();
-  const secondaryUrl = getRenderKvUrl();
-  if (!secondaryUrl) {
-    _redis = primary;
-    return _redis;
-  }
-
-  const secondary = new IORedis(secondaryUrl, redisClientOptions("secondary"));
-  attachRedisListeners(secondary, "secondary");
-  _redis = wrapRedisPair(primary, secondary);
+  console.warn("[redisV4] RENDER_KV missing; falling back to REDIS_URL*");
+  _redis = createPrimaryRedis();
   return _redis;
 }
 

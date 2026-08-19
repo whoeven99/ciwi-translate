@@ -49,16 +49,8 @@ type ServiceCheck = {
 };
 
 function redisConfigured(): boolean {
-  // Sole mode: REDIS_CUTOVER=all + dual-write off → only RENDER_KV
-  const dual = (process.env.REDIS_DUAL_WRITE?.trim() || "").toLowerCase();
-  const dualOn = dual === "1" || dual === "true" || dual === "yes";
-  const cutover = (process.env.REDIS_CUTOVER?.trim() || "").toLowerCase();
-  const cutoverAll =
-    cutover === "all" ||
-    cutover === "*" ||
-    cutover.split(",").some((t) => t.trim() === "all" || t.trim() === "*");
-  if (!dualOn && cutoverAll && process.env.RENDER_KV?.trim()) return true;
-
+  if (process.env.RENDER_KV?.trim()) return true;
+  // 本地脚本应急回退（生产应只配 RENDER_KV）
   if (process.env.REDIS_URL?.trim() || process.env.REDIS_URL_V4?.trim()) {
     return true;
   }
@@ -106,7 +98,7 @@ function collectChecks(): ServiceCheck[] {
     {
       label: "Redis",
       ok: redisConfigured(),
-      hint: "RENDER_KV（sole: CUTOVER=all + DUAL_WRITE off）或 REDIS_URL / REDIS_HOSTNAME+REDIS_PASSWORD",
+      hint: "RENDER_KV（推荐）或 REDIS_URL / REDIS_HOSTNAME+REDIS_PASSWORD（本地回退）",
     },
     {
       label: "Blob",
@@ -154,15 +146,14 @@ export function ensureWorkerEnv(): void {
     console.warn(`${LOG} ${c.label} 未就绪 → 需要 ${c.hint}`);
   }
 
-  const renderKv = Boolean(process.env.RENDER_KV?.trim());
-  const dual = (process.env.REDIS_DUAL_WRITE?.trim() || "").toLowerCase();
-  const cutover = process.env.REDIS_CUTOVER?.trim() || "(empty)";
-  if (renderKv || dual === "true" || dual === "1" || dual === "yes" || process.env.REDIS_CUTOVER?.trim()) {
-    const sole =
-      !(dual === "true" || dual === "1" || dual === "yes") &&
-      (cutover === "all" || cutover === "*");
-    console.info(
-      `${LOG} redis migrate: RENDER_KV=${renderKv ? "set" : "missing"} dualWrite=${dual || "false"} cutover=${cutover}${sole ? " soleClient=true" : ""}`,
+  if (process.env.RENDER_KV?.trim()) {
+    console.info(`${LOG} redis: RENDER_KV set`);
+  } else if (
+    process.env.REDIS_DUAL_WRITE?.trim() ||
+    process.env.REDIS_CUTOVER?.trim()
+  ) {
+    console.warn(
+      `${LOG} redis: REDIS_DUAL_WRITE / REDIS_CUTOVER 已废弃，请改配 RENDER_KV`,
     );
   }
 
