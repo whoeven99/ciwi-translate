@@ -7,10 +7,11 @@
  *   - 可选 --check-cooldown：Cosmos 查最近 TsFrontend-Auto 批次，排除仍在冷却的店
  *   - 可选 --require-token：要求 Session 有 offline accessToken
  *
- * 用法（ciwi-translate 根目录，凭据 .env.prod）：
- *   npm run migration:next-auto-slot
+ * 用法（默认测环境；查产加 --target=prod 或 --env-file=.env.prod）：
+ *   node scripts/next-auto-slot-shops.mjs
  *   node scripts/next-auto-slot-shops.mjs --check-cooldown
- *   node scripts/next-auto-slot-shops.mjs --scan-at=2026-07-07T08:00:00.000Z   # 指定某次扫描时刻试算
+ *   node scripts/next-auto-slot-shops.mjs --target=prod --check-cooldown
+ *   node scripts/next-auto-slot-shops.mjs --scan-at=2026-07-07T08:00:00.000Z
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -100,7 +101,9 @@ function resolveTursoConfig(env) {
       return { url, authToken, urlKey };
     }
   }
-  throw new Error("缺少 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN（见 --env-file / .env.prod）");
+  throw new Error(
+    "缺少 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN（默认 .env.test；产环境 --target=prod）",
+  );
 }
 
 function resolveCosmosConfig(env) {
@@ -205,7 +208,7 @@ async function enrichWithCooldown(candidates, cosmos, cooldownMs, scanAtMs, conc
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const target = String(args.target || "prod").toLowerCase();
+  const target = String(args.target || "test").toLowerCase();
   if (!["prod", "test"].includes(target)) {
     throw new Error("--target 仅支持 prod 或 test（用于选择默认 env 文件）");
   }
@@ -218,11 +221,18 @@ async function main() {
     : path.join(ROOT, target === "test" ? ".env.test" : ".env.prod");
   const env = {
     ...loadDotEnv(path.join(ROOT, ".env")),
+    ...loadDotEnv(
+      path.join(
+        ROOT,
+        target === "test" ? ".env.worker.test" : ".env.worker.prod",
+      ),
+    ),
     ...loadDotEnv(envFile),
     ...process.env,
   };
 
-  // schedule 辅助函数默认读 process.env；把 .env.prod 里的 AUTO_TRANSLATE_* 同步进去
+  // schedule 辅助函数默认读 process.env；把 env 文件里的 AUTO_TRANSLATE_* 同步进去
+  console.log(`[next-auto-slot] target=${target} envFile=${path.basename(envFile)}`);
   for (const key of [
     "AUTO_TRANSLATE_INTERVAL_MS",
     "AUTO_TRANSLATE_SHARDING",

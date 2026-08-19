@@ -1,28 +1,9 @@
 /**
- * Read-only: probe full imageAfterUrl (COS + CDN) for prod UserPicture.
+ * Read-only: probe full imageAfterUrl (COS + CDN) for UserPicture.
+ * 默认测环境；查产：--env=.env.prod
  */
-import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@libsql/client/http";
-
-function loadDotEnv(dotenvPath) {
-  if (!existsSync(dotenvPath)) return {};
-  const result = {};
-  for (const rawLine of readFileSync(dotenvPath, "utf8").split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const idx = line.indexOf("=");
-    if (idx <= 0) continue;
-    let value = line.slice(idx + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    result[line.slice(0, idx).trim()] = value;
-  }
-  return result;
-}
+import { loadStackedEnv, resolveTurso } from "./lib/loadEnv.mjs";
 
 const COS = "https://ciwi-us-1327177217.cos.na-ashburn.myqcloud.com";
 const CDN = "https://img.bogdatech.com";
@@ -47,10 +28,16 @@ async function probe(url) {
   }
 }
 
-const env = loadDotEnv(".env.prod");
+const { env, overlay } = loadStackedEnv();
+const turso = resolveTurso(env);
+if (!turso.url || !turso.authToken) {
+  console.error("missing Turso creds（overlay=", overlay, ")");
+  process.exit(1);
+}
+console.log(`[smoke] overlay=${overlay}`);
 const client = createClient({
-  url: env.TURSO_DATABASE_URL,
-  authToken: env.TURSO_AUTH_TOKEN,
+  url: turso.url,
+  authToken: turso.authToken,
 });
 
 const shopsWithAfter = await client.execute(`

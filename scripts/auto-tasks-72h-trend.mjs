@@ -1,30 +1,19 @@
 /**
  * 过去 72 小时自动翻译任务趋势 — 每小时新建任务数 + 日环比
+ * 默认测环境；生产：--env=.env.prod
  * Usage: node scripts/auto-tasks-72h-trend.mjs
- * Output: scripts/out/auto-tasks-72h.json + auto-tasks-72h-chart.html
  */
 import { CosmosClient } from "@azure/cosmos";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadStackedEnv, resolveCosmos } from "./lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, "..");
 const TZ = process.env.AUTO_TRANSLATE_SCHEDULE_TZ?.trim() || "Asia/Shanghai";
 const AUTO = "TsFrontend-Auto";
 const HOURS = 96; // 4 days: Jul 7 00:00 ~ Jul 11 00:00 CST
-
-function loadEnvProd() {
-  const envPath = resolve(__dirname, "../.env.prod");
-  const env = {};
-  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i <= 0) continue;
-    env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
-  }
-  return env;
-}
 
 function hourKeyInTz(iso, timeZone) {
   const d = new Date(iso);
@@ -61,17 +50,16 @@ function buildHourBuckets(now, timeZone, hours) {
   return [...new Set(buckets)];
 }
 
-const env = loadEnvProd();
-const endpoint = env.COSMOS_ENDPOINT_V4?.trim() || env.COSMOS_ENDPOINT?.trim();
-const key = env.COSMOS_KEY_V4?.trim() || env.COSMOS_KEY?.trim();
-const db = env.COSMOS_TRANSLATION_DATABASE_ID?.trim() || "translation";
-const containerId =
-  env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER?.trim() || "translation_v4_jobs";
-
-if (!endpoint || !key) {
-  console.error("COSMOS env missing in .env.prod");
+const { env } = loadStackedEnv({ root });
+const cosmos = resolveCosmos(env);
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("COSMOS env missing");
   process.exit(1);
 }
+const endpoint = cosmos.endpoint;
+const key = cosmos.key;
+const db = cosmos.databaseId;
+const containerId = cosmos.containerId;
 
 // Fixed range: Jul 7 00:00 ~ Jul 11 00:00 CST (4 full days)
 const now = new Date("2026-07-11T00:00:00+08:00");

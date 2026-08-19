@@ -1,29 +1,19 @@
-import { readFileSync } from "node:fs";
+/**
+ * Read-only UserPicture counts by shop. 默认测环境；查产：--env=.env.prod
+ */
 import { createClient } from "@libsql/client/http";
+import { loadStackedEnv, resolveTurso } from "./lib/loadEnv.mjs";
 
-function load(p) {
-  const r = {};
-  for (const raw of readFileSync(p, "utf8").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const i = line.indexOf("=");
-    if (i <= 0) continue;
-    let v = line.slice(i + 1).trim();
-    if (
-      (v.startsWith('"') && v.endsWith('"')) ||
-      (v.startsWith("'") && v.endsWith("'"))
-    ) {
-      v = v.slice(1, -1);
-    }
-    r[line.slice(0, i).trim()] = v;
-  }
-  return r;
+const { overlay } = loadStackedEnv();
+const turso = resolveTurso();
+if (!turso.url || !turso.authToken) {
+  console.error("missing Turso（overlay=", overlay, ")");
+  process.exit(1);
 }
-
-const env = load(".env.prod");
+console.log(`[smoke] overlay=${overlay}`);
 const c = createClient({
-  url: env.TURSO_DATABASE_URL,
-  authToken: env.TURSO_AUTH_TOKEN,
+  url: turso.url,
+  authToken: turso.authToken,
 });
 
 const shops = [

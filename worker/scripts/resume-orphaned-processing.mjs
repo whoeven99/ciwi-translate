@@ -1,27 +1,48 @@
 /**
- * 批量恢复发版后僵死的 processing 任务（INITIALIZING / TRANSLATING / WRITING_BACK）。
- * 用法: node scripts/resume-orphaned-processing.mjs [--dry-run]
+ * 批量恢复僵死的 processing 任务（INITIALIZING / TRANSLATING / WRITING_BACK）。
+ *
+ * 默认：测环境 + dry-run（不写）。
+ * 真正写入：加 --apply
+ * 写生产：--env=.env.prod --apply --confirm-prod
+ *
+ * Usage:
+ *   node worker/scripts/resume-orphaned-processing.mjs
+ *   node worker/scripts/resume-orphaned-processing.mjs --apply
+ *   node worker/scripts/resume-orphaned-processing.mjs --env=.env.prod --apply --confirm-prod
  */
-import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CosmosClient } from "@azure/cosmos";
 import IORedis from "ioredis";
+import {
+  assertProdWriteAllowed,
+  loadStackedEnv,
+  resolveCosmos,
+  resolveRedisUrl,
+} from "../../scripts/lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const dryRun = process.argv.includes("--dry-run");
+const root = resolve(__dirname, "../..");
+const argv = process.argv.slice(2);
+const apply = argv.includes("--apply");
+// 兼容旧参数名：--dry-run 仍表示只读（默认已是 dry-run）
+const dryRun = !apply;
 
-function loadEnvProd() {
-  const envPath = resolve(__dirname, "../../.env.prod");
-  const env = {};
-  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i <= 0) continue;
-    env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
-  }
-  return env;
+const { env, overlay } = loadStackedEnv({ root });
+if (apply) {
+  assertProdWriteAllowed(argv, overlay);
+}
+
+const cosmos = resolveCosmos(env);
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("缺少 Cosmos 凭据（默认测环境；产环境加 --env=.env.prod）");
+  process.exit(1);
+}
+
+const { url: redisUrl } = resolveRedisUrl(env);
+if (!redisUrl) {
+  console.error("缺少 Redis（RENDER_KV）");
+  process.exit(1);
 }
 
 const PROC_TO_QUEUED = {
@@ -37,15 +58,14 @@ function hintKeyForJob(hintStage, taskSource) {
   return `translate:v4:hint:${hintStage}:${pool}`;
 }
 
-const env = loadEnvProd();
 const client = new CosmosClient({
-  endpoint: env.COSMOS_ENDPOINT,
-  key: env.COSMOS_KEY,
+  endpoint: cosmos.endpoint,
+  key: cosmos.key,
 });
 const container = client
-  .database(env.COSMOS_TRANSLATION_DATABASE_ID || "translation")
-  .container(env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER || "translation_v4_jobs");
-const redis = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: 2 });
+  .database(cosmos.databaseId)
+  .container(cosmos.containerId);
+const redis = new IORedis(redisUrl, { maxRetriesPerRequest: 2 });
 
 const graceMs = Number(process.env.ORPHAN_HEARTBEAT_MS) || 30_000;
 const threshold = new Date(Date.now() - graceMs).toISOString();
@@ -63,7 +83,7 @@ const { resources } = await container.items
   .fetchAll();
 
 console.log(
-  `orphaned processing jobs (heartbeat before ${threshold}): ${resources.length}${dryRun ? " [dry-run]" : ""}`,
+  `overlay=${overlay} orphaned (hb before ${threshold}): ${resources.length}${dryRun ? " [dry-run]" : " [APPLY]"}`,
 );
 
 for (const job of resources) {
@@ -75,7 +95,9 @@ for (const job of resources) {
   );
   if (dryRun) continue;
 
-  const { resource: current } = await container.item(job.id, job.shopName).read();
+  const { resource: current } = await container
+    .item(job.id, job.shopName)
+    .read();
   await container.item(job.id, job.shopName).replace({
     ...current,
     status: resetStatus,
@@ -83,13 +105,14 @@ for (const job of resources) {
     claimedAt: null,
     updatedAt: new Date().toISOString(),
   });
-  if (hintStage) {
-    await redis.rpush(
-      hintKeyForJob(hintStage, current.taskSource ?? job.taskSource),
-      JSON.stringify({ taskId: job.id, shopName: job.shopName }),
-    );
-  }
+  await redis.lpush(
+    hintKeyForJob(hintStage, job.taskSource),
+    JSON.stringify({ taskId: job.id, shopName: job.shopName }),
+  );
+}
+
+if (dryRun) {
+  console.log("\nDry-run only. Re-run with --apply to write (prod also needs --confirm-prod).");
 }
 
 await redis.quit();
-console.log("done");

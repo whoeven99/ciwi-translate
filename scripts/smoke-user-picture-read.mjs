@@ -1,46 +1,22 @@
 /**
- * Read-only prod Turso UserPicture smoke check.
- * Usage: node scripts/smoke-user-picture-read.mjs --env=.env.prod
+ * Read-only Turso UserPicture smoke check.
+ * 默认测环境；查产：--env=.env.prod
+ * Usage: node scripts/smoke-user-picture-read.mjs [--env=.env.test]
  */
-import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@libsql/client/http";
+import { loadStackedEnv, resolveTurso } from "./lib/loadEnv.mjs";
 
-function loadDotEnv(dotenvPath) {
-  if (!existsSync(dotenvPath)) return {};
-  const result = {};
-  for (const rawLine of readFileSync(dotenvPath, "utf8").split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const idx = line.indexOf("=");
-    if (idx <= 0) continue;
-    let value = line.slice(idx + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    result[line.slice(0, idx).trim()] = value;
-  }
-  return result;
-}
-
-const args = Object.fromEntries(
-  process.argv.slice(2).map((item) => {
-    const [k, v] = item.replace(/^--/, "").split("=");
-    return [k, v ?? true];
-  }),
-);
-const envPath = args.env || ".env.prod";
-const env = loadDotEnv(envPath);
-const url = env.TURSO_DATABASE_URL;
-const authToken = env.TURSO_AUTH_TOKEN;
+const { env, overlay } = loadStackedEnv();
+const turso = resolveTurso(env);
+const url = turso.url;
+const authToken = turso.authToken;
 
 if (!url || !authToken) {
-  console.error("missing TURSO_DATABASE_URL or TURSO_AUTH_TOKEN in", envPath);
+  console.error("missing TURSO_DATABASE_URL or TURSO_AUTH_TOKEN（overlay=", overlay, ")");
   process.exit(1);
 }
 
+console.log(`[smoke] overlay=${overlay} turso=${new URL(url).host}`);
 const client = createClient({ url, authToken });
 
 const table = await client.execute(
