@@ -969,6 +969,7 @@
   "v4.createTask.confirmReadySummary": "当前积分充足，本次任务可以按当前配置完整启动。",
   "v4.createTask.confirmReadyTitle": "确认翻译任务",
   "v4.createTask.confirmRecommendedPlan": "推荐套餐",
+  "v4.createTask.confirmRecommendedPlanMonthlyValue": "{{plan}} · 每月 {{monthly}} 积分",
   "v4.createTask.confirmRecommendedPlanValue": "{{plan}} · 每月 {{monthly}} 积分，首订额外赠送 {{launch}} Launch Credits",
   "v4.createTask.confirmRecommendationHint": "还差 {{credits}} 积分时，可以优先参考上面的套餐和积分包。",
   "v4.createTask.confirmRecommendationTitle": "推荐补充方案",
