@@ -75,6 +75,12 @@ import {
   stripBillingReturnParams,
 } from "~/utils/billingReturn";
 
+/**
+ * 额度轮询的最小间隔。任务列表在进度变化时会一直保持 3s 一轮，额度不需要跟到那么密
+ * （每次都是一次鉴权 + Turso Account 读）。
+ */
+const QUOTA_POLL_MIN_INTERVAL_MS = 60_000;
+
 /** 首屏骨架期的占位覆盖率；真实值由客户端首帧从 `coverage?cache=1` 拉取。 */
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -355,6 +361,9 @@ export default function AppTranslateV4() {
   );
 
   const jobStatusRef = useRef<Map<string, string>>(new Map());
+  const jobTerminalRef = useRef<Map<string, boolean>>(new Map());
+  /** 额度刷新在 refreshQuota 定义之后才可用，这里用 ref 打通先后顺序。 */
+  const refreshQuotaRef = useRef<() => void>(() => {});
 
   const applyJobsUpdate = useCallback(
     (newJobs: TranslationJobProgressSummary[]) => {
@@ -364,7 +373,13 @@ export default function AppTranslateV4() {
           void refreshCoverageFromCache();
           notifyTranslationStatsUpdated({ target: j.target, source: j.source });
         }
+        // 任务刚落终态：额度轮询是低频的，这里补一次让扣费立即可见。
+        const wasTerminal = jobTerminalRef.current.get(j.taskId);
+        if (j.isTerminal && wasTerminal === false) {
+          refreshQuotaRef.current();
+        }
         jobStatusRef.current.set(j.taskId, j.status);
+        jobTerminalRef.current.set(j.taskId, Boolean(j.isTerminal));
       }
       setJobs(newJobs);
     },
@@ -416,6 +431,10 @@ export default function AppTranslateV4() {
       });
     }
   }, [shop]);
+
+  refreshQuotaRef.current = () => {
+    void refreshQuota();
+  };
 
   useEffect(() => {
     const perfStart = markPerfStart("translate-v4.first-load.quota");
@@ -743,6 +762,8 @@ export default function AppTranslateV4() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stablePollCount = 0;
     let lastActiveJobsSignature = "";
+    // 首屏 effect 已拉过一次额度，从挂载时刻开始计时。
+    let lastQuotaAt = Date.now();
 
     const getNextDelay = () => {
       if (typeof document !== "undefined" && document.hidden) return 30_000;
@@ -772,7 +793,12 @@ export default function AppTranslateV4() {
 
       if (typeof document === "undefined" || !document.hidden) {
         void refreshList();
-        void refreshQuota();
+        // 进度变化时列表会退回 3s 一轮，但额度不需要这个新鲜度：低频轮询兜住外部
+        // 变化（充值 / 其它标签页），扣费可见性由终态跃迁那次补刷负责。
+        if (Date.now() - lastQuotaAt >= QUOTA_POLL_MIN_INTERVAL_MS) {
+          lastQuotaAt = Date.now();
+          void refreshQuota();
+        }
       }
 
       timer = setTimeout(poll, getNextDelay());

@@ -77,7 +77,7 @@ export async function runAutoTranslateScan(
   options: AutoTranslateScanOptions = {},
 ): Promise<void> {
   if (!hasTsfDbCredentials()) {
-    console.log("[autoTranslate] TSF Turso 未配置（TSF_TURSO_*），跳过自动扫描");
+    console.log("[autoTranslate] TSF Turso 未配置（TURSO_DATABASE_URL / TURSO_AUTH_TOKEN），跳过自动扫描");
     return;
   }
 

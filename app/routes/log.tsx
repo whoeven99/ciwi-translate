@@ -81,6 +81,51 @@ async function readPayload(request: Request): Promise<StructuredLogPayload> {
   };
 }
 
+function pickNumber(source: Record<string, unknown> | undefined, key: string) {
+  const value = source?.[key];
+  return typeof value === "number" ? value : null;
+}
+
+/**
+ * LCP 归因的可 grep 单行。用 `[perf][lcp]` 前缀 + 紧凑 JSON，方便直接在 Render
+ * 日志里按前缀过滤，并由 `scripts/lcp-trend.mjs` 解析成分位数与归因分布。
+ */
+function buildLcpSummaryLine(payload: StructuredLogPayload): string | null {
+  if (payload.event !== "lcp_diagnostics") return null;
+
+  const context = payload.context ?? {};
+  const navigation = context.navigation as Record<string, unknown> | undefined;
+  const resources = context.resources as Record<string, unknown> | undefined;
+  const environment = context.environment as Record<string, unknown> | undefined;
+  const element = context.element as Record<string, unknown> | undefined;
+
+  const scriptCount = pickNumber(resources, "scriptCount");
+  const scriptCachedCount = pickNumber(resources, "scriptCachedCount");
+  const coldLoad =
+    scriptCount != null && scriptCachedCount != null
+      ? scriptCachedCount < scriptCount / 2
+      : null;
+
+  return `[perf][lcp] ${safeJsonStringify({
+    shop: payload.shop,
+    route: payload.route,
+    lcpMs: pickNumber(context, "lcpMs"),
+    fcpMs: pickNumber(context, "fcpMs"),
+    ttfbMs: pickNumber(navigation, "ttfbMs"),
+    domContentLoadedMs: pickNumber(navigation, "domContentLoadedMs"),
+    navType: navigation?.type,
+    coldLoad,
+    scriptBytes: pickNumber(resources, "scriptBytes"),
+    slowestBlockingMs: pickNumber(resources, "slowestBlockingMs"),
+    slowestBlocking: resources?.slowestBlockingName,
+    element: element?.path ?? element?.tag ?? null,
+    elementSize: pickNumber(element, "paintSize"),
+    effectiveType: environment?.effectiveType,
+    rttMs: pickNumber(environment, "rttMs"),
+    reason: context.reportReason,
+  })}`;
+}
+
 function shouldDropClientLog(payload: StructuredLogPayload): boolean {
   const consoleArgs = Array.isArray(payload.context?.consoleArgs)
     ? payload.context.consoleArgs
@@ -126,6 +171,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     context: payload.context,
     error: payload.error,
   };
+
+  const lcpSummaryLine = buildLcpSummaryLine(payload);
+  if (lcpSummaryLine) console.log(lcpSummaryLine);
 
   const line = `[client-log] ${safeJsonStringify(record)}`;
   if (record.level === "error") console.error(line);

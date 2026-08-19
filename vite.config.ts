@@ -90,6 +90,20 @@ const translationCoreAliases = [
     ),
   },
   {
+    find: "@ciwi/translation-core/redis-dual-client",
+    replacement: path.resolve(
+      appRoot,
+      "packages/translation-core/src/redisDualClient.ts",
+    ),
+  },
+  {
+    find: "@ciwi/translation-core/annual-credit-cycle",
+    replacement: path.resolve(
+      appRoot,
+      "packages/translation-core/src/annualCreditCycle.ts",
+    ),
+  },
+  {
     find: /^@ciwi\/translation-core$/,
     replacement: path.resolve(appRoot, "packages/translation-core/src/index.ts"),
   },

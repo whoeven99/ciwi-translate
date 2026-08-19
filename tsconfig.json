@@ -30,7 +30,9 @@
       "@ciwi/translation-core/translation-field-limits": ["./packages/translation-core/.build/translationFieldLimits.d.ts"],
       "@ciwi/translation-core/translation-memory": ["./packages/translation-core/.build/translationMemory.d.ts"],
       "@ciwi/translation-core/translation-filter": ["./packages/translation-core/.build/translationFilter/index.d.ts"],
-      "@ciwi/translation-core/translation-filter/*": ["./packages/translation-core/.build/translationFilter/*.d.ts"]
+      "@ciwi/translation-core/translation-filter/*": ["./packages/translation-core/.build/translationFilter/*.d.ts"],
+      "@ciwi/translation-core/redis-dual-client": ["./packages/translation-core/.build/redisDualClient.d.ts"],
+      "@ciwi/translation-core/annual-credit-cycle": ["./packages/translation-core/.build/annualCreditCycle.d.ts"]
     },
     "types": ["node"]
   }
