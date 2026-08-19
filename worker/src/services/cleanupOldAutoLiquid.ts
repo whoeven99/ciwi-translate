@@ -14,9 +14,10 @@ const DEFAULT_INTERVAL_MS = 60 * 60_000;
 const DEFAULT_TZ = "Asia/Shanghai";
 const DEFAULT_MAX_PER_RUN = 500;
 const DEFAULT_ROW_DELAY_MS = 20;
-/** junk 清理（与 retention 独立）：默认每 tick 最多删 5000 条，每批 2000。 */
+/** junk 清理（与 retention 独立）：默认每 tick 最多删 5000 条，每批读 2000，最多扫 15 万行。 */
 const DEFAULT_JUNK_BATCH_SIZE = 2000;
 const DEFAULT_JUNK_MAX_TOTAL_PER_TICK = 5000;
+const DEFAULT_JUNK_MAX_SCAN_PER_TICK = 150_000;
 const DEFAULT_JUNK_DELAY_MS = 2;
 
 function sleep(ms: number): Promise<void> {
@@ -85,6 +86,16 @@ function getJunkMaxTotalPerTick(): number {
     DEFAULT_JUNK_MAX_TOTAL_PER_TICK,
     500,
     50_000,
+  );
+}
+
+/** 每 tick 最多扫描的 auto+PENDING 行数（含非 junk）；防止 Turso 被单次全表拖死。 */
+function getJunkMaxScanPerTick(): number {
+  return envInt(
+    "AUTO_LIQUID_JUNK_CLEANUP_MAX_SCAN_PER_TICK",
+    DEFAULT_JUNK_MAX_SCAN_PER_TICK,
+    1_000,
+    500_000,
   );
 }
 
@@ -214,98 +225,111 @@ export async function cleanupOldAutoLiquidRules(): Promise<{ deleted: number }> 
 
 /**
  * 清掉采集误入的 junk（HTML 属性碎片、评价/价格/SKU/型号等；不按年龄；只删 auto+PENDING）。
- * SQL 先用 LIKE 收窄，再用 isAutoLiquidCollectJunk 确认；多批循环直到 tick 上限。
+ *
+ * 与查询/claim 侧同一判定：`isAutoLiquidCollectJunk`（translation-core
+ * `looksLikeHtmlMarkupFragment` + `looksLikeAutoLiquidJunk`）。
+ * 不再用 SQL LIKE 预筛（会漏 Verified / US$ / € / 德语评价 / 规格单位等）。
+ * 按 (updatedAt, id) 游标扫 PENDING，命中 junk 才删；受 delete/scan 双上限约束。
  */
 async function cleanupJunkAutoLiquidPending(): Promise<number> {
   const batchSize = getJunkBatchSize();
-  const maxTotal = getJunkMaxTotalPerTick();
+  const maxDelete = getJunkMaxTotalPerTick();
+  const maxScan = getJunkMaxScanPerTick();
   const delayMs = getJunkDelayMs();
+
   let totalDeleted = 0;
-
-  while (totalDeleted < maxTotal && !isShuttingDown()) {
-    const deleted = await cleanupJunkAutoLiquidBatch(batchSize, delayMs);
-    if (deleted === 0) break;
-    totalDeleted += deleted;
-  }
-
-  if (totalDeleted > 0) {
-    console.log(`${LOG} junk auto-liquid totalDeleted=${totalDeleted} cap=${maxTotal}`);
-  }
-  return totalDeleted;
-}
-
-async function cleanupJunkAutoLiquidBatch(
-  batchSize: number,
-  delayMs: number,
-): Promise<number> {
-  const rs = await tsfExecute({
-    sql: `SELECT id, shop, languageCode, beforeTranslation FROM LiquidRule
-          WHERE source = 'auto'
-            AND status = 'PENDING'
-            AND (
-              beforeTranslation LIKE '%loading="%'
-              OR beforeTranslation LIKE ?
-              OR beforeTranslation LIKE '%srcset=%'
-              OR beforeTranslation LIKE '%decoding=%'
-              OR beforeTranslation LIKE '%fetchpriority=%'
-              OR (
-                beforeTranslation LIKE '%width="%'
-                AND beforeTranslation LIKE '%height="%'
-                AND beforeTranslation LIKE '%/>%'
-              )
-              OR beforeTranslation LIKE '% reviews'
-              OR beforeTranslation LIKE '%review%'
-              OR beforeTranslation LIKE '%stars:%'
-              OR beforeTranslation LIKE '%sterren:%'
-              OR beforeTranslation LIKE '%★%'
-              OR beforeTranslation LIKE '¥%'
-              OR beforeTranslation LIKE '% JPY'
-              OR beforeTranslation LIKE '% EUR'
-              OR beforeTranslation LIKE '% USD'
-              OR beforeTranslation LIKE 'SKU%'
-              OR beforeTranslation LIKE '% and later'
-              OR beforeTranslation LIKE '%-%'
-              OR beforeTranslation LIKE '_ %'
-              OR (
-                length(beforeTranslation) >= 3
-                AND length(beforeTranslation) <= 8
-                AND beforeTranslation = upper(beforeTranslation)
-              )
-            )
-          ORDER BY updatedAt ASC
-          LIMIT ?`,
-    args: ["%loading='%", batchSize],
-  });
-
+  let totalScanned = 0;
+  let cursorUpdatedAt: string | null = null;
+  let cursorId: string | null = null;
   const shopsToInvalidate = new Set<string>();
-  let deleted = 0;
-  for (const row of rs.rows) {
-    if (isShuttingDown()) break;
-    const id = String(row.id ?? "");
-    const shop = String(row.shop ?? "");
-    const locale = String(row.languageCode ?? "");
-    const text = String(row.beforeTranslation ?? "");
-    if (!id || !shop || !isAutoLiquidCollectJunk(text)) continue;
-    try {
-      const del = await tsfExecute({
-        sql: `DELETE FROM LiquidRule WHERE id = ? AND source = 'auto' AND status = 'PENDING'`,
-        args: [id],
+
+  while (
+    totalDeleted < maxDelete &&
+    totalScanned < maxScan &&
+    !isShuttingDown()
+  ) {
+    const take = Math.min(batchSize, maxScan - totalScanned);
+    if (take <= 0) break;
+
+    let rs;
+    if (cursorUpdatedAt != null && cursorId != null) {
+      rs = await tsfExecute({
+        sql: `SELECT id, shop, languageCode, beforeTranslation, updatedAt
+              FROM LiquidRule
+              WHERE source = 'auto'
+                AND status = 'PENDING'
+                AND (
+                  updatedAt > ?
+                  OR (updatedAt = ? AND id > ?)
+                )
+              ORDER BY updatedAt ASC, id ASC
+              LIMIT ?`,
+        args: [cursorUpdatedAt, cursorUpdatedAt, cursorId, take],
       });
-      if ((del.rowsAffected ?? 0) > 0) {
-        deleted += 1;
-        shopsToInvalidate.add(shop);
-        await forgetAutoLiquidKnown(shop, locale, text);
-      }
-    } catch (err) {
-      console.warn(`${LOG} junk delete failed id=${id}`, err);
+    } else {
+      rs = await tsfExecute({
+        sql: `SELECT id, shop, languageCode, beforeTranslation, updatedAt
+              FROM LiquidRule
+              WHERE source = 'auto'
+                AND status = 'PENDING'
+              ORDER BY updatedAt ASC, id ASC
+              LIMIT ?`,
+        args: [take],
+      });
     }
-    if (delayMs > 0) await sleep(delayMs);
+
+    if (!rs.rows.length) break;
+
+    let batchDeleted = 0;
+    for (const row of rs.rows) {
+      if (isShuttingDown()) break;
+      if (totalDeleted >= maxDelete) break;
+
+      const id = String(row.id ?? "");
+      const shop = String(row.shop ?? "");
+      const locale = String(row.languageCode ?? "");
+      const text = String(row.beforeTranslation ?? "");
+      const updatedAt = String(row.updatedAt ?? "");
+      totalScanned += 1;
+      if (id && updatedAt) {
+        cursorUpdatedAt = updatedAt;
+        cursorId = id;
+      }
+      if (!id || !shop || !isAutoLiquidCollectJunk(text)) continue;
+
+      try {
+        const del = await tsfExecute({
+          sql: `DELETE FROM LiquidRule WHERE id = ? AND source = 'auto' AND status = 'PENDING'`,
+          args: [id],
+        });
+        if ((del.rowsAffected ?? 0) > 0) {
+          batchDeleted += 1;
+          totalDeleted += 1;
+          shopsToInvalidate.add(shop);
+          await forgetAutoLiquidKnown(shop, locale, text);
+        }
+      } catch (err) {
+        console.warn(`${LOG} junk delete failed id=${id}`, err);
+      }
+      if (delayMs > 0) await sleep(delayMs);
+    }
+
+    if (batchDeleted > 0) {
+      console.log(
+        `${LOG} junk auto-liquid batchDeleted=${batchDeleted} scanned=${totalScanned} deleted=${totalDeleted}`,
+      );
+    }
+    // 本批读不满 → 已到表尾
+    if (rs.rows.length < take) break;
   }
+
   for (const shop of shopsToInvalidate) {
     await invalidateAutoLiquidTotal(shop);
   }
-  if (deleted > 0) {
-    console.log(`${LOG} junk auto-liquid batchDeleted=${deleted}/${rs.rows.length}`);
+  if (totalDeleted > 0 || totalScanned > 0) {
+    console.log(
+      `${LOG} junk auto-liquid totalDeleted=${totalDeleted} scanned=${totalScanned} deleteCap=${maxDelete} scanCap=${maxScan}`,
+    );
   }
-  return deleted;
+  return totalDeleted;
 }
