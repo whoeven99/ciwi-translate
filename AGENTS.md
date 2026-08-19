@@ -915,9 +915,12 @@ redirect records.
  `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
- 慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 auto+PENDING junk
-（HTML 属性碎片 + `looksLikeAutoLiquidJunk` 含产品型号；默认每 tick 最多
- 5000 条，`AUTO_LIQUID_JUNK_CLEANUP_MAX_TOTAL_PER_TICK` /
+ 慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 auto+PENDING junk：
+ 游标扫 PENDING，唯一判定 `isAutoLiquidCollectJunk`（与 claim/查询 junk 同一套
+ `looksLikeHtmlMarkupFragment` + `looksLikeAutoLiquidJunk`，**无** SQL LIKE
+ 预筛）；默认每 tick 最多删 5000 / 扫 15 万行（
+ `AUTO_LIQUID_JUNK_CLEANUP_MAX_TOTAL_PER_TICK` /
+ `AUTO_LIQUID_JUNK_CLEANUP_MAX_SCAN_PER_TICK` /
  `AUTO_LIQUID_JUNK_CLEANUP_BATCH_SIZE` / `AUTO_LIQUID_JUNK_CLEANUP_DELAY_MS`）。
 claim PENDING 时也会跳过并
 删除这类行，避免拿去翻译。管理页
