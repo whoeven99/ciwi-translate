@@ -166,33 +166,15 @@ function cosmosV4Ok(): boolean {
   );
 }
 
-function redisV4Ok(): boolean {
-  if (process.env.RENDER_KV?.trim()) return true;
-  if (process.env.REDIS_URL_V4?.trim() || process.env.REDIS_URL?.trim()) {
-    return true;
-  }
-  return Boolean(
-    process.env.REDIS_HOSTNAME_V4?.trim() && process.env.REDIS_PASSWORD_V4?.trim(),
-  );
+function redisOk(): boolean {
+  return Boolean(process.env.RENDER_KV?.trim());
 }
 
-/** 打印 process.env 中匹配的 V4 基础设施键（如 Blob 相关，若已配置） */
-function logOptionalV4InfraKeys(pattern: RegExp, label: string): void {
-  const keys = Object.keys(process.env)
-    .filter((k) => pattern.test(k))
-    .sort();
-  if (keys.length === 0) {
-    console.info(`${ENV_LOG}   [—] ${label} (无相关 *_V4 环境变量)`);
-    return;
-  }
-  const ok = keys.every((k) => Boolean(process.env[k]?.trim()));
-  console.info(`${ENV_LOG}   [${ok ? "✅" : "❌"}] ${label}`);
-  for (const key of keys) {
-    console.info(`${ENV_LOG}       ${formatEnvField([key, process.env[key]])}`);
-  }
+function blobOk(): boolean {
+  return Boolean(process.env.AZURE_BLOB_CONNECTION_STRING?.trim());
 }
 
-/** 排错：按服务分组打印关键环境变量 */
+/** 排错：只打印现行主 key（兼容旧名仍可用于连接，但不在启动清单里刷 ❌） */
 function logCriticalEnvStatus(): void {
   console.info(`${ENV_LOG} ===== 关键变量 =====`);
 
@@ -204,9 +186,6 @@ function logCriticalEnvStatus(): void {
   logEnvCheck("Turso", tursoOk, [
     ["TURSO_DATABASE_URL", process.env.TURSO_DATABASE_URL],
     ["TURSO_AUTH_TOKEN", process.env.TURSO_AUTH_TOKEN],
-    ["TSF_TURSO_DATABASE_URL", process.env.TSF_TURSO_DATABASE_URL],
-    ["TURSO_TEST_DATABASE_URL", process.env.TURSO_TEST_DATABASE_URL],
-    ["TURSO_PROD_DATABASE_URL", process.env.TURSO_PROD_DATABASE_URL],
   ]);
 
   logEnvCheck(
@@ -234,14 +213,16 @@ function logCriticalEnvStatus(): void {
     ],
   ]);
 
-  logEnvCheck("Redis (V4)", redisV4Ok(), [
-    ["RENDER_KV", process.env.RENDER_KV],
-    ["REDIS_URL_V4", process.env.REDIS_URL_V4],
-    ["REDIS_HOSTNAME_V4", process.env.REDIS_HOSTNAME_V4],
-    ["REDIS_PASSWORD_V4", process.env.REDIS_PASSWORD_V4],
-  ]);
+  logEnvCheck("Redis", redisOk(), [["RENDER_KV", process.env.RENDER_KV]]);
 
-  logOptionalV4InfraKeys(/^(AZURE_STORAGE|AZURE_BLOB|BLOB_).*_V4$/i, "Blob (V4)");
+  logEnvCheck("Blob", blobOk(), [
+    ["AZURE_BLOB_CONNECTION_STRING", process.env.AZURE_BLOB_CONNECTION_STRING],
+    [
+      "AZURE_BLOB_TRANSLATION_CONTAINER",
+      process.env.AZURE_BLOB_TRANSLATION_CONTAINER,
+      "translation-content",
+    ],
+  ]);
 
   console.info(`${ENV_LOG} process.env 总键数: ${Object.keys(process.env).length}`);
   console.info(`${ENV_LOG} =================`);
@@ -281,10 +262,7 @@ export function ensureRuntimeEnv(): void {
     process.env.RENDER &&
     secretFileApplied === 0 &&
     !process.env.SHOPIFY_API_KEY?.trim() &&
-    !tursoPairOk("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN") &&
-    !tursoPairOk("TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN") &&
-    !tursoPairOk("TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN") &&
-    !tursoPairOk("TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN")
+    !tursoPairOk("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN")
   ) {
     console.warn(
       `${ENV_LOG} ⚠️ 未从 Secret File 加载任何变量，且 Turso/Shopify 均未配置。请检查 Render Environment Groups 是否包含 Secret File（文件名需为 .env）或是否已正确链接。`,
