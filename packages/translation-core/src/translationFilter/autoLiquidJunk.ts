@@ -1,6 +1,6 @@
 /**
  * Auto Liquid collect junk: review widgets, prices, SKU tokens, fitment years,
- * product/model codes, etc.
+ * product/model codes, brands/platforms, person names, size codes, locale labels.
  * Keep aligned with extensions/ciwi-switcher/assets/ciwi-ui.js `looksLikeAutoLiquidJunk`.
  */
 
@@ -53,6 +53,14 @@ function looksLikeSkuToken(text: string): boolean {
 function looksLikePromoOrCurrencyLabel(text: string): boolean {
   if (/^\d+\s*%\s*OFF$/i.test(text)) return true;
   if (/^(EUR|USD|GBP|JPY|CNY|RMB)\s*[€$£¥]?$/i.test(text)) return true;
+  // Bare ISO currency stubs from switchers / price widgets (not FAQ/PDF/etc).
+  if (
+    /^(USD|EUR|GBP|JPY|CNY|RMB|SGD|AUD|CAD|HKD|CHF|NZD|SEK|NOK|DKK|PLN|INR|KRW|TWD|THB|MYR|PHP|VND|IDR)\s*[$€£¥]?$/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -82,6 +90,184 @@ const MODEL_ACRONYM_BLOCKLIST = new Set([
 ]);
 
 /**
+ * A) Brands / platforms / payment marks — exact short tokens (do not translate).
+ * Keep FAQ / Price / Shop / Support out of this set.
+ */
+const BRAND_OR_PLATFORM_EXACT = new Set(
+  [
+    "facebook",
+    "instagram",
+    "youtube",
+    "tiktok",
+    "pinterest",
+    "twitter",
+    "linkedin",
+    "whatsapp",
+    "spotify",
+    "audible",
+    "google",
+    "apple",
+    "carplay",
+    "hicar",
+    "carlife",
+    "cgplay",
+    "bluetooth",
+    "waze",
+    "paypal",
+    "visa",
+    "mastercard",
+    "bancontact",
+    "amex",
+    "maestro",
+    "klarna",
+    "apple pay",
+    "google pay",
+    "american express",
+    "ducati",
+    "yamaha",
+    "honda",
+    "suzuki",
+    "triumph",
+    "bmw",
+    "ktm",
+    "wifi",
+    "wi-fi",
+  ].map((s) => s.toLowerCase()),
+);
+
+/**
+ * E) Language switcher labels — exact match only.
+ * Intentionally excludes short UI like FAQ / Shop / Price.
+ */
+const LOCALE_LABEL_EXACT = new Set(
+  [
+    "english",
+    "deutsch",
+    "german",
+    "italiano",
+    "italian",
+    "nederlands",
+    "dutch",
+    "polski",
+    "polish",
+    "français",
+    "francais",
+    "french",
+    "español",
+    "espanol",
+    "spanish",
+    "português",
+    "portugues",
+    "portuguese",
+    "русский",
+    "russian",
+    "日本語",
+    "japanese",
+    "中文",
+    "简体中文",
+    "繁體中文",
+    "繁体中文",
+    "chinese",
+    "한국어",
+    "korean",
+    "العربية",
+    "arabic",
+    "svenska",
+    "swedish",
+    "dansk",
+    "danish",
+    "norsk",
+    "norwegian",
+    "suomi",
+    "finnish",
+    "čeština",
+    "cestina",
+    "czech",
+    "magyar",
+    "hungarian",
+    "română",
+    "romana",
+    "romanian",
+    "ελληνικά",
+    "greek",
+    "türkçe",
+    "turkce",
+    "turkish",
+    "ไทย",
+    "thai",
+    "українська",
+    "ukrainian",
+    "hrvatski",
+    "croatian",
+    "български",
+    "bulgarian",
+    "slovenčina",
+    "slovak",
+    "slovenščina",
+    "slovenian",
+    "latviešu",
+    "lithuanian",
+    "lietuvių",
+    "estonian",
+    "eesti",
+    "hebrew",
+    "עברית",
+    "hindi",
+    "हिन्दी",
+  ].map((s) => s.toLowerCase()),
+);
+
+/** D) Apparel size codes. */
+function looksLikeSizeCode(text: string): boolean {
+  return /^(XXS|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|5XL)$/i.test(text);
+}
+
+/** A) Brand / platform / payment exact tokens. */
+function looksLikeBrandOrPlatform(text: string): boolean {
+  return BRAND_OR_PLATFORM_EXACT.has(text.toLowerCase());
+}
+
+/** E) Locale switcher labels. */
+function looksLikeLocaleSwitcherLabel(text: string): boolean {
+  return LOCALE_LABEL_EXACT.has(text.toLowerCase());
+}
+
+/**
+ * B) Reviewer / account display names — not storefront copy.
+ * Conservative: "Mark H.", "R. A.", Anonymous, @handles.
+ */
+function looksLikePersonOrHandle(text: string): boolean {
+  if (/^anonymous$/i.test(text)) return true;
+  if (/^@[A-Za-z0-9._-]{2,40}$/.test(text)) return true;
+  // First + last initial: "Mark H." / "Mark H"
+  if (/^[A-Z][a-z]{1,20}\s+[A-Z]\.?$/.test(text)) return true;
+  // Initials: "R. A." / "D M."
+  if (/^[A-Z]\.?\s+[A-Z]\.?$/.test(text)) return true;
+  return false;
+}
+
+/**
+ * C) Spec / coupon / EU size / dimension fragments beyond product model codes.
+ */
+function looksLikeSpecOrCouponOrEuSize(text: string): boolean {
+  // Dimensions: 161*90.5*22mm / 12 x 8 cm
+  if (/\d+(?:\.\d+)?\s*[*x×]\s*\d+/i.test(text)) return true;
+  // Unit-only measurements: 180 g / 70 cm / 60Hz / 5V (short)
+  if (text.length <= 24 && /^\d+(?:[.,]\d+)?\s*(mm|cm|m|kg|g|hz|mhz|ghz|fps|v|w|mah)\b/i.test(text)) {
+    return true;
+  }
+  // EU shoe / apparel numeric sizes: EU 42
+  if (/^EU\s*\d{2}$/i.test(text)) return true;
+  // Coupon-like ALLCAPS+digits: FRANKSAFFAIR12
+  if (/^[A-Z]{6,}\d{2,}$/.test(text)) return true;
+  // Leading comma brand fragments from broken TreeWalker: ", BMW"
+  if (/^,\s*[A-Za-z0-9][A-Za-z0-9 ./-]{0,30}$/.test(text)) return true;
+  // "N likes" social counters
+  if (/^\d+\s+likes?$/i.test(text)) return true;
+  return false;
+}
+
+/**
  * Product / vehicle model codes (R NineT, AIO-5 Play, CGOS, F900 R).
  * Conservative: skip when text looks like normal UI/marketing copy.
  */
@@ -96,6 +282,8 @@ export function looksLikeProductModelCode(value: string): boolean {
   if (/^[A-Z]*\d+[A-Z]*\s+[A-Z]{1,4}$/i.test(t)) return true;
   if (/^[A-Z]\d{3,4}(\s+[A-Z]{1,4})?$/i.test(t)) return true;
   if (/^[A-Z]\s+[A-Z][a-z]+[A-Z][a-zA-Z0-9]*$/.test(t)) return true;
+  // Letter(s) + space + digits: SMT 890 / GS 1300 / ADV 350 / CG OS 2
+  if (/^[A-Z]{1,6}(?:\s+[A-Z]{1,4})?\s+\d{1,4}[A-Z]?$/i.test(t)) return true;
 
   if (MODEL_CODE_COPY_WORDS.test(t)) return false;
 
@@ -119,6 +307,11 @@ export function looksLikeAutoLiquidJunk(value: string): boolean {
   if (looksLikeFitmentYearText(t)) return true;
   if (looksLikeSkuToken(t)) return true;
   if (looksLikePromoOrCurrencyLabel(t)) return true;
+  if (looksLikeBrandOrPlatform(t)) return true;
+  if (looksLikeLocaleSwitcherLabel(t)) return true;
+  if (looksLikeSizeCode(t)) return true;
+  if (looksLikePersonOrHandle(t)) return true;
+  if (looksLikeSpecOrCouponOrEuSize(t)) return true;
   if (looksLikeProductModelCode(t)) return true;
   return false;
 }
