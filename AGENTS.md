@@ -918,7 +918,9 @@ redirect records.
  慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 auto+PENDING junk：
  游标扫 PENDING，唯一判定 `isAutoLiquidCollectJunk`（与 claim/查询 junk 同一套
  `looksLikeHtmlMarkupFragment` + `looksLikeAutoLiquidJunk`，**无** SQL LIKE
- 预筛）；默认每 tick 最多删 5000 / 扫 15 万行（
+ 预筛）。`looksLikeAutoLiquidJunk` 另拦品牌/平台/支付、评价人名、规格型号/优惠码、
+ 尺码码、语言切换标签（保留 FAQ/Price/Shop 等短 UI）；默认每 tick 最多删 5000 /
+ 扫 15 万行（
  `AUTO_LIQUID_JUNK_CLEANUP_MAX_TOTAL_PER_TICK` /
  `AUTO_LIQUID_JUNK_CLEANUP_MAX_SCAN_PER_TICK` /
  `AUTO_LIQUID_JUNK_CLEANUP_BATCH_SIZE` / `AUTO_LIQUID_JUNK_CLEANUP_DELAY_MS`）。

@@ -2906,7 +2906,8 @@ function looksLikeHtmlMarkupFragment(text) {
 }
 
 /**
- * 与 translation-core `autoLiquidJunk.ts` 对齐：评价组件、价格、SKU、年款等 junk。
+ * 与 translation-core `autoLiquidJunk.ts` 对齐：评价/价格/SKU/年款 + A–E
+ *（品牌平台、人名、规格型号、尺码码、语言切换标签）。短 UI（FAQ/Price/Shop）不拦。
  */
 function looksLikeAutoLiquidJunk(text) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
@@ -2929,11 +2930,56 @@ function looksLikeAutoLiquidJunk(text) {
   if (!/\s/.test(t) && /^[A-Z0-9]{4,12}$/i.test(t) && /\d/.test(t)) return true;
   if (/^\d+\s*%\s*OFF$/i.test(t)) return true;
   if (/^(EUR|USD|GBP|JPY|CNY|RMB)\s*[€$£¥]?$/i.test(t)) return true;
+  if (
+    /^(USD|EUR|GBP|JPY|CNY|RMB|SGD|AUD|CAD|HKD|CHF|NZD|SEK|NOK|DKK|PLN|INR|KRW|TWD|THB|MYR|PHP|VND|IDR)\s*[$€£¥]?$/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  // A brand / platform / payment / vehicle brand (exact)
+  if (
+    /^(facebook|instagram|youtube|tiktok|pinterest|twitter|linkedin|whatsapp|spotify|audible|google|apple|carplay|hicar|carlife|cgplay|bluetooth|waze|paypal|visa|mastercard|bancontact|amex|maestro|klarna|apple pay|google pay|american express|ducati|yamaha|honda|suzuki|triumph|bmw|ktm|wifi|wi-fi)$/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // E locale switcher labels (exact; keep FAQ/Shop/Price out)
+  if (
+    /^(english|deutsch|german|italiano|italian|nederlands|dutch|polski|polish|français|francais|french|español|espanol|spanish|português|portugues|portuguese|русский|russian|日本語|japanese|中文|简体中文|繁體中文|繁体中文|chinese|한국어|korean|العربية|arabic|svenska|swedish|dansk|danish|norsk|norwegian|suomi|finnish|čeština|cestina|czech|magyar|hungarian|română|romana|romanian|ελληνικά|greek|türkçe|turkce|turkish|ไทย|thai|українська|ukrainian|hrvatski|croatian|български|bulgarian|slovenčina|slovak|slovenščina|slovenian|hebrew|עברית|hindi|हिन्दी)$/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // D size codes
+  if (/^(XXS|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|5XL)$/i.test(t)) return true;
+  // B person / handle
+  if (/^anonymous$/i.test(t)) return true;
+  if (/^@[A-Za-z0-9._-]{2,40}$/.test(t)) return true;
+  if (/^[A-Z][a-z]{1,20}\s+[A-Z]\.?$/.test(t)) return true;
+  if (/^[A-Z]\.?\s+[A-Z]\.?$/.test(t)) return true;
+  // C spec / coupon / EU size / dimensions
+  if (/\d+(?:\.\d+)?\s*[*x×]\s*\d+/i.test(t)) return true;
+  if (
+    t.length <= 24 &&
+    /^\d+(?:[.,]\d+)?\s*(mm|cm|m|kg|g|hz|mhz|ghz|fps|v|w|mah)\b/i.test(t)
+  ) {
+    return true;
+  }
+  if (/^EU\s*\d{2}$/i.test(t)) return true;
+  if (/^[A-Z]{6,}\d{2,}$/.test(t)) return true;
+  if (/^,\s*[A-Za-z0-9][A-Za-z0-9 ./-]{0,30}$/.test(t)) return true;
+  if (/^\d+\s+likes?$/i.test(t)) return true;
+
   // Product / vehicle model codes (keep aligned with autoLiquidJunk.ts)
   if (/\b[A-Z]{2,}-\d+\b/i.test(t)) return true;
   if (/^[A-Z]*\d+[A-Z]*\s+[A-Z]{1,4}$/i.test(t)) return true;
   if (/^[A-Z]\d{3,4}(\s+[A-Z]{1,4})?$/i.test(t)) return true;
   if (/^[A-Z]\s+[A-Z][a-z]+[A-Z][a-zA-Z0-9]*$/.test(t)) return true;
+  if (/^[A-Z]{1,6}(?:\s+[A-Z]{1,4})?\s+\d{1,4}[A-Z]?$/i.test(t)) return true;
   if (
     !/\s/.test(t) &&
     /^[A-Z0-9]{4,8}$/.test(t) &&
