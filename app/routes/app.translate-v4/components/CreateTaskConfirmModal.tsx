@@ -21,6 +21,8 @@ type CreateTaskConfirmScenario =
   | "insufficient_trial"
   | "insufficient_pricing";
 
+type CreateTaskQuotaOfferMode = "paid" | "trial" | "pricing";
+
 type Props = {
   open: boolean;
   creating: boolean;
@@ -35,6 +37,7 @@ type Props = {
   sourceLocale?: string;
   estimate: CreateTaskEstimateView | null;
   scenario: CreateTaskConfirmScenario;
+  quotaOfferMode: CreateTaskQuotaOfferMode;
   previousTotalChars?: number;
   onClose: () => void;
   onConfirmCreate: () => void;
@@ -61,6 +64,7 @@ export function CreateTaskConfirmModal({
   sourceLocale,
   estimate,
   scenario: parentScenario,
+  quotaOfferMode,
   previousTotalChars,
   onClose,
   onConfirmCreate,
@@ -167,9 +171,7 @@ export function CreateTaskConfirmModal({
     estimatedCredits > remainingCredits;
   const scenario: CreateTaskConfirmScenario = detailedDone
     ? needsMoreCredits
-      ? parentScenario === "ready"
-        ? "insufficient_paid"
-        : parentScenario
+      ? resolveScenarioFromOfferMode(quotaOfferMode)
       : "ready"
     : parentScenario;
   const progressPercent =
@@ -244,24 +246,32 @@ export function CreateTaskConfirmModal({
   const isReady = scenario === "ready";
   const isInsufficientPaid = scenario === "insufficient_paid";
   const isTrialOffer = scenario === "insufficient_trial";
-  const canStartPartial = isInsufficientPaid && (remainingCredits ?? 0) > 0;
+  const hasPositiveCredits = remainingCredits != null && remainingCredits > 0;
+  const hasNonPositiveCredits = remainingCredits != null && remainingCredits <= 0;
+  const canStartPartial = !isReady && !hasNonPositiveCredits && hasPositiveCredits;
   const scenarioMeta = getScenarioMeta(t, scenario, canStartPartial);
+  const recommendedPack =
+    shortfallCredits > 0 ? recommendCreditsPack(shortfallCredits) : null;
+  const recommendedPlan =
+    shortfallCredits > 0 ? recommendPlanForShortfall(shortfallCredits) : null;
 
   const primaryActionLabel = isReady
     ? t("v4.createTask.confirmStartNow")
-    : isInsufficientPaid
-      ? t("v4.createTask.confirmBuyCreditsAndStart")
-      : isTrialOffer
-        ? t("v4.createTask.confirmTrialAndStart")
-        : t("v4.createTask.confirmSubscribeAndStart");
+    : canStartPartial
+      ? t("v4.createTask.confirmStartPartial")
+      : isInsufficientPaid
+        ? t("v4.createTask.confirmBuyCreditsAndStart")
+        : isTrialOffer
+          ? t("v4.createTask.confirmTrialAndStart")
+          : t("v4.createTask.confirmSubscribeAndStart");
   const secondaryActionLabel = isReady
     ? null
-    : isInsufficientPaid
-      ? canStartPartial
-        ? t("v4.createTask.confirmStartPartial")
-        : null
-      : isTrialOffer
-        ? t("v4.createTask.confirmBuyCreditsSecondary")
+    : canStartPartial
+      ? isTrialOffer
+        ? t("v4.createTask.confirmTrialAndStart")
+        : t("v4.createTask.confirmBuyCreditsOnly")
+      : isInsufficientPaid || isTrialOffer
+        ? t("v4.createTask.confirmViewPlans")
         : t("v4.createTask.confirmBuyCreditsOnly");
 
   const buildReturnPathForPlan = () => {
@@ -292,7 +302,7 @@ export function CreateTaskConfirmModal({
   };
 
   const handlePrimaryAction = () => {
-    if (isReady) {
+    if (isReady || canStartPartial) {
       onConfirmCreate();
       return;
     }
@@ -315,9 +325,24 @@ export function CreateTaskConfirmModal({
   };
 
   const handleSecondaryAction = () => {
-    if (isInsufficientPaid) {
-      if (!canStartPartial) return;
-      onConfirmCreate();
+    if (canStartPartial) {
+      if (isTrialOffer) {
+        handleTrialAction();
+        return;
+      }
+      onBeforeBilling?.();
+      onBuyCredits(estimatedCredits);
+      return;
+    }
+    if (isInsufficientPaid || isTrialOffer) {
+      onBeforeBilling?.();
+      const returnPath = buildReturnPathForPlan();
+      onClose();
+      navigate(
+        returnPath
+          ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}`
+          : "/app/pricing",
+      );
       return;
     }
     onBeforeBilling?.();
@@ -456,6 +481,34 @@ export function CreateTaskConfirmModal({
             </div>
           </InfoCard>
 
+          {!isReady && (recommendedPlan || recommendedPack) ? (
+            <InfoCard title={t("v4.createTask.confirmRecommendationTitle")}>
+              <div style={detailListStyle}>
+                {recommendedPlan ? (
+                  <DetailLine
+                    label={t("v4.createTask.confirmRecommendedPlan")}
+                    value={t("v4.createTask.confirmRecommendedPlanValue", {
+                      plan: recommendedPlan.title,
+                      monthly: formatCreditsFull(recommendedPlan.monthlyCredits),
+                      launch: formatCreditsFull(recommendedPlan.launchCredits),
+                    })}
+                  />
+                ) : null}
+                {recommendedPack ? (
+                  <DetailLine
+                    label={t("Recommended pack")}
+                    value={`${recommendedPack.name} · ${formatCreditsFull(recommendedPack.credits)} ${t("credits")}`}
+                  />
+                ) : null}
+              </div>
+              <div style={recommendationHintStyle}>
+                {t("v4.createTask.confirmRecommendationHint", {
+                  credits: shortfallCreditsLabel,
+                })}
+              </div>
+            </InfoCard>
+          ) : null}
+
           {!isReady && scenario !== "insufficient_paid" ? (
             <InfoCard title={offerTitle(t, scenario)} highlighted>
               <div style={offerFeatureGridStyle}>
@@ -539,6 +592,26 @@ function getScenarioMeta(
   scenario: CreateTaskConfirmScenario,
   canStartPartial: boolean,
 ) {
+  if (canStartPartial) {
+    if (scenario === "insufficient_trial") {
+      return {
+        title: t("v4.createTask.confirmPartialTitle"),
+        accent: "#2180ff",
+        headlineBg: "rgba(33, 128, 255, 0.1)",
+        progressBar: "linear-gradient(90deg, #8dc5ff 0%, #2180ff 100%)",
+      };
+    }
+
+    if (scenario === "insufficient_pricing") {
+      return {
+        title: t("v4.createTask.confirmPartialTitle"),
+        accent: "#7a3cff",
+        headlineBg: "rgba(122, 60, 255, 0.1)",
+        progressBar: "linear-gradient(90deg, #c6a4ff 0%, #7a3cff 100%)",
+      };
+    }
+  }
+
   if (scenario === "ready") {
     return {
       title: t("v4.createTask.confirmReadyTitle"),
@@ -600,6 +673,48 @@ function offerFeatures(
         t("v4.createTask.confirmPricingFeatureModel"),
         t("v4.createTask.confirmPricingFeatureSpeed"),
       ];
+}
+
+function resolveScenarioFromOfferMode(
+  offerMode: CreateTaskQuotaOfferMode,
+): CreateTaskConfirmScenario {
+  if (offerMode === "paid") return "insufficient_paid";
+  return offerMode === "trial" ? "insufficient_trial" : "insufficient_pricing";
+}
+
+const CREDIT_PACK_OPTIONS = [
+  { name: "500K", credits: 500000 },
+  { name: "1M", credits: 1000000 },
+  { name: "2M", credits: 2000000 },
+  { name: "3M", credits: 3000000 },
+  { name: "5M", credits: 5000000 },
+  { name: "10M", credits: 10000000 },
+  { name: "20M", credits: 20000000 },
+  { name: "30M", credits: 30000000 },
+] as const;
+
+const PLAN_RECOMMENDATIONS = [
+  { title: "Basic", monthlyCredits: 1500000, launchCredits: 4000000 },
+  { title: "Pro", monthlyCredits: 3000000, launchCredits: 8000000 },
+  { title: "Premium", monthlyCredits: 8000000, launchCredits: 16000000 },
+] as const;
+
+function recommendCreditsPack(shortfallCredits: number) {
+  return (
+    CREDIT_PACK_OPTIONS.find((option) => option.credits >= shortfallCredits) ??
+    CREDIT_PACK_OPTIONS[CREDIT_PACK_OPTIONS.length - 1] ??
+    null
+  );
+}
+
+function recommendPlanForShortfall(shortfallCredits: number) {
+  return (
+    PLAN_RECOMMENDATIONS.find(
+      (plan) => plan.monthlyCredits + plan.launchCredits >= shortfallCredits,
+    ) ??
+    PLAN_RECOMMENDATIONS[PLAN_RECOMMENDATIONS.length - 1] ??
+    null
+  );
 }
 
 function formatCreditsFull(value: number): string {
@@ -764,6 +879,14 @@ const detailValueStyle = {
   color: v4Colors.text,
   fontWeight: 600,
   wordBreak: "break-word",
+} as const;
+
+const recommendationHintStyle = {
+  marginTop: 12,
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: "18px",
 } as const;
 
 const estimateSectionStyle = {

@@ -1044,6 +1044,7 @@ export default function AppTranslateV4() {
         sourceLocale={source}
         estimate={taskEstimate}
         scenario={createConfirmScenario}
+        quotaOfferMode={hasPaidPlan ? "paid" : isNew === true ? "trial" : "pricing"}
         previousTotalChars={
           typeof totalChars === "number" ? totalChars : undefined
         }
