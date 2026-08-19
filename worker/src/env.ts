@@ -48,35 +48,30 @@ type ServiceCheck = {
   hint?: string;
 };
 
-function redisConfigured(): boolean {
-  if (process.env.RENDER_KV?.trim()) return true;
-  // 本地脚本应急回退（生产应只配 RENDER_KV）
-  if (process.env.REDIS_URL?.trim() || process.env.REDIS_URL_V4?.trim()) {
-    return true;
+function mask(key: string, value: string): string {
+  const v = value.trim();
+  if (!v) return "❌ 缺失";
+  if (/TOKEN|SECRET|KEY|PASSWORD|CONNECTION_STRING/i.test(key)) {
+    return `(已设置,len=${v.length})`;
   }
-  const host =
-    process.env.REDIS_HOSTNAME?.trim() ||
-    process.env.REDIS_HOST?.trim() ||
-    process.env.REDISCACHEHOSTNAME?.trim();
-  const password =
-    process.env.REDIS_PASSWORD?.trim() || process.env.REDISCACHEKEY?.trim();
-  return Boolean(host && password);
+  if (v.length > 48) return `${v.slice(0, 48)}…`;
+  return v;
+}
+
+function redisConfigured(): boolean {
+  return Boolean(process.env.RENDER_KV?.trim());
 }
 
 function llmConfigured(): boolean {
   return Boolean(
-    process.env.DEEPSEEK_API_KEY?.trim() ||
-      process.env.DEEPSEEK_API_KEYS?.trim() ||
+    process.env.DEEPSEEK_API_KEYS?.trim() ||
+      process.env.DEEPSEEK_API_KEY?.trim() ||
       process.env.Gpt_ApiKey?.trim(),
   );
 }
 
-function collectChecks(): ServiceCheck[] {
-  const cosmosOk = Boolean(
-    process.env.COSMOS_ENDPOINT?.trim() && process.env.COSMOS_KEY?.trim(),
-  );
-  const blobOk = Boolean(process.env.AZURE_BLOB_CONNECTION_STRING?.trim());
-  const tsfTursoOk = Boolean(
+function tursoConfigured(): boolean {
+  return Boolean(
     (process.env.TURSO_DATABASE_URL?.trim()?.startsWith("libsql://") &&
       process.env.TURSO_AUTH_TOKEN?.trim()) ||
       (process.env.TSF_TURSO_DATABASE_URL?.trim()?.startsWith("libsql://") &&
@@ -86,6 +81,13 @@ function collectChecks(): ServiceCheck[] {
       (process.env.TURSO_PROD_DATABASE_URL?.trim()?.startsWith("libsql://") &&
         process.env.TURSO_PROD_AUTH_TOKEN?.trim()),
   );
+}
+
+function collectChecks(): ServiceCheck[] {
+  const cosmosOk = Boolean(
+    process.env.COSMOS_ENDPOINT?.trim() && process.env.COSMOS_KEY?.trim(),
+  );
+  const blobOk = Boolean(process.env.AZURE_BLOB_CONNECTION_STRING?.trim());
   const sesOk = Boolean(
     process.env.TENCENT_CLOUD_KEY_ID?.trim() && process.env.TENCENT_CLOUD_KEY?.trim(),
   );
@@ -98,7 +100,7 @@ function collectChecks(): ServiceCheck[] {
     {
       label: "Redis",
       ok: redisConfigured(),
-      hint: "RENDER_KV（推荐）或 REDIS_URL / REDIS_HOSTNAME+REDIS_PASSWORD（本地回退）",
+      hint: "RENDER_KV",
     },
     {
       label: "Blob",
@@ -106,14 +108,14 @@ function collectChecks(): ServiceCheck[] {
       hint: "AZURE_BLOB_CONNECTION_STRING",
     },
     {
-      label: "TSF Turso",
-      ok: tsfTursoOk,
-      hint: "TURSO_DATABASE_URL, TURSO_AUTH_TOKEN（兼容 TSF_TURSO_* / TURSO_TEST_* / TURSO_PROD_*）",
+      label: "Turso",
+      ok: tursoConfigured(),
+      hint: "TURSO_DATABASE_URL, TURSO_AUTH_TOKEN",
     },
     {
       label: "LLM",
       ok: llmConfigured(),
-      hint: "DEEPSEEK_API_KEY 或 Gpt_ApiKey",
+      hint: "DEEPSEEK_API_KEYS（或 DEEPSEEK_API_KEY）或 Gpt_ApiKey",
     },
     {
       label: "SES",
@@ -121,6 +123,45 @@ function collectChecks(): ServiceCheck[] {
       hint: "TENCENT_CLOUD_KEY_ID, TENCENT_CLOUD_KEY（邮件可选）",
     },
   ];
+}
+
+/** 只打印现行主 key，避免兼容旧名刷 ❌ */
+function logPrimaryEnvDetails(): void {
+  console.info(`${LOG} ===== 关键变量 =====`);
+  const rows: Array<[string, string | undefined, string?]> = [
+    ["TURSO_DATABASE_URL", process.env.TURSO_DATABASE_URL],
+    ["TURSO_AUTH_TOKEN", process.env.TURSO_AUTH_TOKEN],
+    ["RENDER_KV", process.env.RENDER_KV],
+    ["COSMOS_ENDPOINT", process.env.COSMOS_ENDPOINT],
+    ["COSMOS_KEY", process.env.COSMOS_KEY],
+    ["AZURE_BLOB_CONNECTION_STRING", process.env.AZURE_BLOB_CONNECTION_STRING],
+    ["DEEPSEEK_API_KEYS", process.env.DEEPSEEK_API_KEYS],
+    ["DEEPSEEK_API_KEY", process.env.DEEPSEEK_API_KEY],
+    ["Gpt_ApiKey", process.env.Gpt_ApiKey],
+    ["TENCENT_CLOUD_KEY_ID", process.env.TENCENT_CLOUD_KEY_ID],
+    ["TENCENT_CLOUD_KEY", process.env.TENCENT_CLOUD_KEY],
+  ];
+  for (const [key, value, def] of rows) {
+    if (value?.trim()) {
+      console.info(`${LOG}   ${key}=${mask(key, value)}`);
+    } else if (def) {
+      console.info(`${LOG}   ${key}=(默认 ${def})`);
+    } else if (
+      key === "DEEPSEEK_API_KEY" &&
+      process.env.DEEPSEEK_API_KEYS?.trim()
+    ) {
+      // 有 KEYS 时不报单 key 缺失
+      continue;
+    } else if (
+      key === "DEEPSEEK_API_KEYS" &&
+      process.env.DEEPSEEK_API_KEY?.trim()
+    ) {
+      continue;
+    } else {
+      console.info(`${LOG}   ${key}=❌ 缺失`);
+    }
+  }
+  console.info(`${LOG} =================`);
 }
 
 /** 启动时加载 Render Secret File + 一行摘要诊断 */
@@ -140,6 +181,8 @@ export function ensureWorkerEnv(): void {
   if (secretApplied > 0) {
     console.info(`${LOG} secret file: +${secretApplied} keys`);
   }
+
+  logPrimaryEnvDetails();
 
   const failed = checks.filter((c) => !c.ok);
   for (const c of failed) {
