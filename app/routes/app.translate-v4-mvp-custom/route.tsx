@@ -23,7 +23,6 @@ import { formatV4CreateTasksMessage, translateV4Message } from "~/routes/app.tra
 import { localeRegionCode } from "~/routes/app.translate-v4/localeDisplay";
 import { CreateTaskCard } from "~/routes/app.translate-v4/components/CreateTaskCard";
 import { CreateTaskConfirmModal } from "~/routes/app.translate-v4/components/CreateTaskConfirmModal";
-import { CreateTaskQuotaGateModal } from "~/routes/app.translate-v4/components/CreateTaskQuotaGateModal";
 import { v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
 import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import {
@@ -146,10 +145,6 @@ export default function TranslateV4MvpCustomRoute() {
   const [, setQuotaLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
-  const [createQuotaGateOpen, setCreateQuotaGateOpen] = useState<"trial" | "pricing" | null>(
-    null,
-  );
-
   const [targets, setTargets] = useState<string[]>(initialTargets);
   const [modules, setModules] = useState<string[]>(initialModules);
   const [aiModel, setAiModel] = useState<string>(initialAiModel);
@@ -306,13 +301,8 @@ export default function TranslateV4MvpCustomRoute() {
       return;
     }
 
-    if (createQuotaGateMode !== null) {
-      setCreateQuotaGateOpen(createQuotaGateMode);
-      return;
-    }
-
     setCreateConfirmOpen(true);
-  }, [createQuotaGateMode, createQuotaGatePending, t]);
+  }, [createQuotaGatePending, t]);
 
   const handleCreateConfirm = useCallback(async () => {
     if (createQuotaGatePending) {
@@ -430,11 +420,6 @@ export default function TranslateV4MvpCustomRoute() {
           />
         </BlockStack>
       </div>
-      <CreateTaskQuotaGateModal
-        open={createQuotaGateOpen !== null}
-        mode={createQuotaGateOpen ?? "pricing"}
-        onClose={() => setCreateQuotaGateOpen(null)}
-      />
       <CreateTaskConfirmModal
         open={createConfirmOpen}
         creating={creating}
@@ -448,6 +433,7 @@ export default function TranslateV4MvpCustomRoute() {
         sourceLocale={primaryLocale}
         estimate={taskEstimate}
         scenario={createConfirmScenario}
+        quotaOfferMode={hasPaidPlan ? "paid" : isNew === true ? "trial" : "pricing"}
         onClose={() => setCreateConfirmOpen(false)}
         onConfirmCreate={handleCreateConfirm}
         onBeforeBilling={persistCreateTaskDraft}

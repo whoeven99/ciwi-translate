@@ -29,9 +29,9 @@ import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import type { CoverageSummary } from "~/server/translateV4/coverage.server";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import {
+  DEFAULT_AI_MODEL,
   DEFAULT_MODULE_KEYS,
 } from "~/routes/app.translate-v4/constants";
-import { CreateTaskQuotaGateModal } from "~/routes/app.translate-v4/components/CreateTaskQuotaGateModal";
 import {
   buildUntranslatedRatioByLocale,
   type CreateTaskEstimateView,
@@ -363,9 +363,6 @@ export default function TranslateV4MvpRoute() {
     searchParams.get("tab") === "queue" ? "queue" : "recommended",
   );
   const [coverageDetailOpen, setCoverageDetailOpen] = useState(false);
-  const [createQuotaGateOpen, setCreateQuotaGateOpen] = useState<"trial" | "pricing" | null>(
-    null,
-  );
   const [createConfirmConfig, setCreateConfirmConfig] = useState<PendingCreateConfig | null>(
     null,
   );
@@ -579,7 +576,7 @@ export default function TranslateV4MvpRoute() {
   const createTasksWithConfig = useCallback(async ({
     nextTargets,
     nextModules,
-    nextAiModel = "gpt-4o-mini",
+    nextAiModel = DEFAULT_AI_MODEL,
     nextIsCover = false,
     nextIsHandle = false,
     nextIncludeLiquid = false,
@@ -718,11 +715,6 @@ export default function TranslateV4MvpRoute() {
       return;
     }
 
-    if (createQuotaGateMode !== null) {
-      setCreateQuotaGateOpen(createQuotaGateMode);
-      return;
-    }
-
     if (remainingCredits == null) {
       message.info(t("v4.create.quotaUnavailable"));
       return;
@@ -733,7 +725,7 @@ export default function TranslateV4MvpRoute() {
       recommendationId: item.id,
       targets: item.targets,
       modules: item.modules,
-      aiModel: "gpt-4o-mini",
+      aiModel: DEFAULT_AI_MODEL,
       isCover: false,
       isHandle: false,
       includeLiquid: false,
@@ -749,7 +741,6 @@ export default function TranslateV4MvpRoute() {
       },
     });
   }, [
-    createQuotaGateMode,
     createQuotaGatePending,
     recommendationEstimates,
     remainingCredits,
@@ -1157,24 +1148,20 @@ export default function TranslateV4MvpRoute() {
           </div>
         </Modal.Section>
       </Modal>
-      <CreateTaskQuotaGateModal
-        open={createQuotaGateOpen !== null}
-        mode={createQuotaGateOpen ?? "pricing"}
-        onClose={() => setCreateQuotaGateOpen(null)}
-      />
       <CreateTaskConfirmModal
         open={createConfirmConfig !== null}
         creating={creating}
         targetOptions={targetOptions}
         targets={createConfirmConfig?.targets ?? []}
         modules={createConfirmConfig?.modules ?? []}
-        aiModel={createConfirmConfig?.aiModel ?? "gpt-4o-mini"}
+        aiModel={createConfirmConfig?.aiModel ?? DEFAULT_AI_MODEL}
         isCover={createConfirmConfig?.isCover ?? false}
         isHandle={createConfirmConfig?.isHandle ?? false}
         includeLiquid={createConfirmConfig?.includeLiquid ?? false}
         sourceLocale={primaryLocale}
         estimate={createConfirmConfig?.estimate ?? null}
         scenario={createConfirmScenario}
+        quotaOfferMode={hasPaidPlan ? "paid" : isNew === true ? "trial" : "pricing"}
         onClose={() => {
           if (!creating) {
             setCreateConfirmConfig(null);
