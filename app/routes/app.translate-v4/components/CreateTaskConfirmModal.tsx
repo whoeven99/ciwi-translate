@@ -254,6 +254,23 @@ export function CreateTaskConfirmModal({
     shortfallCredits > 0 ? recommendCreditsPack(shortfallCredits) : null;
   const recommendedPlan =
     shortfallCredits > 0 ? recommendPlanForShortfall(shortfallCredits) : null;
+  const subscriptionBenefitValue =
+    recommendedPlan &&
+    (scenario === "insufficient_trial" || scenario === "insufficient_pricing")
+      ? t("pricing.launchCredits", {
+          credits: formatCreditsFull(recommendedPlan.launchCredits),
+          defaultValue: "+{{credits}} Launch Credits (first subscribe only)",
+        })
+      : null;
+  const subscriptionBenefitCaption =
+    recommendedPlan &&
+    (scenario === "insufficient_trial" || scenario === "insufficient_pricing")
+      ? t("v4.createTask.confirmRecommendedPlanMonthlyValue", {
+          plan: recommendedPlan.title,
+          monthly: formatCreditsFull(recommendedPlan.monthlyCredits),
+          defaultValue: "{{plan}} · {{monthly}} credits/month",
+        })
+      : null;
 
   const primaryActionLabel = isReady
     ? t("v4.createTask.confirmStartNow")
@@ -511,6 +528,28 @@ export function CreateTaskConfirmModal({
 
           {!isReady && scenario !== "insufficient_paid" ? (
             <InfoCard title={offerTitle(t, scenario)} highlighted>
+              <div style={offerDescriptionStyle}>
+                {offerDescription(t, scenario)}
+              </div>
+              {subscriptionBenefitValue ? (
+                <div style={subscriptionBenefitStyle}>
+                  <div style={subscriptionBenefitLabelStyle}>
+                    {t("pricing.launchCreditsRow", {
+                      defaultValue: "Launch Credits (first subscribe)",
+                    })}
+                  </div>
+                  <div style={subscriptionBenefitValueStyle}>
+                    {subscriptionBenefitValue}
+                  </div>
+                  {subscriptionBenefitCaption ? (
+                    <div style={subscriptionBenefitCaptionStyle}>
+                      {t("v4.createTask.confirmRecommendedPlan")}:
+                      {" "}
+                      {subscriptionBenefitCaption}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div style={offerFeatureGridStyle}>
                 {offerFeatures(t, scenario).map((feature) => (
                   <div key={feature} style={offerFeatureItemStyle}>
@@ -656,6 +695,18 @@ function offerTitle(t: TranslateFn, scenario: CreateTaskConfirmScenario): string
   return scenario === "insufficient_trial"
     ? t("v4.createTask.confirmTrialOfferTitle")
     : t("v4.createTask.confirmPricingOfferTitle");
+}
+
+function offerDescription(
+  t: TranslateFn,
+  scenario: CreateTaskConfirmScenario,
+): string {
+  if (scenario === "insufficient_paid") {
+    return t("v4.createTask.confirmPaidOfferDesc");
+  }
+  return scenario === "insufficient_trial"
+    ? t("v4.createTask.confirmTrialOfferDesc")
+    : t("v4.createTask.confirmPricingOfferDesc");
 }
 
 function offerFeatures(
@@ -996,6 +1047,45 @@ const offerFeatureGridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
   gap: 12,
+} as const;
+
+const offerDescriptionStyle = {
+  marginBottom: 14,
+  color: v4Colors.textMuted,
+  fontSize: 14,
+  lineHeight: "22px",
+} as const;
+
+const subscriptionBenefitStyle = {
+  marginBottom: 14,
+  padding: "14px 16px",
+  borderRadius: 16,
+  border: "1px solid rgba(122, 60, 255, 0.18)",
+  background: "linear-gradient(180deg, rgba(122, 60, 255, 0.08) 0%, rgba(33, 128, 255, 0.04) 100%)",
+} as const;
+
+const subscriptionBenefitLabelStyle = {
+  marginBottom: 6,
+  color: "#7a3cff",
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: "18px",
+  letterSpacing: "0.02em",
+  textTransform: "uppercase",
+} as const;
+
+const subscriptionBenefitValueStyle = {
+  color: v4Colors.text,
+  fontSize: 16,
+  fontWeight: 700,
+  lineHeight: "24px",
+} as const;
+
+const subscriptionBenefitCaptionStyle = {
+  marginTop: 8,
+  color: v4Colors.textMuted,
+  fontSize: 13,
+  lineHeight: "20px",
 } as const;
 
 const offerFeatureItemStyle = {
