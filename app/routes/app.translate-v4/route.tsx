@@ -1034,6 +1034,7 @@ export default function AppTranslateV4() {
       <CreateTaskConfirmModal
         open={createConfirmOpen}
         creating={creating}
+          planType={planType}
         targetOptions={targetOptions}
         targets={targets}
         modules={moduleKeys}

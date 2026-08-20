@@ -27,6 +27,7 @@ type CreateTaskQuotaOfferMode = "paid" | "trial" | "pricing";
 type Props = {
   open: boolean;
   creating: boolean;
+  planType?: string | null;
   targetOptions: ShopLocaleOption[];
   targets: string[];
   modules: string[];
@@ -61,6 +62,7 @@ type OfferFeatureItem = {
 export function CreateTaskConfirmModal({
   open,
   creating,
+  planType,
   targetOptions,
   targets,
   modules,
@@ -238,6 +240,7 @@ export function CreateTaskConfirmModal({
   const isReady = scenario === "ready";
   const isInsufficientPaid = scenario === "insufficient_paid";
   const isTrialOffer = scenario === "insufficient_trial";
+  const isInsufficientPricing = scenario === "insufficient_pricing";
   const showTaskDetails = isReady;
   const hasPositiveCredits = remainingCredits != null && remainingCredits > 0;
   const hasNonPositiveCredits = remainingCredits != null && remainingCredits <= 0;
@@ -245,6 +248,17 @@ export function CreateTaskConfirmModal({
   const scenarioMeta = getScenarioMeta(t, scenario, canStartPartial);
   const recommendedPlan =
     shortfallCredits > 0 ? recommendPlanForShortfall(shortfallCredits) : null;
+  const recommendedPaidUpgradePlan =
+    scenario === "insufficient_paid" && !canStartPartial
+      ? recommendPaidUpgradePlan({
+          currentPlanType: planType ?? null,
+          estimatedCredits,
+        })
+      : null;
+  const showPaidUpgradeAction =
+    scenario === "insufficient_paid" &&
+    !canStartPartial &&
+    recommendedPaidUpgradePlan != null;
   const subscriptionBenefitValue =
     recommendedPlan &&
     scenario === "insufficient_pricing"
@@ -272,16 +286,22 @@ export function CreateTaskConfirmModal({
         ? t("v4.createTask.confirmBuyCreditsAndStart")
         : isTrialOffer
           ? t("v4.createTask.confirmTrialAndStart")
-          : t("v4.createTask.confirmSubscribeAndStart");
+          : t("v4.createTask.confirmBuyCreditsOnly");
   const secondaryActionLabel = isReady
     ? null
     : canStartPartial
       ? isTrialOffer
         ? t("v4.createTask.confirmTrialAndStart")
-        : t("v4.createTask.confirmBuyCreditsOnly")
-      : isInsufficientPaid || isTrialOffer
-        ? t("v4.createTask.confirmViewPlans")
-        : t("v4.createTask.confirmBuyCreditsOnly");
+        : scenario === "insufficient_pricing"
+          ? t("v4.createTask.confirmViewPlans")
+          : t("v4.createTask.confirmBuyCreditsOnly")
+      : isInsufficientPaid
+        ? showPaidUpgradeAction
+          ? t("v4.createTask.confirmViewPlans")
+          : null
+        : isTrialOffer
+          ? t("v4.createTask.confirmViewPlans")
+        : null;
   const showTrialTextLink =
     isTrialOffer && !canStartPartial && secondaryActionLabel != null;
 
@@ -358,6 +378,11 @@ export function CreateTaskConfirmModal({
       handleTrialAction();
       return;
     }
+    if (isInsufficientPricing) {
+      onBeforeBilling?.();
+      onBuyCredits(estimatedCredits);
+      return;
+    }
     onBeforeBilling?.();
     const returnPath = buildReturnPathForPlan();
     onClose();
@@ -372,11 +397,34 @@ export function CreateTaskConfirmModal({
         handleTrialAction();
         return;
       }
+      if (scenario === "insufficient_pricing") {
+        onBeforeBilling?.();
+        const returnPath = buildReturnPathForPlan();
+        onClose();
+        navigate(
+          returnPath
+            ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}`
+            : "/app/pricing",
+        );
+        return;
+      }
       onBeforeBilling?.();
       onBuyCredits(estimatedCredits);
       return;
     }
-    if (isInsufficientPaid || isTrialOffer) {
+    if (isInsufficientPaid) {
+      if (!showPaidUpgradeAction) return;
+      onBeforeBilling?.();
+      const returnPath = buildReturnPathForPlan();
+      onClose();
+      navigate(
+        returnPath
+          ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}`
+          : "/app/pricing",
+      );
+      return;
+    }
+    if (isTrialOffer) {
       onBeforeBilling?.();
       const returnPath = buildReturnPathForPlan();
       onClose();
@@ -709,9 +757,9 @@ function resolveScenarioFromOfferMode(
 }
 
 const PLAN_RECOMMENDATIONS = [
-  { title: "Basic", monthlyCredits: 1500000, launchCredits: 4000000 },
-  { title: "Pro", monthlyCredits: 3000000, launchCredits: 8000000 },
-  { title: "Premium", monthlyCredits: 8000000, launchCredits: 16000000 },
+  { title: "Basic", tier: "basic", monthlyCredits: 1500000, launchCredits: 4000000 },
+  { title: "Pro", tier: "pro", monthlyCredits: 3000000, launchCredits: 8000000 },
+  { title: "Premium", tier: "premium", monthlyCredits: 8000000, launchCredits: 16000000 },
 ] as const;
 
 function recommendPlanForShortfall(shortfallCredits: number) {
@@ -721,6 +769,44 @@ function recommendPlanForShortfall(shortfallCredits: number) {
     ) ??
     PLAN_RECOMMENDATIONS[PLAN_RECOMMENDATIONS.length - 1] ??
     null
+  );
+}
+
+function normalizePaidPlanTier(planType: string | null): "basic" | "pro" | "premium" | null {
+  if (!planType) return null;
+
+  const normalized = planType.trim().toLowerCase();
+  if (normalized.startsWith("basic")) return "basic";
+  if (normalized === "pro" || normalized === "professional" || normalized.startsWith("pro-")) {
+    return "pro";
+  }
+  if (
+    normalized.startsWith("premium") ||
+    normalized === "enterprise" ||
+    normalized === "unlimited"
+  ) {
+    return "premium";
+  }
+  return null;
+}
+
+function recommendPaidUpgradePlan(params: {
+  currentPlanType: string | null;
+  estimatedCredits: number | null;
+}) {
+  const { currentPlanType, estimatedCredits } = params;
+  if (estimatedCredits == null || estimatedCredits <= 0) return null;
+
+  const currentTier = normalizePaidPlanTier(currentPlanType);
+  if (!currentTier) return null;
+
+  const currentIndex = PLAN_RECOMMENDATIONS.findIndex((plan) => plan.tier === currentTier);
+  if (currentIndex < 0) return null;
+
+  return (
+    PLAN_RECOMMENDATIONS.slice(currentIndex + 1).find(
+      (plan) => plan.monthlyCredits >= estimatedCredits,
+    ) ?? null
   );
 }
 

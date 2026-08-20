@@ -839,19 +839,22 @@ export async function LanguageSelectorTakeEffect(
   if (selectorFlag) {
     selectorFlag.dataset.enabled = data?.includedFlag ? "true" : "false";
   }
-  if (data?.includedFlag) {
-    const languageCode = ciwiBlock.querySelector('input[name="language_code"]')?.value;
-    const flagUrl = window.languageLocaleData?.[languageCode]?.countries?.[0];
-    updateLanguageSelectorFlag(ciwiBlock, flagUrl);
-  } else {
-    updateLanguageSelectorFlag(ciwiBlock, "");
-  }
+  syncMarketFlags(data, ciwiBlock);
 }
 
-// 语言国旗渲染（依赖 24KB 的 languageLocaleData）。
-// 从 LanguageSelectorTakeEffect 拆出，便于按需（空闲/交互）延迟渲染，
-// 把 24KB 数据移出每页关键路径。
-let _languageFlagsRendered = false;
+function buildCountryFlagUrl(countryCode) {
+  const normalizedCountryCode = String(countryCode || "")
+    .trim()
+    .toUpperCase();
+  if (!normalizedCountryCode) return "";
+
+  return `https://img.bogdatech.com/app/${normalizedCountryCode}.webp`;
+}
+
+function getCurrentMarketFlagUrl(ciwiBlock) {
+  const countryCode = ciwiBlock?.querySelector('input[name="country_code"]')?.value;
+  return buildCountryFlagUrl(countryCode);
+}
 
 export function updateLanguageSelectorFlag(ciwiBlock, flagUrl) {
   const selectorFlag = ciwiBlock.querySelector("#language-selector-flag");
@@ -879,76 +882,46 @@ export function updateLanguageSelectorFlag(ciwiBlock, flagUrl) {
   }
 }
 
-export function renderLanguageFlags(data, ciwiBlock) {
-  if (_languageFlagsRendered) return;
-  if (!data?.includedFlag) return;
-  const languageLocaleData = window.languageLocaleData || null;
-  if (!languageLocaleData) return; // 数据尚未加载，稍后重试
-
-  const language = ciwiBlock.querySelector('input[name="language_code"]')?.value;
-  const countryCode = languageLocaleData?.[language]?.countries?.[0];
+export function syncMarketFlags(data, ciwiBlock) {
   const mainLanguageFlag = ciwiBlock.querySelector("#main-language-flag");
   const translateFloatBtnIcon = ciwiBlock.querySelector(
     "#translate-float-btn-icon",
   );
+  const flagUrl = data?.includedFlag ? getCurrentMarketFlagUrl(ciwiBlock) : "";
 
-  updateLanguageSelectorFlag(ciwiBlock, countryCode);
+  updateLanguageSelectorFlag(ciwiBlock, flagUrl);
 
-  if (
-    data?.includedFlag &&
-    mainLanguageFlag &&
-    countryCode &&
-    (data.languageSelector || data.currencySelector)
-  ) {
-    mainLanguageFlag.addEventListener(
-      "load",
-      () => syncCompactSwitcherLayout(ciwiBlock),
-      { once: true },
-    );
-    mainLanguageFlag.src = countryCode;
-    mainLanguageFlag.hidden = false;
+  if (mainLanguageFlag) {
+    if (flagUrl && (data.languageSelector || data.currencySelector)) {
+      mainLanguageFlag.addEventListener(
+        "load",
+        () => syncCompactSwitcherLayout(ciwiBlock),
+        { once: true },
+      );
+      mainLanguageFlag.src = flagUrl;
+      mainLanguageFlag.hidden = false;
+    } else {
+      mainLanguageFlag.hidden = true;
+    }
   }
-  if (
-    data?.includedFlag &&
-    translateFloatBtnIcon &&
-    countryCode &&
-    !data.languageSelector &&
-    !data.currencySelector
-  ) {
-    translateFloatBtnIcon.src = countryCode;
-    translateFloatBtnIcon.hidden = false;
+  if (translateFloatBtnIcon) {
+    if (flagUrl && !data.languageSelector && !data.currencySelector) {
+      translateFloatBtnIcon.src = flagUrl;
+      translateFloatBtnIcon.hidden = false;
+    } else {
+      translateFloatBtnIcon.hidden = true;
+    }
   }
   const mainBoxText = ciwiBlock.querySelector(".main_box_text");
   const mainBox = ciwiBlock.querySelector("#main-box");
   if (mainBox) {
     mainBox.classList.toggle(
       "has-flag",
-      Boolean(mainBoxText && mainLanguageFlag && !mainLanguageFlag.hidden && countryCode),
+      Boolean(mainBoxText && mainLanguageFlag && !mainLanguageFlag.hidden && flagUrl),
     );
   }
 
   syncCompactSwitcherLayout(ciwiBlock);
-
-  _languageFlagsRendered = true;
-}
-
-// 按需注入 language-locale-data.js（单例 Promise）。URL 由 liquid 的 #ciwiLocaleDataUrl 提供。
-let _localeDataPromise = null;
-
-export function ensureLanguageLocaleData() {
-  if (window.languageLocaleData)
-    return Promise.resolve(window.languageLocaleData);
-  if (_localeDataPromise) return _localeDataPromise;
-  const url = document.querySelector("#ciwiLocaleDataUrl")?.value;
-  if (!url) return Promise.resolve(null);
-  _localeDataPromise = new Promise((resolve) => {
-    const s = document.createElement("script");
-    s.src = url;
-    s.onload = () => resolve(window.languageLocaleData || null);
-    s.onerror = () => resolve(null);
-    document.head.appendChild(s);
-  });
-  return _localeDataPromise;
 }
 
 // 保存所有我们替换过的 img 以及“替换后的最终值”
@@ -2545,7 +2518,6 @@ export class CiwiswitcherForm extends HTMLElement {
     const select = event.currentTarget;
     const value = select?.value;
     const selectorType = select?.dataset.type;
-    const languageLocaleData = window.languageLocaleData || null;
     const shouldClosePanel = !this.isDirectSelectorMode();
     const closePanelAfterSelection = () => {
       if (!shouldClosePanel) return;
@@ -2557,18 +2529,7 @@ export class CiwiswitcherForm extends HTMLElement {
     if (selectorType === "language") {
       if (!value || this.elements.languageInput.value == value) return;
       this.elements.languageInput.value = value;
-      const flag = languageLocaleData?.[value]?.countries?.[0];
-      updateLanguageSelectorFlag(this.elements.ciwiBlock, flag);
-      const mainBoxFlag = this.querySelector("#main-language-flag");
-      const translateFloatBtnIcon = this.querySelector("#translate-float-btn-icon");
-      if (mainBoxFlag && flag) {
-        mainBoxFlag.src = flag;
-        mainBoxFlag.hidden = false;
-      }
-      if (translateFloatBtnIcon && flag) {
-        translateFloatBtnIcon.src = flag;
-        translateFloatBtnIcon.hidden = false;
-      }
+      syncMarketFlags(this.data, this.elements.ciwiBlock);
     } else if (selectorType === "currency") {
       if (!value || this.elements.currencyInput.value == value) return;
       this.elements.currencyInput.value = value;

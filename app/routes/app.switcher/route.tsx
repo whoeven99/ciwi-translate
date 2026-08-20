@@ -49,7 +49,6 @@ type PreviewLanguageOption = {
   iso_code: string;
   name: string;
   localeName: string;
-  flag: string;
 };
 
 type PreviewCurrencyOption = {
@@ -90,19 +89,16 @@ const previewLanguages: PreviewLanguageOption[] = [
     iso_code: "en",
     name: "English",
     localeName: "English",
-    flag: "/flags/GB.webp",
   },
   {
     iso_code: "kr",
     name: "Korean",
     localeName: "한국어",
-    flag: "/flags/KR.webp",
   },
   {
     iso_code: "fr",
     name: "French",
     localeName: "Français",
-    flag: "/flags/FR.webp",
   },
 ];
 
@@ -123,6 +119,17 @@ const previewCurrencies: PreviewCurrencyOption[] = [
     localeName: "CNY",
   },
 ];
+
+const previewMarketCountryByCurrency: Record<string, string> = {
+  USD: "US",
+  EUR: "FR",
+  CNY: "CN",
+};
+
+function buildPreviewFlagUrl(countryCode: string): string {
+  const normalizedCountryCode = countryCode.trim().toUpperCase();
+  return `https://img.bogdatech.com/app/${normalizedCountryCode}.webp`;
+}
 
 const switcherComparableKeys: Array<keyof SwitcherEditData> = [
   "shopName",
@@ -280,6 +287,11 @@ const Index = () => {
       ) ?? previewCurrencies[0],
     [selectedCurrencyCode],
   );
+  const previewMarketFlagUrl = useMemo(() => {
+    const previewMarketCountryCode =
+      previewMarketCountryByCurrency[selectedCurrencyCode] ?? "GB";
+    return buildPreviewFlagUrl(previewMarketCountryCode);
+  }, [selectedCurrencyCode]);
   const selectorPreviewOffset = useMemo(() => {
     const rawValue = Number(positionData);
     const normalizedValue = Number.isFinite(rawValue)
@@ -351,6 +363,65 @@ const Index = () => {
     selectorPosition,
     shouldUseSidebarWidget,
   ]);
+  const previewNativeSelectorWrapperStyle = useMemo(
+    () => ({
+      width: "100%",
+      position: "relative" as const,
+      borderRadius: "10px",
+      overflow: "hidden",
+      border: `1px solid ${optionBorderColor}`,
+      background: backgroundColor,
+      boxSizing: "border-box" as const,
+    }),
+    [backgroundColor, optionBorderColor],
+  );
+  const previewNativeSelectorStyle = useMemo(
+    () => ({
+      display: "flex",
+      alignItems: "center",
+      width: "100%",
+      minHeight: "44px",
+      padding: isIncludedFlag ? "0 38px 0 42px" : "0 38px 0 14px",
+      boxSizing: "border-box" as const,
+      fontSize: "14px",
+      lineHeight: 1.4,
+      color: fontColor,
+      whiteSpace: "nowrap" as const,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      position: "relative" as const,
+    }),
+    [fontColor, isIncludedFlag],
+  );
+  const previewNativeCurrencyStyle = useMemo(
+    () => ({
+      ...previewNativeSelectorStyle,
+      padding: "0 38px 0 14px",
+    }),
+    [previewNativeSelectorStyle],
+  );
+  const previewNativeArrowStyle = {
+    position: "absolute" as const,
+    top: "50%",
+    right: 14,
+    width: 8,
+    height: 8,
+    borderRight: "1.5px solid rgba(17, 24, 39, 0.68)",
+    borderBottom: "1.5px solid rgba(17, 24, 39, 0.68)",
+    transform: "translateY(-65%) rotate(45deg)",
+    pointerEvents: "none" as const,
+  };
+  const previewNativeFlagStyle = {
+    position: "absolute" as const,
+    left: 14,
+    top: "50%",
+    width: 18,
+    height: 13,
+    objectFit: "cover" as const,
+    borderRadius: 3,
+    transform: "translateY(-50%)",
+    boxShadow: "0 0 0 1px rgba(15, 23, 42, 0.06)",
+  };
   const isDirty = useMemo(
     () => !areSwitcherConfigsEqual(editData, originalData),
     [editData, originalData],
@@ -833,7 +904,22 @@ const Index = () => {
                       </div>
                       <div style={rowBetweenStyle}>
                         <div className={styles.switcher_row_label}>
-                          <Text strong>{t("Include flag")}</Text>
+                          <Text strong>{t("Show current market flag")}</Text>
+                          <Text
+                            style={{
+                              display: "block",
+                              color: "var(--app-color-text-secondary)",
+                              marginTop: 4,
+                            }}
+                          >
+                            {currencySelector && !languageSelector
+                              ? t(
+                                  "Currency-only mode does not display a flag. Switch to a selector type that has a visible flag slot to enable this setting.",
+                                )
+                              : t(
+                                  "Display the current market flag in the switcher trigger and language selector.",
+                                )}
+                          </Text>
                         </div>
                         <Switch
                           disabled={!languageSelector && currencySelector}
@@ -1048,211 +1134,232 @@ const Index = () => {
                             </button>
                           </div>
                         ) : null}
-                        <div
-                          style={{
-                            display: showLanguagePreview ? "block" : "none",
-                            gap: "10px",
-                          }}
-                        >
-                          <div
-                            className={styles.custom_selector}
-                            data-type="language"
-                            onClick={() => handlePreviewMenuClick("language")}
-                          >
-                            <div
-                              className={styles.selector_header}
-                              data-type="language"
-                              style={{
-                                backgroundColor: backgroundColor,
-                                border: `1px solid ${optionBorderColor}`,
-                              }}
-                            >
-                              <div
-                                className={styles.selected_option}
-                                data-type="language"
-                              >
-                                {isIncludedFlag && (
+                        {isDirectSelectorPreview ? (
+                          <>
+                            {showLanguagePreview ? (
+                              <div style={previewNativeSelectorWrapperStyle}>
+                                {isIncludedFlag ? (
                                   <img
-                                    className={styles.country_flag}
-                                    src={selectedLanguage.flag}
+                                    src={previewMarketFlagUrl}
                                     alt=""
-                                    width="25%"
-                                    height="25%"
+                                    style={previewNativeFlagStyle}
                                   />
-                                )}
-                                <span
-                                  className={styles.selected_text}
-                                  data-type="language"
-                                >
+                                ) : null}
+                                <div style={previewNativeSelectorStyle}>
                                   {selectedLanguage.localeName}
-                                </span>
+                                </div>
+                                <div style={previewNativeArrowStyle} />
                               </div>
-                              <img
-                                id="currency-arrow-icon"
-                                className={styles.arrow_icon}
-                                src="/arrow.svg"
-                                alt="Arrow Icon"
-                                width="25%"
-                                height="25%"
-                              />
-                            </div>
+                            ) : null}
+                            {showCurrencyPreview ? (
+                              <div style={previewNativeSelectorWrapperStyle}>
+                                <div style={previewNativeCurrencyStyle}>
+                                  {selectedCurrency.localeName} ({selectedCurrency.symbol})
+                                </div>
+                                <div style={previewNativeArrowStyle} />
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
                             <div
-                              className={styles.options_container}
-                              data-type="language"
                               style={{
-                                bottom:
-                                  selectorPosition === "bottom_left" ||
-                                  selectorPosition === "bottom_right"
-                                    ? "100%"
-                                    : "auto",
-                                top:
-                                  selectorPosition === "top_left" ||
-                                  selectorPosition === "top_right"
-                                    ? "100%"
-                                    : "auto",
-                                display:
-                                  activePreviewMenu === "language"
-                                    ? "block"
-                                    : "none",
-                                backgroundColor: backgroundColor,
-                                zIndex: "2000",
+                                display: showLanguagePreview ? "block" : "none",
+                                gap: "10px",
                               }}
                             >
                               <div
-                                className={styles.options_list}
-                                style={{
-                                  backgroundColor: backgroundColor,
-                                  border: `1px solid ${optionBorderColor}`,
-                                }}
+                                className={styles.custom_selector}
+                                data-type="language"
+                                onClick={() => handlePreviewMenuClick("language")}
                               >
-                                {previewLanguages.map((language) => (
+                                <div
+                                  className={styles.selector_header}
+                                  data-type="language"
+                                  style={{
+                                    backgroundColor: backgroundColor,
+                                    border: `1px solid ${optionBorderColor}`,
+                                  }}
+                                >
                                   <div
-                                    className={styles.option_item}
-                                    data-value={language.iso_code}
+                                    className={styles.selected_option}
                                     data-type="language"
-                                    onClick={() =>
-                                      handleOptionClick(
-                                        "language",
-                                        language.iso_code,
-                                      )
-                                    }
-                                    key={language.iso_code}
                                   >
                                     {isIncludedFlag && (
                                       <img
                                         className={styles.country_flag}
-                                        src={language.flag}
+                                        src={previewMarketFlagUrl}
                                         alt=""
                                         width="25%"
                                         height="25%"
                                       />
                                     )}
-                                    <span className={styles.option_text}>
-                                      {language.localeName}
+                                    <span
+                                      className={styles.selected_text}
+                                      data-type="language"
+                                    >
+                                      {selectedLanguage.localeName}
                                     </span>
                                   </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            display: showCurrencyPreview ? "block" : "none",
-                            marginBottom: "10px",
-                          }}
-                        >
-                          <div
-                            className={styles.custom_selector}
-                            data-type="currency"
-                            onClick={() => handlePreviewMenuClick("currency")}
-                          >
-                            <div
-                              className={styles.selector_header}
-                              data-type="currency"
-                              style={{
-                                backgroundColor: backgroundColor,
-                                border: `1px solid ${optionBorderColor}`,
-                              }}
-                            >
-                              <div
-                                className={styles.selected_option}
-                                data-type="currency"
-                              >
-                                <span
-                                  className={styles.selected_text}
-                                  data-type="currency"
+                                  <img
+                                    id="currency-arrow-icon"
+                                    className={styles.arrow_icon}
+                                    src="/arrow.svg"
+                                    alt="Arrow Icon"
+                                    width="25%"
+                                    height="25%"
+                                  />
+                                </div>
+                                <div
+                                  className={styles.options_container}
+                                  data-type="language"
+                                  style={{
+                                    bottom:
+                                      selectorPosition === "bottom_left" ||
+                                      selectorPosition === "bottom_right"
+                                        ? "100%"
+                                        : "auto",
+                                    top:
+                                      selectorPosition === "top_left" ||
+                                      selectorPosition === "top_right"
+                                        ? "100%"
+                                        : "auto",
+                                    display:
+                                      activePreviewMenu === "language"
+                                        ? "block"
+                                        : "none",
+                                    backgroundColor: backgroundColor,
+                                    zIndex: "2000",
+                                  }}
                                 >
-                                  {selectedCurrency.localeName}
-                                  (
-                                  {selectedCurrency.symbol}
-                                  )
-                                </span>
+                                  <div
+                                    className={styles.options_list}
+                                    style={{
+                                      backgroundColor: backgroundColor,
+                                      border: `1px solid ${optionBorderColor}`,
+                                    }}
+                                  >
+                                    {previewLanguages.map((language) => (
+                                      <div
+                                        className={styles.option_item}
+                                        data-value={language.iso_code}
+                                        data-type="language"
+                                        onClick={() =>
+                                          handleOptionClick(
+                                            "language",
+                                            language.iso_code,
+                                          )
+                                        }
+                                        key={language.iso_code}
+                                      >
+                                        <span className={styles.option_text}>
+                                          {language.localeName}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
-                              <img
-                                id="currency-arrow-icon"
-                                className={styles.arrow_icon}
-                                src="/arrow.svg"
-                                alt="Arrow Icon"
-                                width="25%"
-                                height="25%"
-                              />
                             </div>
-
                             <div
-                              className={styles.options_container}
-                              data-type="currency"
                               style={{
-                                backgroundColor: backgroundColor,
-                                zIndex: "2000",
-                                display:
-                                  activePreviewMenu === "currency"
-                                    ? "block"
-                                    : "none",
-                                bottom:
-                                  selectorPosition === "bottom_left" ||
-                                  selectorPosition === "bottom_right"
-                                    ? "100%"
-                                    : "auto",
-                                top:
-                                  selectorPosition === "top_left" ||
-                                  selectorPosition === "top_right"
-                                    ? "100%"
-                                    : "auto",
+                                display: showCurrencyPreview ? "block" : "none",
+                                marginBottom: "10px",
                               }}
                             >
                               <div
-                                className={styles.options_list}
-                                style={{
-                                  backgroundColor: backgroundColor,
-                                  border: `1px solid ${optionBorderColor}`,
-                                }}
+                                className={styles.custom_selector}
+                                data-type="currency"
+                                onClick={() => handlePreviewMenuClick("currency")}
                               >
-                                {previewCurrencies.map((currency) => (
+                                <div
+                                  className={styles.selector_header}
+                                  data-type="currency"
+                                  style={{
+                                    backgroundColor: backgroundColor,
+                                    border: `1px solid ${optionBorderColor}`,
+                                  }}
+                                >
                                   <div
-                                    className={styles.option_item}
-                                    data-value={currency.iso_code}
+                                    className={styles.selected_option}
                                     data-type="currency"
-                                    key={currency.iso_code}
-                                    onClick={() =>
-                                      handleOptionClick(
-                                        "currency",
-                                        currency.iso_code,
-                                      )
-                                    }
                                   >
-                                    <span className={styles.option_text}>
-                                      {currency.localeName}
-                                    </span>
-                                    <span className={styles.currency_code}>
-                                      ({currency.symbol})
+                                    <span
+                                      className={styles.selected_text}
+                                      data-type="currency"
+                                    >
+                                      {selectedCurrency.localeName}
+                                      (
+                                      {selectedCurrency.symbol}
+                                      )
                                     </span>
                                   </div>
-                                ))}
+                                  <img
+                                    id="currency-arrow-icon"
+                                    className={styles.arrow_icon}
+                                    src="/arrow.svg"
+                                    alt="Arrow Icon"
+                                    width="25%"
+                                    height="25%"
+                                  />
+                                </div>
+
+                                <div
+                                  className={styles.options_container}
+                                  data-type="currency"
+                                  style={{
+                                    backgroundColor: backgroundColor,
+                                    zIndex: "2000",
+                                    display:
+                                      activePreviewMenu === "currency"
+                                        ? "block"
+                                        : "none",
+                                    bottom:
+                                      selectorPosition === "bottom_left" ||
+                                      selectorPosition === "bottom_right"
+                                        ? "100%"
+                                        : "auto",
+                                    top:
+                                      selectorPosition === "top_left" ||
+                                      selectorPosition === "top_right"
+                                        ? "100%"
+                                        : "auto",
+                                  }}
+                                >
+                                  <div
+                                    className={styles.options_list}
+                                    style={{
+                                      backgroundColor: backgroundColor,
+                                      border: `1px solid ${optionBorderColor}`,
+                                    }}
+                                  >
+                                    {previewCurrencies.map((currency) => (
+                                      <div
+                                        className={styles.option_item}
+                                        data-value={currency.iso_code}
+                                        data-type="currency"
+                                        key={currency.iso_code}
+                                        onClick={() =>
+                                          handleOptionClick(
+                                            "currency",
+                                            currency.iso_code,
+                                          )
+                                        }
+                                      >
+                                        <span className={styles.option_text}>
+                                          {currency.localeName}
+                                        </span>
+                                        <span className={styles.currency_code}>
+                                          ({currency.symbol})
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </div>
+                          </>
+                        )}
                       </div>
                     ) : null}
                     {isFloatingSelectorPreview ? (
@@ -1268,7 +1375,7 @@ const Index = () => {
                         {isIncludedFlag ? (
                           <img
                             className={styles.country_flag}
-                            src={selectedLanguage.flag}
+                            src={previewMarketFlagUrl}
                             alt=""
                             width="25%"
                             height="25%"
@@ -1354,7 +1461,7 @@ const Index = () => {
                         {isIncludedFlag ? (
                           <img
                             id="translate-float-btn-icon"
-                            src={selectedLanguage.flag}
+                            src={previewMarketFlagUrl}
                             alt=""
                             width="28"
                             height="20"

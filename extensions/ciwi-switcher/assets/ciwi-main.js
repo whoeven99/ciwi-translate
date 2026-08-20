@@ -11,8 +11,6 @@ import {
   HomeImageTranslate,
   CustomLiquidTextTranslate,
   CollectUntranslatedText,
-  renderLanguageFlags,
-  ensureLanguageLocaleData,
 } from "./ciwi-ui.js";
 import {
   getManualLocalizationPreference,
@@ -675,25 +673,6 @@ async function ciwiOnload() {
     ciwiBlock,
   );
 
-  // 国旗数据（24KB）按需加载：浏览器空闲时加载并渲染国旗；
-  // 若用户在此之前先接触切换器，则立即加载（先于 idle）。两条路径都只渲染一次。
-  if (isLanguageSelectorTakeEffect && configData?.includedFlag && !isInThemePreview) {
-    const loadFlags = () =>
-      ensureLanguageLocaleData().then(() =>
-        renderLanguageFlags(configData, ciwiBlock),
-      );
-    if ("requestIdleCallback" in window) {
-      window.requestIdleCallback(loadFlags, { timeout: 3000 });
-    } else {
-      setTimeout(loadFlags, 1200);
-    }
-    const mainBox = ciwiBlock.querySelector("#main-box");
-    const languageSelect = ciwiBlock.querySelector(".language_selector_header");
-    mainBox?.addEventListener("mouseenter", loadFlags, { once: true });
-    languageSelect?.addEventListener("mouseenter", loadFlags, { once: true });
-    languageSelect?.addEventListener("focus", loadFlags, { once: true });
-  }
-
   if (isInThemePreview) {
     renderPreviewCurrencySelector({
       ciwiBlock,
@@ -717,9 +696,6 @@ async function ciwiOnload() {
     "#translate-float-btn-text",
   );
   const translateFloatBtn = ciwiBlock.querySelector("#translate-float-btn");
-  const translateFloatBtnIcon = ciwiBlock.querySelector(
-    "#translate-float-btn-icon",
-  );
   const selectorBox = ciwiBlock.querySelector("#selector-box");
   const selectorBackdrop = ciwiBlock.querySelector("#selector-backdrop");
   const closeButtonWrapper = ciwiBlock.querySelector(".close_button_wrapper");
