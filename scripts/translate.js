@@ -4,15 +4,16 @@ import { fileURLToPath } from 'url';
 import { v2 } from '@google-cloud/translate';
 import dotenv from 'dotenv';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+dotenv.config({ path: path.join(__dirname, '../.env.worker.test') });
+dotenv.config();
+
 const { Translate } = v2;
-const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
+const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY || process.env.GOOGLE_CLOUD_API_KEY;
 if (!apiKey) {
-    throw new Error('GOOGLE_CLOUD_API_KEY environment variable is not set.');
+    throw new Error('GOOGLE_TRANSLATE_API_KEY (or GOOGLE_CLOUD_API_KEY) environment variable is not set.');
 }
 const translateClient = new Translate({ key: apiKey });
 
