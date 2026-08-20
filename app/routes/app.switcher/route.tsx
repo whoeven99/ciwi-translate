@@ -734,6 +734,7 @@ const Index = () => {
         : !languageSelector && !currencySelector
           ? "sidebar widget"
           : "currency";
+  const showMarketFlagSetting = switcherTypeValue !== "currency";
 
   const showPaidPlanHint =
     plan?.type == "Free" || typeof plan?.type === "undefined";
@@ -902,44 +903,30 @@ const Index = () => {
                           }}
                         />
                       </div>
-                      <div style={rowBetweenStyle}>
-                        <div className={styles.switcher_row_label}>
-                          <Text strong>{t("Show current market flag")}</Text>
-                          <Text
-                            style={{
-                              display: "block",
-                              color: "var(--app-color-text-secondary)",
-                              marginTop: 4,
+                      {showMarketFlagSetting ? (
+                        <div style={rowBetweenStyle}>
+                          <div className={styles.switcher_row_label}>
+                            <Text strong>{t("Show current market flag")}</Text>
+                          </div>
+                          <Switch
+                            checked={isIncludedFlag}
+                            onChange={(checked) => {
+                              handleEditData({ includedFlag: checked });
+                              report(
+                                {
+                                  status: checked ? 1 : 0,
+                                },
+                                {
+                                  action: "/app",
+                                  method: "post",
+                                  eventType: "click",
+                                },
+                                "switcher_style_flag",
+                              );
                             }}
-                          >
-                            {currencySelector && !languageSelector
-                              ? t(
-                                  "Currency-only mode does not display a flag. Switch to a selector type that has a visible flag slot to enable this setting.",
-                                )
-                              : t(
-                                  "Display the current market flag in the switcher trigger and language selector.",
-                                )}
-                          </Text>
+                          />
                         </div>
-                        <Switch
-                          disabled={!languageSelector && currencySelector}
-                          checked={isIncludedFlag}
-                          onChange={(checked) => {
-                            handleEditData({ includedFlag: checked });
-                            report(
-                              {
-                                status: checked ? 1 : 0,
-                              },
-                              {
-                                action: "/app",
-                                method: "post",
-                                eventType: "click",
-                              },
-                              "switcher_style_flag",
-                            );
-                          }}
-                        />
-                      </div>
+                      ) : null}
                       <div className={styles.switcher_style_fields}>
                         <div style={fieldColumnStyle}>
                           <Text>{t("Font Color:")}</Text>
