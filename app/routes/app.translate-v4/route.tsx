@@ -50,7 +50,7 @@ import {
 } from "./useCreateTaskEstimate";
 import { notifyTranslationStatsUpdated } from "~/lib/translationStatsSync";
 import { selectShopTargetLocales } from "~/lib/shopTargetLocales";
-import { isCurrentV4Job } from "./jobFilters";
+import { isCurrentV4Job, shouldPollV4Job } from "./jobFilters";
 import {
   finishClientLogTrace,
   startClientLogTrace,
@@ -90,7 +90,6 @@ const EMPTY_COVERAGE: CoverageSummary = {
   overallPercent: null,
   locales: [],
 };
-
 async function readJsonResponse<T = any>(res: Response): Promise<T> {
   const text = await res.text();
   if (!text.trim()) {
@@ -527,16 +526,6 @@ export default function AppTranslateV4() {
         ? "trial"
         : "pricing"
       : null;
-  const handleCreateRequest = useCallback(() => {
-    if (createQuotaGatePending) {
-      message.info(
-        t("Checking your trial eligibility. Please try again in a moment."),
-      );
-      return;
-    }
-    setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, t]);
-
   // After Shopify billing return: restore create-task selections and reopen confirm.
   useEffect(() => {
     if (billingDraftRestoredRef.current) return;
@@ -732,7 +721,7 @@ export default function AppTranslateV4() {
 
     const poll = () => {
       if (disposed) return;
-      const hasActive = jobsRef.current.some((j) => !j.isTerminal);
+      const hasActive = jobsRef.current.some(shouldPollV4Job);
       if (!hasActive) {
         stablePollCount = 0;
         timer = setTimeout(poll, 10_000);
@@ -740,7 +729,7 @@ export default function AppTranslateV4() {
       }
 
       const signature = jobsRef.current
-        .filter((j) => !j.isTerminal)
+        .filter(shouldPollV4Job)
         .map(
           (j) =>
             `${j.taskId}:${j.status}:${j.progressPercent ?? ""}:${j.updatedAt}`,
@@ -818,6 +807,21 @@ export default function AppTranslateV4() {
           ? "insufficient_trial"
           : "insufficient_pricing"
       : "ready";
+  const shouldSkipCreateConfirm = (remainingCredits ?? 0) > 30_000;
+
+  const handleCreateRequest = useCallback(() => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (shouldSkipCreateConfirm) {
+      void handleCreateConfirm();
+      return;
+    }
+    setCreateConfirmOpen(true);
+  }, [createQuotaGatePending, handleCreateConfirm, shouldSkipCreateConfirm, t]);
 
   useEffect(() => {
     if (spotlightTaskIds.length === 0) return;
@@ -862,7 +866,7 @@ export default function AppTranslateV4() {
         }}
       >
         <div className="v4-page" style={v4ContentStyle}>
-          <div>
+          <div className="v4-enter">
             <PageHeaderBar credits={remainingCredits} planType={planType} />
           </div>
 
@@ -1006,6 +1010,17 @@ export default function AppTranslateV4() {
                     spotlightTaskIds={spotlightTaskIds}
                     translateSlotBusy={translateSlotBusy}
                     loading={jobsLoading}
+                    historyReturnTo="/app/translate-v4?tab=tasks"
+                    emptyStateActionLabel={t("onboarding.action.createTask")}
+                    onEmptyStateAction={() => {
+                      setActiveWorkbenchTab("create");
+                      setTimeout(() => {
+                        createTaskSectionRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
+                      }, 0);
+                    }}
                     onBuyCredits={openTaskCreditsModal}
                     onAction={handleAction}
                   />
@@ -1029,6 +1044,7 @@ export default function AppTranslateV4() {
         sourceLocale={source}
         estimate={taskEstimate}
         scenario={createConfirmScenario}
+        quotaOfferMode={hasPaidPlan ? "paid" : isNew === true ? "trial" : "pricing"}
         previousTotalChars={
           typeof totalChars === "number" ? totalChars : undefined
         }
