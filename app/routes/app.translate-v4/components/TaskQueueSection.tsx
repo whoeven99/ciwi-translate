@@ -376,6 +376,9 @@ export function TaskQueueSection({
   spotlightTaskIds = [],
   translateSlotBusy,
   loading = false,
+  historyReturnTo = "/app/translate-v4",
+  emptyStateActionLabel,
+  onEmptyStateAction,
   onBuyCredits,
   onAction,
 }: {
@@ -384,6 +387,9 @@ export function TaskQueueSection({
   translateSlotBusy: boolean;
   /** 首帧骨架：数据到达前不要先闪「暂无任务」空态。 */
   loading?: boolean;
+  historyReturnTo?: string;
+  emptyStateActionLabel?: string;
+  onEmptyStateAction?: () => void;
   onBuyCredits: (job: TranslationJobProgressSummary) => void;
   onAction: Props["onAction"];
 }) {
@@ -423,7 +429,11 @@ export function TaskQueueSection({
         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <button
             type="button"
-            onClick={() => navigate("/app/translate-v4-history")}
+            onClick={() =>
+              navigate(
+                `/app/translate-v4-history?returnTo=${encodeURIComponent(historyReturnTo)}`,
+              )
+            }
             style={historyEntryButtonStyle}
           >
             {t("v4.tasks.openHistory", { count: historyJobs.length })}
@@ -504,6 +514,13 @@ export function TaskQueueSection({
             <Text as="p" variant="bodyMd" tone="subdued">
               {t("v4.tasks.noCurrentDesc")}
             </Text>
+            {emptyStateActionLabel && onEmptyStateAction ? (
+              <div style={{ marginTop: 8 }}>
+                <Button variant="primary" onClick={onEmptyStateAction}>
+                  {emptyStateActionLabel}
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : (

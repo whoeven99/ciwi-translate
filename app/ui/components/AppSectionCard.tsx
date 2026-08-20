@@ -7,6 +7,7 @@ interface AppSectionCardProps {
   extra?: ReactNode;
   children: ReactNode;
   bodyPadding?: string;
+  className?: string;
   style?: CSSProperties;
 }
 
@@ -48,12 +49,14 @@ export default function AppSectionCard({
   extra,
   children,
   bodyPadding = "16px",
+  className,
   style,
 }: AppSectionCardProps) {
   const hasHeader = title || description || extra;
 
   return (
     <Card
+      className={className}
       style={{
         width: "100%",
         border: "1px solid var(--app-color-border-secondary)",
