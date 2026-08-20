@@ -603,7 +603,6 @@ export default function TranslateV4MvpRoute() {
 
     let cancelled = false;
     void (async () => {
-      const next: Record<string, number | null> = {};
       for (const item of recommendations) {
         try {
           const res = await fetch("/api/translate-v4/estimate", {
@@ -621,13 +620,18 @@ export default function TranslateV4MvpRoute() {
             ok?: boolean;
             estimate?: { estimatedCredits?: number | null };
           }>(res);
-          next[item.id] = data.ok ? (data.estimate?.estimatedCredits ?? null) : null;
+          if (cancelled) return;
+          setRecommendationEstimates((current) => ({
+            ...current,
+            [item.id]: data.ok ? (data.estimate?.estimatedCredits ?? null) : null,
+          }));
         } catch {
-          next[item.id] = null;
+          if (cancelled) return;
+          setRecommendationEstimates((current) => ({
+            ...current,
+            [item.id]: null,
+          }));
         }
-      }
-      if (!cancelled) {
-        setRecommendationEstimates(next);
       }
     })();
 
@@ -838,7 +842,10 @@ export default function TranslateV4MvpRoute() {
       return;
     }
 
-    const estimatedCredits = recommendationEstimates[item.id] ?? null;
+    const cachedCredits = recommendationEstimates[item.id];
+    const hasCachedCredits =
+      typeof cachedCredits === "number" && Number.isFinite(cachedCredits);
+
     setCreateConfirmConfig({
       recommendationId: item.id,
       targets: item.targets,
@@ -848,22 +855,121 @@ export default function TranslateV4MvpRoute() {
       isHandle: false,
       includeLiquid: false,
       estimate: {
-        estimatedCredits,
-        remainingCredits: remainingCredits ?? 0,
+        estimatedCredits: hasCachedCredits ? cachedCredits : null,
+        remainingCredits,
         isUpperBound: true,
         needsMoreCredits:
-          estimatedCredits != null &&
-          remainingCredits != null &&
-          estimatedCredits > remainingCredits,
-        loading: false,
-        loaded: true,
+          hasCachedCredits && cachedCredits > remainingCredits,
+        loading: !hasCachedCredits,
+        loaded: hasCachedCredits,
       },
     });
+
+    if (hasCachedCredits) return;
+
+    try {
+      const res = await fetch("/api/translate-v4/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modules: item.modules,
+          targets: item.targets,
+          isCover: false,
+          includeLiquid: false,
+          untranslatedRatioByLocale,
+        }),
+      });
+      const data = await readJsonResponse<{
+        ok?: boolean;
+        estimate?: {
+          estimatedCredits?: number | null;
+          remainingCredits?: number;
+          isUpperBound?: boolean;
+          needsMoreCredits?: boolean;
+        };
+      }>(res);
+      const estimatedCredits = data.ok
+        ? (data.estimate?.estimatedCredits ?? null)
+        : null;
+
+      setRecommendationEstimates((current) => ({
+        ...current,
+        [item.id]: estimatedCredits,
+      }));
+
+      setCreateConfirmConfig((current) => {
+        if (!current || current.recommendationId !== item.id) return current;
+        return {
+          ...current,
+          estimate: {
+            estimatedCredits,
+            remainingCredits:
+              data.estimate?.remainingCredits ?? current.estimate?.remainingCredits ?? remainingCredits,
+            isUpperBound: data.estimate?.isUpperBound ?? true,
+            needsMoreCredits:
+              data.estimate?.needsMoreCredits ??
+              (estimatedCredits != null && estimatedCredits > remainingCredits),
+            loading: false,
+            loaded: true,
+          },
+        };
+      });
+    } catch (err) {
+      console.error("[translate-v4-mvp] confirm estimate failed:", err);
+      setCreateConfirmConfig((current) => {
+        if (!current || current.recommendationId !== item.id) return current;
+        return {
+          ...current,
+          estimate: {
+            estimatedCredits: null,
+            remainingCredits: current.estimate?.remainingCredits ?? remainingCredits,
+            isUpperBound: true,
+            needsMoreCredits: false,
+            loading: false,
+            loaded: true,
+          },
+        };
+      });
+    }
   }, [
     createQuotaGatePending,
     recommendationEstimates,
     remainingCredits,
     t,
+    untranslatedRatioByLocale,
+  ]);
+
+  useEffect(() => {
+    const recommendationId = createConfirmConfig?.recommendationId;
+    if (!recommendationId) return;
+    const cachedCredits = recommendationEstimates[recommendationId];
+    if (typeof cachedCredits !== "number" || !Number.isFinite(cachedCredits)) {
+      return;
+    }
+    if (createConfirmConfig.estimate?.estimatedCredits === cachedCredits) {
+      return;
+    }
+
+    setCreateConfirmConfig((current) => {
+      if (!current || current.recommendationId !== recommendationId) return current;
+      const remaining = current.estimate?.remainingCredits ?? remainingCredits ?? 0;
+      return {
+        ...current,
+        estimate: {
+          estimatedCredits: cachedCredits,
+          remainingCredits: remaining,
+          isUpperBound: true,
+          needsMoreCredits: cachedCredits > remaining,
+          loading: false,
+          loaded: true,
+        },
+      };
+    });
+  }, [
+    createConfirmConfig?.estimate?.estimatedCredits,
+    createConfirmConfig?.recommendationId,
+    recommendationEstimates,
+    remainingCredits,
   ]);
 
   const handleCreateConfirm = useCallback(async () => {
