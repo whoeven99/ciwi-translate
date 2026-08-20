@@ -256,6 +256,16 @@ const Index = () => {
     languageSelector || (!languageSelector && !currencySelector);
   const showCurrencyPreview =
     currencySelector || (!languageSelector && !currencySelector);
+  const shouldUseSidebarWidget = !languageSelector && !currencySelector;
+  const activeSelectorCount =
+    Number(Boolean(showLanguagePreview)) + Number(Boolean(showCurrencyPreview));
+  const isDirectSelectorPreview =
+    activeSelectorCount === 1 && !shouldUseSidebarWidget;
+  const isFloatingSelectorPreview =
+    activeSelectorCount > 1 && !shouldUseSidebarWidget;
+  const isOverlaySelectorPreview =
+    isFloatingSelectorPreview || shouldUseSidebarWidget;
+  const isSelectorBoxVisible = isDirectSelectorPreview || isSelectorOpen;
   const selectedLanguage = useMemo(
     () =>
       previewLanguages.find(
@@ -295,6 +305,51 @@ const Index = () => {
     selectedLanguage.localeName,
     showCurrencyPreview,
     showLanguagePreview,
+  ]);
+  const previewSelectorBoxStyle = useMemo(() => {
+    if (isDirectSelectorPreview) {
+      return {
+        position: "static" as const,
+        padding: 0,
+        border: "none",
+        borderRadius: 0,
+        boxShadow: "none",
+        width: "100%",
+        display: "flex",
+        flexDirection: "column" as const,
+        gap: 10,
+        background: "transparent",
+      };
+    }
+
+    return {
+      position: "absolute" as const,
+      bottom:
+        selectorPosition === "bottom_left" || selectorPosition === "bottom_right"
+          ? "100%"
+          : "auto",
+      top:
+        selectorPosition === "top_left" || selectorPosition === "top_right"
+          ? "100%"
+          : "auto",
+      background: backgroundColor,
+      border: `1px solid ${optionBorderColor}`,
+      padding: "10px",
+      borderRadius: "8px",
+      marginBottom: "1px",
+      width: shouldUseSidebarWidget ? "180px" : "100%",
+      display: isSelectorBoxVisible ? "flex" : "none",
+      flexDirection: "column" as const,
+      gap: "10px",
+      boxShadow: "0 14px 32px rgba(15, 23, 42, 0.14)",
+    };
+  }, [
+    backgroundColor,
+    isDirectSelectorPreview,
+    isSelectorBoxVisible,
+    optionBorderColor,
+    selectorPosition,
+    shouldUseSidebarWidget,
   ]);
   const isDirty = useMemo(
     () => !areSwitcherConfigsEqual(editData, originalData),
@@ -423,6 +478,11 @@ const Index = () => {
     }
   }, [isTransparent]);
 
+  useEffect(() => {
+    setIsSelectorOpen(false);
+    setActivePreviewMenu(null);
+  }, [isDirectSelectorPreview, shouldUseSidebarWidget, isFloatingSelectorPreview]);
+
   const handleEditData = (updates: Partial<SwitcherEditData>) => {
     setEditData((prev) => ({
       ...prev,
@@ -470,6 +530,10 @@ const Index = () => {
   };
 
   const handleSelectorClick = () => {
+    if (!isOverlaySelectorPreview) {
+      return;
+    }
+
     setIsSelectorOpen((prev) => !prev);
     setActivePreviewMenu(null);
   };
@@ -487,7 +551,9 @@ const Index = () => {
     }
 
     setActivePreviewMenu(null);
-    setIsSelectorOpen(false);
+    if (isOverlaySelectorPreview) {
+      setIsSelectorOpen(false);
+    }
   };
 
   const handleIpOpenChange = (checked: boolean) => {
@@ -927,7 +993,16 @@ const Index = () => {
                   <div
                     id="ciwi-container"
                     style={{
-                      minWidth: "100px",
+                      minWidth: shouldUseSidebarWidget
+                        ? "30px"
+                        : isDirectSelectorPreview
+                          ? "180px"
+                          : "100px",
+                      width: shouldUseSidebarWidget
+                        ? "30px"
+                        : isDirectSelectorPreview
+                          ? "180px"
+                          : "auto",
                       position: "absolute",
                       left:
                         selectorPosition === "top_left" ||
@@ -939,54 +1014,40 @@ const Index = () => {
                         selectorPosition === "bottom_right"
                           ? "0"
                           : "auto",
-                      background: backgroundColor,
-                      border: `1px solid ${optionBorderColor}`,
-                      borderRadius: "8px",
+                      background:
+                        shouldUseSidebarWidget || isDirectSelectorPreview
+                          ? "transparent"
+                          : backgroundColor,
+                      border:
+                        shouldUseSidebarWidget || isDirectSelectorPreview
+                          ? "none"
+                          : `1px solid ${optionBorderColor}`,
+                      borderRadius:
+                        shouldUseSidebarWidget || isDirectSelectorPreview
+                          ? 0
+                          : "8px",
                       transform: "none",
                       height: "auto",
                       display: isTransparent ? "none" : "block",
                       zIndex: "2",
                     }}
                   >
-                    {isSelectorOpen && (
+                    {isSelectorBoxVisible ? (
                       <div
                         id="selector-box"
-                        style={{
-                          position: "absolute",
-                          bottom:
-                            selectorPosition === "bottom_left" ||
-                            selectorPosition === "bottom_right"
-                              ? "100%"
-                              : "auto",
-                          top:
-                            selectorPosition === "top_left" ||
-                            selectorPosition === "top_right"
-                              ? "100%"
-                              : "auto",
-                          background: backgroundColor,
-                          border: `1px solid ${optionBorderColor}`,
-                          padding: "10px",
-                          borderRadius: "8px",
-                          height:
-                            languageSelector === currencySelector
-                              ? "140px"
-                              : "90px",
-                          marginBottom: "1px",
-                          width: "100%",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "10px",
-                        }}
+                        style={previewSelectorBoxStyle}
                       >
-                        <div className={styles.close_button_wrapper}>
-                          <button
-                            onClick={handleCancelClick}
-                            className={styles.selector_box_close_button}
-                            id="selector-box-close-button"
-                          >
-                            <CloseIcon color={fontColor} />
-                          </button>
-                        </div>
+                        {!isDirectSelectorPreview ? (
+                          <div className={styles.close_button_wrapper}>
+                            <button
+                              onClick={handleCancelClick}
+                              className={styles.selector_box_close_button}
+                              id="selector-box-close-button"
+                            >
+                              <CloseIcon color={fontColor} />
+                            </button>
+                          </div>
+                        ) : null}
                         <div
                           style={{
                             display: showLanguagePreview ? "block" : "none",
@@ -1193,37 +1254,120 @@ const Index = () => {
                           </div>
                         </div>
                       </div>
-                    )}
-                    <div
-                      id="main-box"
-                      className={styles.main_box}
-                      style={{
-                        justifyContent: isIncludedFlag ? "" : "center",
-                        background: backgroundColor,
-                      }}
-                      onClick={handleSelectorClick}
-                    >
-                      {isIncludedFlag && (
+                    ) : null}
+                    {isFloatingSelectorPreview ? (
+                      <div
+                        id="main-box"
+                        className={styles.main_box}
+                        style={{
+                          justifyContent: isIncludedFlag ? "" : "center",
+                          background: backgroundColor,
+                        }}
+                        onClick={handleSelectorClick}
+                      >
+                        {isIncludedFlag ? (
+                          <img
+                            className={styles.country_flag}
+                            src={selectedLanguage.flag}
+                            alt=""
+                            width="25%"
+                            height="25%"
+                          />
+                        ) : null}
+                        <span id="display-text" className={styles.main_box_text}>
+                          {previewDisplayText}
+                        </span>
                         <img
-                          className={styles.country_flag}
-                          src={selectedLanguage.flag}
-                          alt=""
-                          width="25%"
+                          id="mainbox-arrow-icon"
+                          className={styles.mainarrow_icon}
+                          src="/arrow.svg"
+                          alt="Arrow Icon"
+                          width="25px"
                           height="25%"
                         />
-                      )}
-                      <span id="display-text" className={styles.main_box_text}>
-                        {previewDisplayText}
-                      </span>
-                      <img
-                        id="mainbox-arrow-icon"
-                        className={styles.mainarrow_icon}
-                        src="/arrow.svg"
-                        alt="Arrow Icon"
-                        width="25px"
-                        height="25%"
-                      />
-                    </div>
+                      </div>
+                    ) : null}
+                    {shouldUseSidebarWidget ? (
+                      <div
+                        id="translate-float-btn"
+                        onClick={handleSelectorClick}
+                        style={{
+                          display: "flex",
+                          width: "30px",
+                          minHeight: "112px",
+                          position: "absolute",
+                          alignItems:
+                            selectorPosition === "top_left" ||
+                            selectorPosition === "bottom_left"
+                              ? "flex-end"
+                              : "flex-start",
+                          justifyContent:
+                            selectorPosition === "top_left" ||
+                            selectorPosition === "bottom_left"
+                              ? "flex-end"
+                              : "flex-start",
+                          left:
+                            selectorPosition === "top_left" ||
+                            selectorPosition === "bottom_left"
+                              ? "0"
+                              : "auto",
+                          right:
+                            selectorPosition === "top_right" ||
+                            selectorPosition === "bottom_right"
+                              ? "0"
+                              : "auto",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div
+                          id="translate-float-btn-text"
+                          style={{
+                            display: "block",
+                            padding: "0 18px",
+                            fontSize: "14px",
+                            lineHeight: "30px",
+                            height: "30px",
+                            fontWeight: 700,
+                            overflow: "hidden",
+                            transform: "rotate(90deg)",
+                            transformOrigin: "right top",
+                            position: "absolute",
+                            right: 0,
+                            whiteSpace: "nowrap",
+                            userSelect: "none",
+                            color: fontColor,
+                            background: backgroundColor,
+                            border:
+                              selectorPosition === "top_left" ||
+                              selectorPosition === "bottom_left"
+                                ? `1px solid ${optionBorderColor}`
+                                : `1px solid ${optionBorderColor}`,
+                            borderRadius:
+                              selectorPosition === "top_left" ||
+                              selectorPosition === "bottom_left"
+                                ? "8px 8px 0 0"
+                                : "0 0 8px 8px",
+                          }}
+                        >
+                          <span>Translate</span>
+                        </div>
+                        {isIncludedFlag ? (
+                          <img
+                            id="translate-float-btn-icon"
+                            src={selectedLanguage.flag}
+                            alt=""
+                            width="28"
+                            height="20"
+                            style={{
+                              borderRadius: "3px",
+                              boxShadow: "0 1px 4px rgba(0, 0, 0, 0.08)",
+                              position: "relative",
+                              top: 36,
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
