@@ -1,5 +1,5 @@
 import { SaveBar, TitleBar } from "@shopify/app-bridge-react";
-import { Link, Page } from "@shopify/polaris";
+import { Page } from "@shopify/polaris";
 import {
   Alert,
   Card,
@@ -14,13 +14,12 @@ import {
 import Button from "~/ui/components/AppButton";
 import { useTranslation } from "react-i18next";
 import {
-  buildTranslateV4Error,
   getTranslateV4ErrorMessage,
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
 import styles from "./styles.module.css";
 import { useEffect, useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import {
   useFetcher,
   useLoaderData,
@@ -36,7 +35,6 @@ import {
 } from "./switcherClient";
 import { useSelector } from "react-redux";
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { queryShopBaseConfigData } from "~/api/admin";
 import defaultStyles from "../styles/defaultStyles.module.css";
 import useReport from "scripts/eventReport";
 import CloseIcon from "~/components/icon/closeIcon";
@@ -44,6 +42,7 @@ import { withEmbeddedSearch } from "~/utils/embeddedAction";
 import SwitcherSettingCard from "./components/switcherSettingCard";
 import AppPageHeader from "~/ui/components/AppPageHeader";
 import AppSectionCard from "~/ui/components/AppSectionCard";
+import AppStatusBadge from "~/ui/components/AppStatusBadge";
 
 const { Text, Title } = Typography;
 
@@ -70,12 +69,6 @@ const fieldColumnStyle = {
   display: "flex",
   flexDirection: "column" as const,
   gap: 8,
-};
-
-const helpGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 16,
 };
 
 const initialLocalization = {
@@ -135,69 +128,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const adminAuthResult = await authenticate.admin(request);
-  const { shop, accessToken } = adminAuthResult.session;
-
-  const formData = await request.formData();
-  const shopInfo = JSON.parse(formData.get("shopInfo") as string);
-  switch (true) {
-    case !!shopInfo:
-      try {
-        const shopLoad = await queryShopBaseConfigData({
-          shop,
-          accessToken: accessToken as string,
-        });
-        const moneyFormat = shopLoad?.shop?.currencyFormats?.moneyFormat;
-        const moneyWithCurrencyFormat =
-          shopLoad?.shop?.currencyFormats?.moneyWithCurrencyFormat;
-        if (shopLoad) {
-          return {
-            success: true,
-            errorCode: 0,
-            errorMsg: "",
-            response: {
-              moneyFormat,
-              moneyWithCurrencyFormat,
-            },
-          };
-        } else {
-          const appError = buildTranslateV4Error(
-            TRANSLATE_V4_ERROR_KEYS.SWITCHER_LOAD_FAILED,
-          );
-          return {
-            success: false,
-            errorCode: appError.errorCode,
-            errorMsg: appError.errorMsg,
-            response: undefined,
-          };
-        }
-      } catch (error) {
-        console.error("Error switcher shopInfo:", error);
-        const appError = buildTranslateV4Error(
-          TRANSLATE_V4_ERROR_KEYS.SWITCHER_LOAD_FAILED,
-        );
-        return {
-          success: false,
-          errorCode: appError.errorCode,
-          errorMsg: appError.errorMsg,
-          response: undefined,
-        };
-      }
-    default: {
-      const appError = buildTranslateV4Error(
-        TRANSLATE_V4_ERROR_KEYS.UNKNOWN_ACTION,
-      );
-      return {
-        success: false,
-        errorCode: appError.errorCode,
-        errorMsg: appError.errorMsg,
-        response: undefined,
-      };
-    }
-  }
-};
-
 const Index = () => {
   const { shop, migrated, ciwiSwitcherId, ciwiSwitcherBlocksId } =
     useLoaderData<typeof loader>();
@@ -241,12 +171,8 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showWarnModal, setShowWarnModal] = useState(false);
   const [saveAlert, setSaveAlert] = useState<string>("");
-  const [currencyFormatConfigCardOpen, setCurrencyFormatConfigCardOpen] =
-    useState<boolean>(false);
   const [switcherEnableCardOpen, setSwitcherEnableCardOpen] =
     useState<boolean>(false);
-  const [withMoneyValue, setWithMoneyValue] = useState<string>("");
-  const [withoutMoneyValue, setWithoutMoneyValue] = useState<string>("");
   const [cardLoading, setCardLoading] = useState<boolean>(true);
   const [updateLoading, setUpdateLoading] = useState<boolean>(false);
   const { report } = useReport();
@@ -258,15 +184,8 @@ const Index = () => {
   const fetcher = useFetcher<any>();
   const initFetcher = useFetcher<any>();
   const themeFetcher = useFetcher<any>();
-  const shopFetcher = useFetcher<any>();
 
   useEffect(() => {
-    const currencyFormatConfigCardOpen = localStorage.getItem(
-      "currencyFormatConfigCardOpen",
-    );
-    if (currencyFormatConfigCardOpen) {
-      setCurrencyFormatConfigCardOpen(currencyFormatConfigCardOpen === "true");
-    }
     const switcherEnableCardOpen = localStorage.getItem(
       "switcherEnableCardOpen",
     );
@@ -280,15 +199,6 @@ const Index = () => {
       {
         method: "post",
         action: withEmbeddedSearch("/app/currency", location.search),
-      },
-    );
-    shopFetcher.submit(
-      {
-        shopInfo: JSON.stringify(true),
-      },
-      {
-        method: "post",
-        action: withEmbeddedSearch("/app/switcher", location.search),
       },
     );
     initFetcher.submit(
@@ -352,7 +262,7 @@ const Index = () => {
         action: "/log",
       },
     );
-  }, [location.search, migrated, shop]);
+  }, [fetcher, initFetcher, location.search, migrated, shop, themeFetcher]);
 
   useEffect(() => {
     if (themeFetcher.data) {
@@ -377,71 +287,7 @@ const Index = () => {
 
       setCardLoading(false);
     }
-  }, [themeFetcher.data]);
-
-  useEffect(() => {
-    if (shopFetcher.data) {
-      if (shopFetcher.data.success) {
-        const parser = new DOMParser();
-        const moneyFormatHtmlData = parser.parseFromString(
-          shopFetcher.data.response.moneyFormat,
-          "text/html",
-        ).documentElement.textContent;
-        const moneyWithCurrencyFormatHtmlData = parser.parseFromString(
-          shopFetcher.data.response.moneyWithCurrencyFormat,
-          "text/html",
-        ).documentElement.textContent;
-        if (moneyFormatHtmlData && moneyWithCurrencyFormatHtmlData) {
-          const parser = new DOMParser();
-          const moneyWithMoneyDoc = parser.parseFromString(
-            moneyWithCurrencyFormatHtmlData,
-            "text/html",
-          );
-          const moneyWithoutMoneyDoc = parser.parseFromString(
-            moneyFormatHtmlData,
-            "text/html",
-          );
-
-          const moneyWithMoneyElement =
-            moneyWithMoneyDoc.querySelector(".ciwi-money");
-          const moneyWithoutMoneyElement =
-            moneyWithoutMoneyDoc.querySelector(".ciwi-money");
-          if (moneyWithMoneyElement && moneyWithoutMoneyElement) {
-            setCurrencyFormatConfigCardOpen(false);
-            localStorage.setItem("currencyFormatConfigCardOpen", "false");
-          } else {
-            setCurrencyFormatConfigCardOpen(true);
-            localStorage.setItem("currencyFormatConfigCardOpen", "true");
-          }
-
-          const spansWithMoney = moneyWithMoneyDoc.querySelectorAll("span");
-
-          if (spansWithMoney.length) {
-            spansWithMoney.forEach((span) => {
-              if (span.textContent && span.textContent.trim()) {
-                setWithMoneyValue(span.textContent.trim());
-              }
-            });
-          } else {
-            setWithMoneyValue(moneyWithCurrencyFormatHtmlData);
-          }
-
-          const spansWithoutMoney =
-            moneyWithoutMoneyDoc.querySelectorAll("span");
-
-          if (spansWithoutMoney.length) {
-            spansWithoutMoney.forEach((span) => {
-              if (span.textContent && span.textContent.trim()) {
-                setWithoutMoneyValue(span.textContent.trim());
-              }
-            });
-          } else {
-            setWithoutMoneyValue(moneyFormatHtmlData);
-          }
-        }
-      }
-    }
-  }, [shopFetcher.data]);
+  }, [ciwiSwitcherBlocksId, themeFetcher.data]);
 
   useEffect(() => {
     if (
@@ -496,54 +342,34 @@ const Index = () => {
     }));
   };
 
-  const handleOptionChange = (value: string) => {
-    const switcherType = {
-      "sidebar widget": {
-        status: 3,
-      },
-      language_and_currency: {
-        status: 0,
-      },
-      language: {
-        status: 1,
-      },
-      currency: {
-        status: 2,
-      },
-    } as any;
-    switch (value) {
-      case "sidebar widget":
-        handleEditData({
-          languageSelector: false,
-          currencySelector: false,
-        });
-        break;
-      case "language_and_currency":
-        handleEditData({
-          languageSelector: true,
-          currencySelector: true,
-        });
-        break;
-      case "language":
-        handleEditData({
-          languageSelector: true,
-          currencySelector: false,
-        });
-        break;
-      case "currency":
-        handleEditData({
-          languageSelector: false,
-          currencySelector: true,
-        });
-        setIsIncludedFlag(false);
-        handleEditData({
-          includedFlag: false,
-        });
-        break;
+  const applySelectorType = (
+    nextLanguageSelector: boolean,
+    nextCurrencySelector: boolean,
+  ) => {
+    handleEditData({
+      languageSelector: nextLanguageSelector,
+      currencySelector: nextCurrencySelector,
+    });
+
+    if (!nextLanguageSelector && nextCurrencySelector) {
+      setIsIncludedFlag(false);
+      handleEditData({
+        includedFlag: false,
+      });
     }
+
+    const status =
+      nextLanguageSelector && nextCurrencySelector
+        ? 0
+        : nextLanguageSelector
+          ? 1
+          : !nextLanguageSelector && !nextCurrencySelector
+            ? 3
+            : 2;
+
     report(
       {
-        status: switcherType[value].status,
+        status,
       },
       {
         action: "/app",
@@ -692,25 +518,6 @@ const Index = () => {
     }
   };
 
-  const switcherOptions = [
-    {
-      label: t("Language Switcher"),
-      value: "language",
-    },
-    {
-      label: t("Currency Switcher"),
-      value: "currency",
-    },
-    {
-      label: t("Language and Currency Switcher"),
-      value: "language_and_currency",
-    },
-    {
-      label: t("Sidebar Widget"),
-      value: "sidebar widget",
-    },
-  ];
-
   const switcherPositionOptions = [
     {
       label: t("Top Left"),
@@ -730,6 +537,25 @@ const Index = () => {
     },
   ];
 
+  const switcherOptions = [
+    {
+      label: t("Language Switcher"),
+      value: "language",
+    },
+    {
+      label: t("Currency Switcher"),
+      value: "currency",
+    },
+    {
+      label: t("Language and Currency Switcher"),
+      value: "language_and_currency",
+    },
+    {
+      label: t("Sidebar Widget"),
+      value: "sidebar widget",
+    },
+  ];
+
   const switcherTypeValue =
     languageSelector && currencySelector
       ? "language_and_currency"
@@ -738,11 +564,9 @@ const Index = () => {
         : !languageSelector && !currencySelector
           ? "sidebar widget"
           : "currency";
+
   const showPaidPlanHint =
     plan?.type == "Free" || typeof plan?.type === "undefined";
-  const helpCenterUrl =
-    "https://ciwi.ai/help-center/ShopifyApp/how-to-enable-the-app-from-shopify-theme-customization-to-apply-the-language-currency-exchange-switcher";
-  const supportEmail = "support@ciwi.ai";
 
   return (
     <Page>
@@ -760,23 +584,12 @@ const Index = () => {
       <div style={pageContentStackStyle}>
         <AppPageHeader
           title={t("Switcher")}
-          description={t(
-            "Configure how the storefront language and currency switcher behaves, looks, and appears to merchants.",
-          )}
-          extra={
-            <Button onClick={() => navigate("/app/pricing")}>
-              {t("View pricing")}
-            </Button>
-          }
         />
         <SwitcherSettingCard
-          step1Visible={currencyFormatConfigCardOpen}
-          step2Visible={switcherEnableCardOpen}
+          visible={switcherEnableCardOpen}
           loading={cardLoading}
           shop={shop}
           ciwiSwitcherId={ciwiSwitcherId}
-          withMoneyValue={withMoneyValue}
-          withoutMoneyValue={withoutMoneyValue}
         />
         <div className={styles.switcher_container}>
           <div className={styles.switcher_editor}>
@@ -791,10 +604,7 @@ const Index = () => {
                 />
               ) : null}
               <AppSectionCard
-                title={t("Behavior")}
-                description={t(
-                  "Control how storefront visitors see or don't see the switcher before opening it.",
-                )}
+                title={t("Auto adaptation settings")}
                 extra={
                   showPaidPlanHint ? (
                     <Popconfirm
@@ -817,12 +627,7 @@ const Index = () => {
                 <div style={sectionContentStackStyle}>
                   <div style={rowBetweenStyle}>
                     <div className={styles.switcher_row_label}>
-                      <Text strong>{t("Geolocation")}</Text>
-                      <Text type="secondary">
-                        {t(
-                          "Automatically place the selector for visitors based on IP when this feature is available.",
-                        )}
-                      </Text>
+                      <Text strong>{t("Match market by IP")}</Text>
                     </div>
                     <Switch
                       className={showPaidPlanHint ? defaultStyles.Switch_disable : ""}
@@ -832,12 +637,41 @@ const Index = () => {
                   </div>
                   <div style={rowBetweenStyle}>
                     <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Match currency by market")}</Text>
+                    </div>
+                    <Switch
+                      checked={currencySelector}
+                      onChange={(checked) => {
+                        applySelectorType(languageSelector, checked);
+                      }}
+                    />
+                  </div>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Switch by browser language")}</Text>
+                    </div>
+                    <Switch
+                      checked={languageSelector}
+                      onChange={(checked) => {
+                        applySelectorType(checked, currencySelector);
+                      }}
+                    />
+                  </div>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Auto-translate third-party apps")}</Text>
+                    </div>
+                    <AppStatusBadge tone="success">{t("Always on")}</AppStatusBadge>
+                  </div>
+                </div>
+              </AppSectionCard>
+              <AppSectionCard
+                title={t("Switcher style settings")}
+              >
+                <div style={sectionContentStackStyle}>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
                       <Text strong>{t("Hide visible switcher")}</Text>
-                      <Text type="secondary">
-                        {t(
-                          "Keep localization active without rendering a visible selector entry point.",
-                        )}
-                      </Text>
                     </div>
                     <Switch
                       checked={isTransparent}
@@ -857,110 +691,107 @@ const Index = () => {
                       }}
                     />
                   </div>
-                </div>
-              </AppSectionCard>
-              <AppSectionCard
-                title={t("Selector type")}
-                description={t(
-                  "Choose whether the storefront entry shows language, currency, both, or a compact sidebar widget.",
-                )}
-                style={{
-                  display: isTransparent ? "none" : "block",
-                }}
-              >
-                <Select
-                  options={switcherOptions}
-                  style={{ width: "100%" }}
-                  value={switcherTypeValue}
-                  onChange={handleOptionChange}
-                />
-              </AppSectionCard>
-              <AppSectionCard
-                title={t("Style")}
-                description={t(
-                  "Adjust the switcher appearance, placement, and the way the preview renders selected values.",
-                )}
-                style={{
-                  display: isTransparent ? "none" : "block",
-                }}
-              >
-                <div style={sectionContentStackStyle}>
-                  <div style={rowBetweenStyle}>
-                    <div className={styles.switcher_row_label}>
-                      <Text strong>{t("Include flag")}</Text>
-                      <Text type="secondary">
-                        {t(
-                          "Display the selected language flag alongside the switcher label when possible.",
-                        )}
-                      </Text>
-                    </div>
-                    <Switch
-                      disabled={!languageSelector && currencySelector}
-                      checked={isIncludedFlag}
-                      onChange={(checked) => {
-                        handleEditData({ includedFlag: checked });
-                        report(
-                          {
-                            status: checked ? 1 : 0,
-                          },
-                          {
-                            action: "/app",
-                            method: "post",
-                            eventType: "click",
-                          },
-                          "switcher_style_flag",
-                        );
-                      }}
-                    />
-                  </div>
-                  <div className={styles.switcher_style_fields}>
-                    <div style={fieldColumnStyle}>
-                      <Text>{t("Font Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={fontColor}
-                        onChange={(e) =>
-                          handleEditData({ fontColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                    <div style={fieldColumnStyle}>
-                      <Text>{t("Background Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={backgroundColor}
-                        onChange={(e) =>
-                          handleEditData({ backgroundColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                    <div style={fieldColumnStyle}>
-                      <Text>{t("Option Border Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={optionBorderColor}
-                        onChange={(e) =>
-                          handleEditData({ optionBorderColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                  </div>
-                  <div style={fieldColumnStyle}>
-                    <Text style={{ display: "block" }}>
-                      {t("Selector position:")}
-                    </Text>
-                    <Select
-                      options={switcherPositionOptions}
-                      style={{ width: "100%" }}
-                      value={selectorPosition}
-                      onChange={(value) =>
-                        handleEditData({ selectorPosition: value })
-                      }
-                    />
-                  </div>
+                  {!isTransparent ? (
+                    <>
+                      <div style={fieldColumnStyle}>
+                        <Text style={{ display: "block" }}>
+                          {t("Selector type")}
+                        </Text>
+                        <Select
+                          options={switcherOptions}
+                          style={{ width: "100%" }}
+                          value={switcherTypeValue}
+                          onChange={(value) => {
+                            switch (value) {
+                              case "sidebar widget":
+                                applySelectorType(false, false);
+                                break;
+                              case "language_and_currency":
+                                applySelectorType(true, true);
+                                break;
+                              case "language":
+                                applySelectorType(true, false);
+                                break;
+                              case "currency":
+                                applySelectorType(false, true);
+                                break;
+                            }
+                          }}
+                        />
+                      </div>
+                      <div style={rowBetweenStyle}>
+                        <div className={styles.switcher_row_label}>
+                          <Text strong>{t("Include flag")}</Text>
+                        </div>
+                        <Switch
+                          disabled={!languageSelector && currencySelector}
+                          checked={isIncludedFlag}
+                          onChange={(checked) => {
+                            handleEditData({ includedFlag: checked });
+                            report(
+                              {
+                                status: checked ? 1 : 0,
+                              },
+                              {
+                                action: "/app",
+                                method: "post",
+                                eventType: "click",
+                              },
+                              "switcher_style_flag",
+                            );
+                          }}
+                        />
+                      </div>
+                      <div className={styles.switcher_style_fields}>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Font Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={fontColor}
+                            onChange={(e) =>
+                              handleEditData({ fontColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Background Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={backgroundColor}
+                            onChange={(e) =>
+                              handleEditData({ backgroundColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Option Border Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={optionBorderColor}
+                            onChange={(e) =>
+                              handleEditData({ optionBorderColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                      </div>
+                      <div style={fieldColumnStyle}>
+                        <Text style={{ display: "block" }}>
+                          {t("Selector position:")}
+                        </Text>
+                        <Select
+                          options={switcherPositionOptions}
+                          style={{ width: "100%" }}
+                          value={selectorPosition}
+                          onChange={(value) =>
+                            handleEditData({ selectorPosition: value })
+                          }
+                        />
+                      </div>
+                    </>
+                  ) : null}
                   <div style={fieldColumnStyle}>
                     <Text style={{ display: "block" }}>
                       {t("Selector position data:")}
@@ -1371,37 +1202,6 @@ const Index = () => {
             </Card>
           </div>
         </div>
-        <AppSectionCard
-          title={t("Help and support")}
-          description={t(
-            "Use these resources if you need help enabling the theme block or validating storefront behavior.",
-          )}
-        >
-          <div style={helpGridStyle}>
-            <div style={fieldColumnStyle}>
-              <Text strong>{t("Help center guide")}</Text>
-              <Text type="secondary">
-                {t(
-                  "Step-by-step instructions for enabling the switcher in the Shopify theme editor.",
-                )}
-              </Text>
-              <Link url={helpCenterUrl} target="_blank">
-                {t("Open help center")}
-              </Link>
-            </div>
-            <div style={fieldColumnStyle}>
-              <Text strong>{t("Support email")}</Text>
-              <Text type="secondary">
-                {t(
-                  "Contact the team if the storefront preview and live theme behavior do not match.",
-                )}
-              </Text>
-              <Link url={`mailto:${supportEmail}`}>
-                {supportEmail}
-              </Link>
-            </div>
-          </div>
-        </AppSectionCard>
         <Modal
           title={t("Feature Unavailable")}
           open={showWarnModal}

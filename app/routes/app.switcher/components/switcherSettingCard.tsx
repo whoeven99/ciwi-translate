@@ -1,68 +1,58 @@
 import { CloseOutlined } from "@ant-design/icons";
 import { Link } from "@shopify/polaris";
-import { Space, Typography, Skeleton, Divider } from "antd";
+import { Space, Typography, Skeleton } from "antd";
 import Button from "~/ui/components/AppButton";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useReport from "scripts/eventReport";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 interface SwitcherSettingCardProps {
-  step1Visible: boolean | undefined;
-  step2Visible: boolean | undefined;
+  visible: boolean | undefined;
   loading: boolean;
   shop: string;
   ciwiSwitcherId: string;
-  withMoneyValue: string;
-  withoutMoneyValue: string;
 }
 
 const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
-  step1Visible,
-  step2Visible,
+  visible,
   loading,
   shop,
   ciwiSwitcherId,
-  withMoneyValue,
-  withoutMoneyValue,
 }) => {
-  const [visible, setVisible] = useState(false);
+  const [visibleState, setVisibleState] = useState(false);
   const blockUrl = `https://${shop}/admin/themes/current/editor?context=apps&activateAppId=${ciwiSwitcherId}/ciwi_I18n_Switcher`;
   const supportUrl =
     "https://ciwi.ai/help-center/ShopifyApp/how-to-enable-the-app-from-shopify-theme-customization-to-apply-the-language-currency-exchange-switcher";
-  const settingUrl = `https://admin.shopify.com/store/${shop.split(".")[0]}/settings/general`;
 
   const { t } = useTranslation();
   const { reportClick } = useReport();
   useEffect(() => {
     if (localStorage.getItem("switcherCard") == "false") {
-      setVisible(false);
+      setVisibleState(false);
     } else {
-      if (step1Visible || step2Visible) {
-        setVisible(true);
-      }
+      setVisibleState(Boolean(visible));
     }
-  }, [step1Visible, step2Visible]);
+  }, [visible]);
 
   const handleClose = () => {
-    setVisible(false);
+    setVisibleState(false);
     //保存当前的设置
     localStorage.setItem("switcherCard", "false");
   };
-  const handleGoogleReport = () => {
-    reportClick("switcher_guide_setup");
-  };
+
   const handleClickHereReport = () => {
     reportClick("switcher_guide_click_theme");
   };
+
   return (
     <AppSectionCard
-      style={{ display: visible ? "block" : "none" }}
+      style={{ display: visibleState ? "block" : "none" }}
       title={t("Switcher Configuration Guide")}
       description={t(
-        "Follow these two steps to make the storefront switcher available and styled correctly.",
+        "No extra currency format setup is required. Just enable the storefront switcher in your current theme.",
       )}
       extra={
         <Button type="text" onClick={handleClose}>
@@ -70,95 +60,37 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
         </Button>
       }
     >
-      {loading ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
+      {loading ? <Skeleton active paragraph={{ rows: 3 }} /> : null}
       {!loading ? (
-        <>
-          <Text strong style={{ color: "var(--app-color-text)" }}>
-            {t("Step 1: Set up Currency Format")}
-          </Text>
-          <Space direction="vertical" size="small" style={{ display: "flex" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 16,
+            padding: 16,
+            border: "1px solid var(--app-color-border)",
+            borderRadius: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <Space
+            direction="vertical"
+            size={8}
+            style={{ display: "flex", flex: "1 1 360px", minWidth: 0 }}
+          >
             <div
               style={{
                 display: "flex",
-                justifyContent: "space-between",
                 alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
               }}
             >
-              {step1Visible ? (
-                <AppStatusBadge tone="critical">
-                  {t("Uncompleted")}
-                </AppStatusBadge>
-              ) : (
-                <AppStatusBadge tone="success">{t("Completed")}</AppStatusBadge>
-              )}
-              <Link url={settingUrl} target="_blank">
-                <Button
-                  type="primary"
-                  onClick={handleGoogleReport}
-                  className="currency-action"
-                >
-                  {t("Setup")}
-                </Button>
-              </Link>
-            </div>
-            <Text>
-              {t(
-                "To display currency switcher, please follow the instructions below:",
-              )}
-            </Text>
-            <div>
-              <Text>{t("1. Go to")}</Text>
-              <Link url={settingUrl} target="_blank">
-                {t("Settings >> General")}
-              </Link>
-            </div>
-            <Text>
-              {t("2. Under the")}
-              <strong>{t("'Store defaults'")}</strong>
-              {t(
-                "section, click Change currency formatting, then change with the code below:",
-              )}
-            </Text>
-
-            <div>
-              <strong>HTML with currency:</strong>
-              {withMoneyValue ? (
-                <Paragraph
-                  copyable={{
-                    text: `<span class=ciwi-money>${withMoneyValue}</span>`,
-                  }}
-                >
-                  &lt;span class=ciwi-money&gt;{withMoneyValue}
-                  &lt;/span&gt;
-                </Paragraph>
-              ) : (
-                <Skeleton active paragraph={{ rows: 0 }} />
-              )}
-            </div>
-
-            <div>
-              <strong>HTML without currency:</strong>
-              {withoutMoneyValue ? (
-                <Paragraph
-                  copyable={{
-                    text: `<span class=ciwi-money>${withoutMoneyValue}</span>`,
-                  }}
-                >
-                  &lt;span class=ciwi-money&gt;{withoutMoneyValue}
-                  &lt;/span&gt;
-                </Paragraph>
-              ) : (
-                <Skeleton active paragraph={{ rows: 0 }} />
-              )}
-            </div>
-          </Space>
-          <Divider />
-          <Text strong style={{ color: "var(--app-color-text)" }}>
-            {t("Step 2: Enable switcher")}
-          </Text>
-          <Space direction="vertical" size="small" style={{ display: "flex" }}>
-            <div className="card-header">
-              {step2Visible ? (
+              <Text strong style={{ color: "var(--app-color-text)" }}>
+                {t("Step 1: Enable switcher")}
+              </Text>
+              {visible ? (
                 <AppStatusBadge tone="critical">
                   {t("Uncompleted")}
                 </AppStatusBadge>
@@ -167,16 +99,8 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
               )}
             </div>
             <Text>
-              {t("Please")}
-              <Link
-                url={blockUrl}
-                target="_blank"
-                onClick={handleClickHereReport}
-              >
-                {t("Click here")}
-              </Link>
               {t(
-                "to go to Shopify theme editor >> enable Ciwi_Switcher >> click the Save button in the right corner.",
+                "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.",
               )}
             </Text>
             <Text>
@@ -186,7 +110,12 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
               </Link>
             </Text>
           </Space>
-        </>
+          <Link url={blockUrl} target="_blank" onClick={handleClickHereReport}>
+            <Button type="primary">
+              {t("Open current theme and enable switcher")}
+            </Button>
+          </Link>
+        </div>
       ) : null}
     </AppSectionCard>
   );
