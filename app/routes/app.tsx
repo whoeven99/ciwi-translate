@@ -8,6 +8,7 @@ import {
   Link,
   Outlet,
   useLoaderData,
+  useLocation,
   useRouteError,
 } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
@@ -37,7 +38,7 @@ import { useTranslation } from "react-i18next";
 import { useIdleReady } from "~/hooks/useIdleReady";
 
 import { ConfigProvider } from "antd";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import type { Dispatch } from "@reduxjs/toolkit";
 import {
   setChars,
@@ -65,6 +66,11 @@ import {
   OPEN_CREDITS_PURCHASE_MODAL_EVENT,
   type CreditsPurchaseModalContext,
 } from "~/utils/creditsPurchaseModal";
+import { refreshBillingBootstrap } from "~/utils/billingBootstrap";
+import {
+  parseBillingReturn,
+  stripBillingReturnParams,
+} from "~/utils/billingReturn";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -517,6 +523,8 @@ export default function App() {
 
   const { t } = useTranslation();
   const dispatch = useDispatch();
+  const location = useLocation();
+  const totalChars = useSelector((state: any) => state.userConfig.totalChars);
 
   useEffect(() => {
     if (isPerfDebugEnabled()) {
@@ -598,6 +606,34 @@ export default function App() {
       );
     };
   }, [isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+
+    const billingReturn = parseBillingReturn(location.search);
+    if (!billingReturn) return;
+
+    const cleanedPath = stripBillingReturnParams(
+      `${location.pathname}${location.search}${location.hash}`,
+    );
+    window.history.replaceState({}, "", cleanedPath);
+
+    if (billingReturn.kind !== "credits") {
+      return;
+    }
+
+    void refreshBillingBootstrap(
+      dispatch,
+      billingReturn.previousTotalChars ?? totalChars,
+    );
+  }, [
+    dispatch,
+    isClient,
+    location.hash,
+    location.pathname,
+    location.search,
+    totalChars,
+  ]);
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>

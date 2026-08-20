@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { BlockStack, Button, Checkbox, Select } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
+import { message } from "~/ui/message";
 import { v4Colors, v4CardStyle } from "../v4Styles";
 import {
   AI_MODEL_OPTIONS,
@@ -63,9 +64,11 @@ export function CreateTaskCard({
   estimate = null,
 }: Props) {
   const { t } = useTranslation();
+  const missingTargetSelection = targets.length === 0;
+  const missingContentSelection = modules.length === 0 && !includeLiquid;
+  const selectionInvalid = missingTargetSelection || missingContentSelection;
   const canCreate =
-    targets.length > 0 &&
-    (modules.length > 0 || includeLiquid) &&
+    !selectionInvalid &&
     !creating &&
     !createDisabled;
   const [advancedOpen, setAdvancedOpen] = useState(advancedDefaultOpen);
@@ -130,9 +133,23 @@ export function CreateTaskCard({
     onModulesChange(allModulesSelected ? [] : allModuleValues);
   };
 
+  const handleInvalidCreateAttempt = () => {
+    const errors: string[] = [];
+    if (missingTargetSelection) {
+      errors.push(t("v4.validation.selectTarget"));
+    }
+    if (missingContentSelection) {
+      errors.push(t("v4.validation.selectModule"));
+    }
+    if (errors.length > 0) {
+      message.warning(errors.join(" "));
+    }
+  };
+
   const submitButton = (
     <div
       style={{
+        position: "relative",
         maxWidth: "100%",
         minWidth: submitPlacement === "footer-center" ? 220 : undefined,
       }}
@@ -147,6 +164,14 @@ export function CreateTaskCard({
       >
         {creating ? t("v4.createTask.creating") : t("v4.createTask.confirmAction")}
       </Button>
+      {selectionInvalid && !creating && !createDisabled ? (
+        <button
+          type="button"
+          aria-label={t("v4.createTask.confirmAction")}
+          onClick={handleInvalidCreateAttempt}
+          style={disabledActionOverlayStyle}
+        />
+      ) : null}
     </div>
   );
 
@@ -517,6 +542,18 @@ const checkboxGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 10,
+};
+
+const disabledActionOverlayStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  width: "100%",
+  height: "100%",
+  border: "none",
+  padding: 0,
+  margin: 0,
+  background: "transparent",
+  cursor: "not-allowed",
 };
 
 function checkboxCardStyle(selected: boolean): CSSProperties {

@@ -220,11 +220,14 @@ and embedded `/app` redirect/landing behavior.
 
 ### Main Pages
 
-- `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（只展示进行中 /
+- `/app`: `app/routes/app._index/route.tsx` 重定向到 `/app/translate-v4-mvp`（`getTranslatePagePath()` 同指向 MVP）。
+- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。
+- `/app/translate-v4-mvp-custom`: `app/routes/app.translate-v4-mvp-custom/route.tsx`（自定义语言/模块建任务）。
+- `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（全量工作台保留；只展示进行中 /
 暂停 / 失败任务，见 `jobFilters.ts` `isCurrentV4Job`）。
 - `/app/translate-v4-history`: `app/routes/app.translate-v4-history/route.tsx`
-（终态任务历史；无导航入口，由 `TaskQueueSection.tsx` 的「历史」按钮跳入；复用
-`CompactJobCard` + `isHistoryV4Job` + `/api/translate-v4/task-action`）。
+（终态任务历史；无导航入口，由 `TaskQueueSection.tsx` 的「历史」按钮跳入；支持
+`?returnTo=` 回跳；复用 `CompactJobCard` + `isHistoryV4Job` + `/api/translate-v4/task-action`）。
 - `/app/language`: `app/routes/app.language/route.tsx`.
 - `/app/manage_translation`: `app/routes/app.manage_translation/route.tsx`.
 - `/app/manage_translation/<module>`: `app/routes/app.manage_translation_.*/route.tsx`.
@@ -234,7 +237,7 @@ and embedded `/app` redirect/landing behavior.
 - `/app/pricing`: `app/routes/app.pricing/route.tsx`.
 - `/app/shop-profile`: `app/routes/app.shop-profile/route.tsx`; nav is hidden in production.
 - `/app/onboarding`: `app/routes/app.onboarding/route.tsx`; 首次翻译新手引导（无导航入口，
-由 `/app` 条件重定向进入）。
+仍可显式访问 `/app/onboarding`）。
 - Treat an `app/routes/app.*` directory without a route file as inactive until a
 real `route.tsx` or route module is added.
 
@@ -1047,10 +1050,10 @@ Core files:
   `app/routes/api.onboarding.fast-coverage.ts`（Preparing 真进度：最重要 1 语 ×
   Products/Collection/Navigation/Pages/Shop 五个模块，逐 label POST；只写 Redis
   module 明细，**不**写 Turso 语言级汇总，避免污染权威覆盖率）。
-- 入口重定向: `app/routes/app._index/route.tsx` 调 `shouldRedirectToOnboarding`
-  决定跳 `/app/onboarding` 还是默认 `/app/translate-v4`；并在重定向前
-  `enqueueShopScan(install)`（幂等，尽早入队）。onboarding loader / `app.tsx` 也会
-  再入队一次（幂等）。
+- 入口重定向: `app/routes/app._index/route.tsx` 当前直接跳
+  `/app/translate-v4-mvp`；首次引导不再自动拦截 `/app`，仍可显式访问
+  `/app/onboarding`。install shop scan 继续由 `app.tsx` / onboarding loader
+  幂等入队。
 - Model: `ShopOnboarding`（每店一行，独立于 `Account.isNew`）。
 
 Data reuse（不重复建设）:
