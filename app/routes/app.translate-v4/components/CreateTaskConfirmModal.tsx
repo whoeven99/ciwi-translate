@@ -218,8 +218,6 @@ export function CreateTaskConfirmModal({
     estimatedCredits != null ? formatCreditsFull(estimatedCredits) : "--";
   const remainingCreditsLabel =
     remainingCredits != null ? formatCreditsFull(remainingCredits) : "--";
-  const shortfallCreditsLabel =
-    shortfallCredits > 0 ? formatCreditsFull(shortfallCredits) : "0";
   const estimateComputingLabel = t("v4.createTask.confirmEstimateComputing", {
     defaultValue: "Calculating...",
   });
@@ -414,19 +412,6 @@ export function CreateTaskConfirmModal({
         <div style={headerStyle}>
           <div style={headerCopyStyle}>
             <div style={titleStyle}>{scenarioMeta.title}</div>
-            {shortfallCredits > 0 ? (
-              <div
-                style={{
-                  ...headlineStyle,
-                  color: scenarioMeta.accent,
-                  background: scenarioMeta.headlineBg,
-                }}
-              >
-                {t("v4.createTask.confirmShortfallHeadline", {
-                  credits: shortfallCreditsLabel,
-                })}
-              </div>
-            ) : null}
           </div>
           <button
             type="button"
@@ -513,11 +498,6 @@ export function CreateTaskConfirmModal({
                     value={`${recommendedPack.name} · ${formatCreditsFull(recommendedPack.credits)} ${t("credits")}`}
                   />
                 ) : null}
-              </div>
-              <div style={recommendationHintStyle}>
-                {t("v4.createTask.confirmRecommendationHint", {
-                  credits: shortfallCreditsLabel,
-                })}
               </div>
             </InfoCard>
           ) : null}
@@ -631,16 +611,12 @@ function getScenarioMeta(
     if (scenario === "insufficient_trial") {
       return {
         title: t("v4.createTask.confirmPartialTitle"),
-        accent: "#2180ff",
-        headlineBg: "rgba(33, 128, 255, 0.1)",
       };
     }
 
     if (scenario === "insufficient_pricing") {
       return {
         title: t("v4.createTask.confirmPartialTitle"),
-        accent: "#7a3cff",
-        headlineBg: "rgba(122, 60, 255, 0.1)",
       };
     }
   }
@@ -648,8 +624,6 @@ function getScenarioMeta(
   if (scenario === "ready") {
     return {
       title: t("v4.createTask.confirmReadyTitle"),
-      accent: "#0a934c",
-      headlineBg: "rgba(10, 147, 76, 0.1)",
     };
   }
 
@@ -658,23 +632,17 @@ function getScenarioMeta(
       title: canStartPartial
         ? t("v4.createTask.confirmPartialTitle")
         : t("v4.createTask.confirmNoCreditsTitle"),
-      accent: "#df5a00",
-      headlineBg: "rgba(223, 90, 0, 0.1)",
     };
   }
 
   if (scenario === "insufficient_trial") {
     return {
       title: t("v4.createTask.confirmTrialTitle"),
-      accent: "#2180ff",
-      headlineBg: "rgba(33, 128, 255, 0.1)",
     };
   }
 
   return {
     title: t("v4.createTask.confirmPricingTitle"),
-    accent: "#7a3cff",
-    headlineBg: "rgba(122, 60, 255, 0.1)",
   };
 }
 
@@ -850,20 +818,6 @@ const titleStyle = {
   color: v4Colors.text,
 } as const;
 
-const headlineStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  width: "fit-content",
-  margin: 10,
-  padding: "8px 12px",
-  borderRadius: 12,
-  background: "rgba(223, 90, 0, 0.1)",
-  color: "#df5a00",
-  fontSize: 13,
-  fontWeight: 700,
-  lineHeight: "22px",
-} as const;
-
 const closeButtonStyle = {
   display: "inline-flex",
   alignItems: "center",
@@ -920,14 +874,6 @@ const detailValueStyle = {
   color: v4Colors.text,
   fontWeight: 400,
   wordBreak: "break-word",
-} as const;
-
-const recommendationHintStyle = {
-  marginTop: 12,
-  color: v4Colors.textMuted,
-  fontSize: 12,
-  fontWeight: 500,
-  lineHeight: "18px",
 } as const;
 
 const estimateSectionStyle = {
