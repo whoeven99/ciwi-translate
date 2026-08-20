@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
+import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
 import { BlockStack, Button, Page, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import AppPageHeader from "~/ui/components/AppPageHeader";
@@ -45,6 +45,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function AppTranslateV4History() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { shop, jobs: initialJobs } = useLoaderData<typeof loader>();
   const [jobs, setJobs] = useState<TranslationJobProgressSummary[]>(initialJobs);
   const [quota, setQuota] = useState<ShopQuota | null>(null);
@@ -52,6 +53,13 @@ export default function AppTranslateV4History() {
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
 
   const historyJobs = useMemo(() => jobs.filter(isHistoryV4Job), [jobs]);
+  const returnTo = useMemo(() => {
+    const value = searchParams.get("returnTo");
+    if (!value || !value.startsWith("/app/")) {
+      return "/app/translate-v4-mvp?tab=queue";
+    }
+    return value;
+  }, [searchParams]);
 
   const refreshList = useCallback(async () => {
     const res = await fetch(
@@ -156,7 +164,7 @@ export default function AppTranslateV4History() {
               <Button
                 variant="plain"
                 size="slim"
-                onClick={() => navigate("/app/translate-v4")}
+                onClick={() => navigate(returnTo)}
               >
                 {t("v4.back")}
               </Button>

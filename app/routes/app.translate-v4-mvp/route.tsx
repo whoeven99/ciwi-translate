@@ -1260,6 +1260,7 @@ export default function TranslateV4MvpRoute() {
                     jobs={jobs}
                     translateSlotBusy={translateSlotBusy}
                     loading={jobsLoading}
+                    historyReturnTo="/app/translate-v4-mvp?tab=queue"
                     emptyStateActionLabel={t("v4Mvp.custom.translate")}
                     onEmptyStateAction={() =>
                       navigate(

@@ -1059,6 +1059,7 @@ export default function AppTranslateV4() {
                     spotlightTaskIds={spotlightTaskIds}
                     translateSlotBusy={translateSlotBusy}
                     loading={jobsLoading}
+                    historyReturnTo="/app/translate-v4?tab=tasks"
                     emptyStateActionLabel={t("onboarding.action.createTask")}
                     onEmptyStateAction={() => {
                       setActiveWorkbenchTab("create");
