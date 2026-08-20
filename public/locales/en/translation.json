@@ -705,6 +705,7 @@
   "Switcher configuration update failed": "Failed to update switcher settings",
   "Switcher configuration updated successfully": "Switcher settings updated",
   "Open current theme and enable switcher": "Open current theme and enable switcher",
+  "Unable to load the latest switcher settings. You can continue editing with the default values.": "Unable to load the latest switcher settings. You can continue editing with the default values.",
   "Syncing": "Syncing",
   "Target Language": "target Language",
   "Task in progress": "Task in progress",

@@ -18,10 +18,9 @@ import {
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
 import styles from "./styles.module.css";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import {
-  useFetcher,
   useLoaderData,
   useLocation,
   useNavigate,
@@ -45,6 +44,21 @@ import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
 
 const { Text, Title } = Typography;
+
+type PreviewLanguageOption = {
+  iso_code: string;
+  name: string;
+  localeName: string;
+  flag: string;
+};
+
+type PreviewCurrencyOption = {
+  iso_code: string;
+  symbol: string;
+  localeName: string;
+};
+
+type PreviewMenuType = "language" | "currency";
 
 const pageContentStackStyle = {
   display: "flex",
@@ -71,51 +85,120 @@ const fieldColumnStyle = {
   gap: 8,
 };
 
-const initialLocalization = {
-  languages: [
-    {
-      iso_code: "en",
-      name: "English",
-      localeName: "English",
-      flag: "/flags/GB.webp",
-      selected: true,
-    },
-    {
-      iso_code: "kr",
-      name: "Korean",
-      localeName: "한국어",
-      flag: "/flags/KR.webp",
-      selected: false,
-    },
-    {
-      iso_code: "fr",
-      name: "French",
-      localeName: "Français",
-      flag: "/flags/FR.webp",
-      selected: false,
-    },
-  ],
-  currencies: [
-    {
-      iso_code: "USD",
-      symbol: "$",
-      localeName: "USD",
-      selected: true,
-    },
-    {
-      iso_code: "EUR",
-      symbol: "€",
-      localeName: "EUR",
-      selected: false,
-    },
-    {
-      iso_code: "CNY",
-      symbol: "¥",
-      localeName: "CNY",
-      selected: false,
-    },
-  ],
-};
+const previewLanguages: PreviewLanguageOption[] = [
+  {
+    iso_code: "en",
+    name: "English",
+    localeName: "English",
+    flag: "/flags/GB.webp",
+  },
+  {
+    iso_code: "kr",
+    name: "Korean",
+    localeName: "한국어",
+    flag: "/flags/KR.webp",
+  },
+  {
+    iso_code: "fr",
+    name: "French",
+    localeName: "Français",
+    flag: "/flags/FR.webp",
+  },
+];
+
+const previewCurrencies: PreviewCurrencyOption[] = [
+  {
+    iso_code: "USD",
+    symbol: "$",
+    localeName: "USD",
+  },
+  {
+    iso_code: "EUR",
+    symbol: "€",
+    localeName: "EUR",
+  },
+  {
+    iso_code: "CNY",
+    symbol: "¥",
+    localeName: "CNY",
+  },
+];
+
+const switcherComparableKeys: Array<keyof SwitcherEditData> = [
+  "shopName",
+  "includedFlag",
+  "languageSelector",
+  "currencySelector",
+  "ipOpen",
+  "browserLanguageOpen",
+  "marketCurrencyOpen",
+  "fontColor",
+  "backgroundColor",
+  "buttonColor",
+  "buttonBackgroundColor",
+  "optionBorderColor",
+  "selectorPosition",
+  "positionData",
+  "isTransparent",
+  "autoLiquidCollect",
+];
+
+function buildResolvedSwitcherData(
+  shop: string,
+  response?: Partial<SwitcherEditData> | null,
+): SwitcherEditData {
+  const defaults = buildSwitcherEditDefaults(shop);
+  if (!response) return defaults;
+
+  const filteredResponse = Object.fromEntries(
+    Object.entries(response).filter(([_, value]) => value !== null),
+  ) as Partial<SwitcherEditData>;
+
+  return {
+    ...defaults,
+    ...filteredResponse,
+    shopName: filteredResponse.shopName || shop,
+  };
+}
+
+function areSwitcherConfigsEqual(
+  left: SwitcherEditData,
+  right: SwitcherEditData,
+): boolean {
+  return switcherComparableKeys.every((key) => left[key] === right[key]);
+}
+
+function extractSwitcherCardVisibility(
+  payload: unknown,
+  ciwiSwitcherBlocksId: string,
+): boolean | null {
+  const content =
+    (payload as any)?.data?.nodes?.[0]?.files?.nodes?.[0]?.body?.content;
+
+  if (typeof content !== "string" || !content.trim()) {
+    return null;
+  }
+
+  try {
+    const sanitized = content.replace(/\/\*[\s\S]*?\*\//g, "").trim();
+    const blocks = JSON.parse(sanitized)?.current?.blocks;
+    if (!blocks || typeof blocks !== "object") {
+      return null;
+    }
+
+    const switcherBlock = Object.values(blocks).find(
+      (block: any) => block?.type === ciwiSwitcherBlocksId,
+    ) as { disabled?: boolean } | undefined;
+
+    if (!switcherBlock || typeof switcherBlock.disabled !== "boolean") {
+      return null;
+    }
+
+    return switcherBlock.disabled;
+  } catch {
+    return null;
+  }
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const adminAuthResult = await authenticate.admin(request);
@@ -131,50 +214,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 const Index = () => {
   const { shop, migrated, ciwiSwitcherId, ciwiSwitcherBlocksId } =
     useLoaderData<typeof loader>();
-  const [isGeoLocationEnabled, setIsGeoLocationEnabled] = useState(false);
-  const [isIncludedFlag, setIsIncludedFlag] = useState(true);
-  const [languageSelector, setLanguageSelector] = useState(true);
-  const [currencySelector, setCurrencySelector] = useState(true);
-  const [fontColor, setFontColor] = useState("#303030");
-  const [backgroundColor, setBackgroundColor] = useState("#ffffff");
-  const [optionBorderColor, setOptionBorderColor] = useState("#d4d4d8");
-  const [selectorPosition, setSelectorPosition] = useState("top_left");
-  const [positionData, setPositionData] = useState<string>("0");
-  const [isTransparent, setIsTransparent] = useState(false);
-  const [isBrowserLanguageEnabled, setIsBrowserLanguageEnabled] = useState(true);
-  const [isMarketCurrencyEnabled, setIsMarketCurrencyEnabled] = useState(true);
-  const [isLanguageOpen, setIsLanguageOpen] = useState(false);
-  const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
+  const defaultEditData = useMemo(() => buildSwitcherEditDefaults(shop), [shop]);
+  const [originalData, setOriginalData] =
+    useState<SwitcherEditData>(defaultEditData);
+  const [editData, setEditData] = useState<SwitcherEditData>(defaultEditData);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
-  const [localization, setLocalization] = useState(initialLocalization);
-  const [originalData, setOriginalData] = useState<SwitcherEditData>();
-  const [editData, setEditData] = useState<SwitcherEditData>({
-    shopName: "",
-    includedFlag: false,
-    languageSelector: false,
-    currencySelector: false,
-    ipOpen: false,
-    browserLanguageOpen: true,
-    marketCurrencyOpen: true,
-    fontColor: "",
-    backgroundColor: "",
-    buttonColor: "",
-    buttonBackgroundColor: "",
-    optionBorderColor: "",
-    selectorPosition: "",
-    positionData: "0",
-    isTransparent: false,
-    autoLiquidCollect: true,
-  });
-  const [selectedLanguage, setSelectedLanguage] = useState<any>(
-    localization.languages.find((language) => language.selected),
+  const [activePreviewMenu, setActivePreviewMenu] =
+    useState<PreviewMenuType | null>(null);
+  const [selectedLanguageCode, setSelectedLanguageCode] = useState(
+    previewLanguages[0].iso_code,
   );
-  const [selectedCurrency, setSelectedCurrency] = useState<any>(
-    localization.currencies.find((currency) => currency.selected),
+  const [selectedCurrencyCode, setSelectedCurrencyCode] = useState(
+    previewCurrencies[0].iso_code,
   );
   const [isLoading, setIsLoading] = useState(true);
   const [showWarnModal, setShowWarnModal] = useState(false);
   const [saveAlert, setSaveAlert] = useState<string>("");
+  const [loadAlert, setLoadAlert] = useState(false);
   const [switcherEnableCardOpen, setSwitcherEnableCardOpen] =
     useState<boolean>(false);
   const [cardLoading, setCardLoading] = useState<boolean>(true);
@@ -184,172 +240,190 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { plan } = useSelector((state: any) => state.userConfig);
+  const isGeoLocationEnabled = editData.ipOpen;
+  const isIncludedFlag = editData.includedFlag;
+  const languageSelector = editData.languageSelector;
+  const currencySelector = editData.currencySelector;
+  const fontColor = editData.fontColor;
+  const backgroundColor = editData.backgroundColor;
+  const optionBorderColor = editData.optionBorderColor;
+  const selectorPosition = editData.selectorPosition;
+  const positionData = editData.positionData;
+  const isTransparent = editData.isTransparent;
+  const isBrowserLanguageEnabled = editData.browserLanguageOpen;
+  const isMarketCurrencyEnabled = editData.marketCurrencyOpen;
+  const showLanguagePreview =
+    languageSelector || (!languageSelector && !currencySelector);
+  const showCurrencyPreview =
+    currencySelector || (!languageSelector && !currencySelector);
+  const selectedLanguage = useMemo(
+    () =>
+      previewLanguages.find(
+        (language) => language.iso_code === selectedLanguageCode,
+      ) ?? previewLanguages[0],
+    [selectedLanguageCode],
+  );
+  const selectedCurrency = useMemo(
+    () =>
+      previewCurrencies.find(
+        (currency) => currency.iso_code === selectedCurrencyCode,
+      ) ?? previewCurrencies[0],
+    [selectedCurrencyCode],
+  );
+  const selectorPreviewOffset = useMemo(() => {
+    const rawValue = Number(positionData);
+    const normalizedValue = Number.isFinite(rawValue)
+      ? Math.min(Math.max(rawValue, 0), 100)
+      : 0;
 
-  const fetcher = useFetcher<any>();
-  const initFetcher = useFetcher<any>();
-  const themeFetcher = useFetcher<any>();
+    return selectorPosition === "top_left" || selectorPosition === "top_right"
+      ? `${(normalizedValue * 81) / 100}%`
+      : `${((100 - normalizedValue) * 81) / 100}%`;
+  }, [positionData, selectorPosition]);
+  const previewDisplayText = useMemo(() => {
+    if (showLanguagePreview && showCurrencyPreview) {
+      return `${selectedLanguage.localeName} / ${selectedCurrency.localeName}`;
+    }
+
+    if (showLanguagePreview) {
+      return selectedLanguage.localeName;
+    }
+
+    return selectedCurrency.localeName;
+  }, [
+    selectedCurrency.localeName,
+    selectedLanguage.localeName,
+    showCurrencyPreview,
+    showLanguagePreview,
+  ]);
+  const isDirty = useMemo(
+    () => !areSwitcherConfigsEqual(editData, originalData),
+    [editData, originalData],
+  );
 
   useEffect(() => {
-    const switcherEnableCardOpen = localStorage.getItem(
-      "switcherEnableCardOpen",
-    );
-    if (switcherEnableCardOpen) {
-      setSwitcherEnableCardOpen(switcherEnableCardOpen === "true");
-    }
-    themeFetcher.submit(
-      {
-        theme: JSON.stringify(true),
-      },
-      {
-        method: "post",
-        action: withEmbeddedSearch("/app/currency", location.search),
-      },
-    );
-    initFetcher.submit(
-      {},
-      {
-        method: "post",
-        action: "/currencyInit",
-      },
-    );
+    const controller = new AbortController();
+    let active = true;
+
     const getSwitcherConfig = async () => {
-      const data = await loadSwitcherConfigCompat({
-        migrated,
-        shop,
-      });
-      const initData = buildSwitcherEditDefaults(shop);
-      if (data?.success && data.response) {
-        const filteredResponse = Object.fromEntries(
-          Object.entries(data.response).filter(([_, value]) => value !== null),
-        );
-        const res = {
-          ...initData,
-          ...filteredResponse,
-        };
-        setOriginalData(res);
-        setIsIncludedFlag(res.includedFlag);
-        setLanguageSelector(res.languageSelector);
-        setCurrencySelector(res.currencySelector);
-        setIsGeoLocationEnabled(res.ipOpen);
-        setIsBrowserLanguageEnabled(res.browserLanguageOpen);
-        setIsMarketCurrencyEnabled(res.marketCurrencyOpen);
-        setFontColor(res.fontColor);
-        setBackgroundColor(res.backgroundColor);
-        setOptionBorderColor(res.optionBorderColor);
-        setSelectorPosition(res.selectorPosition);
-        setPositionData(res.positionData);
-        setIsTransparent(res.isTransparent);
-        setEditData(res);
-        setIsLoading(false);
-      } else {
-        setOriginalData(initData);
-        setIsIncludedFlag(initData.includedFlag);
-        setLanguageSelector(initData.languageSelector);
-        setCurrencySelector(initData.currencySelector);
-        setIsGeoLocationEnabled(initData.ipOpen);
-        setIsBrowserLanguageEnabled(initData.browserLanguageOpen);
-        setIsMarketCurrencyEnabled(initData.marketCurrencyOpen);
-        setFontColor(initData.fontColor);
-        setBackgroundColor(initData.backgroundColor);
-        setOptionBorderColor(initData.optionBorderColor);
-        setSelectorPosition(initData.selectorPosition);
-        setPositionData(initData.positionData);
-        setIsTransparent(initData.isTransparent);
-        setEditData(initData);
-        setIsLoading(false);
+      setIsLoading(true);
+      setLoadAlert(false);
+
+      try {
+        const data = await loadSwitcherConfigCompat({
+          migrated,
+          shop,
+          signal: controller.signal,
+        });
+        if (!active) return;
+
+        const nextData = data?.success
+          ? buildResolvedSwitcherData(shop, data.response)
+          : defaultEditData;
+
+        setOriginalData(nextData);
+        setEditData(nextData);
+        setLoadAlert(!data?.success);
+      } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
+        setOriginalData(defaultEditData);
+        setEditData(defaultEditData);
+        setLoadAlert(true);
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
       }
     };
 
-    getSwitcherConfig();
-    fetcher.submit(
-      {
-        log: `${shop} 目前在切换器页面`,
-      },
-      {
-        method: "POST",
-        action: "/log",
-      },
-    );
-  }, [fetcher, initFetcher, location.search, migrated, shop, themeFetcher]);
+    void getSwitcherConfig();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [defaultEditData, migrated, shop]);
 
   useEffect(() => {
-    if (themeFetcher.data) {
-      const switcherData =
-        themeFetcher.data.data.nodes[0].files.nodes[0]?.body?.content;
-      const jsonString = switcherData.replace(/\/\*[\s\S]*?\*\//g, "").trim();
-      const blocks = JSON.parse(jsonString).current?.blocks;
-      if (blocks) {
-        const switcherJson: any = Object.values(blocks).find(
-          (block: any) => block.type === ciwiSwitcherBlocksId,
+    const controller = new AbortController();
+    let active = true;
+
+    const cachedVisibility = localStorage.getItem("switcherEnableCardOpen");
+    if (cachedVisibility) {
+      setSwitcherEnableCardOpen(cachedVisibility === "true");
+    }
+
+    const loadSwitcherGuide = async () => {
+      setCardLoading(true);
+
+      try {
+        const formData = new FormData();
+        formData.append("theme", JSON.stringify(true));
+
+        const response = await fetch(
+          withEmbeddedSearch("/app/currency", location.search),
+          {
+            method: "POST",
+            body: formData,
+            signal: controller.signal,
+          },
         );
-        if (switcherJson) {
-          if (!switcherJson.disabled) {
-            setSwitcherEnableCardOpen(false);
-            localStorage.setItem("switcherEnableCardOpen", "false");
-          } else {
-            setSwitcherEnableCardOpen(true);
-            localStorage.setItem("switcherEnableCardOpen", "true");
-          }
+        const payload = await response.json().catch(() => null);
+        if (!active) return;
+
+        const nextVisible = extractSwitcherCardVisibility(
+          payload,
+          ciwiSwitcherBlocksId,
+        );
+
+        if (typeof nextVisible === "boolean") {
+          setSwitcherEnableCardOpen(nextVisible);
+          localStorage.setItem("switcherEnableCardOpen", String(nextVisible));
+        }
+      } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+      } finally {
+        if (active) {
+          setCardLoading(false);
         }
       }
+    };
 
-      setCardLoading(false);
-    }
-  }, [ciwiSwitcherBlocksId, themeFetcher.data]);
+    void loadSwitcherGuide();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [ciwiSwitcherBlocksId, location.search]);
 
   useEffect(() => {
-    if (
-      originalData &&
-      editData.shopName &&
-      JSON.stringify(editData) !== JSON.stringify(originalData)
-    ) {
+    if (isDirty) {
       shopify.saveBar.show("switcher-save-bar");
     } else {
       shopify.saveBar.hide("switcher-save-bar");
     }
-  }, [editData, originalData]);
+  }, [isDirty]);
+
+  useEffect(() => {
+    return () => {
+      shopify.saveBar.hide("switcher-save-bar");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isTransparent) {
+      setIsSelectorOpen(false);
+      setActivePreviewMenu(null);
+    }
+  }, [isTransparent]);
 
   const handleEditData = (updates: Partial<SwitcherEditData>) => {
-    // 更新对应的状态
-    Object.entries(updates).forEach(([key, value]) => {
-      switch (key) {
-        case "isTransparent":
-          setIsTransparent(value as boolean);
-          break;
-        case "includedFlag":
-          setIsIncludedFlag(value as boolean);
-          break;
-        case "languageSelector":
-          setLanguageSelector(value as boolean);
-          break;
-        case "currencySelector":
-          setCurrencySelector(value as boolean);
-          break;
-        case "fontColor":
-          setFontColor(value as string);
-          break;
-        case "browserLanguageOpen":
-          setIsBrowserLanguageEnabled(value as boolean);
-          break;
-        case "marketCurrencyOpen":
-          setIsMarketCurrencyEnabled(value as boolean);
-          break;
-        case "backgroundColor":
-          setBackgroundColor(value as string);
-          break;
-        case "optionBorderColor":
-          setOptionBorderColor(value as string);
-          break;
-        case "selectorPosition":
-          setSelectorPosition(value as string);
-          break;
-        case "positionData":
-          setPositionData(value as string);
-          break;
-      }
-    });
-
-    // 更新 editData
     setEditData((prev) => ({
       ...prev,
       ...updates,
@@ -363,14 +437,11 @@ const Index = () => {
     handleEditData({
       languageSelector: nextLanguageSelector,
       currencySelector: nextCurrencySelector,
+      includedFlag:
+        !nextLanguageSelector && nextCurrencySelector
+          ? false
+          : editData.includedFlag,
     });
-
-    if (!nextLanguageSelector && nextCurrencySelector) {
-      setIsIncludedFlag(false);
-      handleEditData({
-        includedFlag: false,
-      });
-    }
 
     const status =
       nextLanguageSelector && nextCurrencySelector
@@ -394,64 +465,28 @@ const Index = () => {
     );
   };
 
-  const handleLanguageClick = () => {
-    setIsLanguageOpen(!isLanguageOpen);
-    setIsCurrencyOpen(false);
-  };
-
-  const handleCurrencyClick = () => {
-    setIsCurrencyOpen(!isCurrencyOpen);
-    setIsLanguageOpen(false);
+  const handlePreviewMenuClick = (menu: PreviewMenuType) => {
+    setActivePreviewMenu((current) => (current === menu ? null : menu));
   };
 
   const handleSelectorClick = () => {
-    setIsSelectorOpen(!isSelectorOpen);
-    setIsLanguageOpen(false);
-    setIsCurrencyOpen(false);
-    setSelectedLanguage(
-      localization.languages.find((language) => language.selected),
-    );
-
-    setSelectedCurrency(
-      localization.currencies.find((currency) => currency.selected),
-    );
+    setIsSelectorOpen((prev) => !prev);
+    setActivePreviewMenu(null);
   };
 
   const handleCancelClick = () => {
-    setIsSelectorOpen(!isSelectorOpen);
-    setIsLanguageOpen(false);
-    setIsCurrencyOpen(false);
+    setIsSelectorOpen(false);
+    setActivePreviewMenu(null);
   };
 
-  const handleOptionClick = (value: string) => {
-    setIsLanguageOpen(false);
-    setIsCurrencyOpen(false);
-
-    if (
-      localization.languages.find((language) => language.iso_code === value)
-    ) {
-      localization.languages.forEach((language) => {
-        if (language.iso_code !== value) {
-          language.selected = false;
-        } else {
-          language.selected = true;
-          setSelectedLanguage(language);
-        }
-      });
-      setLocalization({ ...localization });
-    } else if (
-      localization.currencies.find((currency) => currency.iso_code === value)
-    ) {
-      localization.currencies.forEach((currency) => {
-        if (currency.iso_code !== value) {
-          currency.selected = false;
-        } else {
-          currency.selected = true;
-          setSelectedCurrency(currency);
-        }
-      });
-      setLocalization({ ...localization });
+  const handleOptionClick = (menu: PreviewMenuType, value: string) => {
+    if (menu === "language") {
+      setSelectedLanguageCode(value);
+    } else {
+      setSelectedCurrencyCode(value);
     }
+
+    setActivePreviewMenu(null);
     setIsSelectorOpen(false);
   };
 
@@ -460,13 +495,8 @@ const Index = () => {
       return;
     }
     if (plan?.type !== "Free" || !checked) {
-      setIsGeoLocationEnabled(checked);
-      setEditData((prev) => ({
-        ...prev,
-        ipOpen: checked,
-      }));
+      handleEditData({ ipOpen: checked });
     } else {
-      setIsGeoLocationEnabled(false);
       setShowWarnModal(true);
     }
     report(
@@ -483,55 +513,42 @@ const Index = () => {
   };
 
   const handleSave = async () => {
+    if (!isDirty) {
+      return;
+    }
+
     setUpdateLoading(true);
     setSaveAlert("");
-    const data = await saveSwitcherConfigCompat({
-      migrated,
-      shop,
-      data: editData,
-    });
-    if (data?.success && data.response != undefined) {
-      setOriginalData(data.response);
-      setEditData(data.response);
-      shopify.toast.show(t("Switcher configuration updated successfully"));
-    } else {
-      setSaveAlert(
-        getTranslateV4ErrorMessage(
-          t,
-          data?.errorMsg,
-          TRANSLATE_V4_ERROR_KEYS.SWITCHER_SAVE_FAILED,
-        ),
-      );
+    try {
+      const data = await saveSwitcherConfigCompat({
+        migrated,
+        shop,
+        data: editData,
+      });
+
+      if (data?.success && data.response !== undefined) {
+        const nextData = buildResolvedSwitcherData(shop, data.response);
+        setOriginalData(nextData);
+        setEditData(nextData);
+        setLoadAlert(false);
+        shopify.toast.show(t("Switcher configuration updated successfully"));
+      } else {
+        setSaveAlert(
+          getTranslateV4ErrorMessage(
+            t,
+            data?.errorMsg,
+            TRANSLATE_V4_ERROR_KEYS.SWITCHER_SAVE_FAILED,
+          ),
+        );
+      }
+    } finally {
+      setUpdateLoading(false);
     }
-    setUpdateLoading(false);
-    fetcher.submit(
-      {
-        log: `${shop} 切换器配置修改数据保存成功`,
-      },
-      {
-        method: "POST",
-        action: "/log",
-      },
-    );
   };
 
   const handleCancel = () => {
-    shopify.saveBar.hide("switcher-save-bar");
     setSaveAlert("");
-    if (originalData) {
-      setIsIncludedFlag(originalData.includedFlag);
-      setLanguageSelector(originalData.languageSelector);
-      setCurrencySelector(originalData.currencySelector);
-      setIsGeoLocationEnabled(originalData.ipOpen);
-      setIsBrowserLanguageEnabled(originalData.browserLanguageOpen);
-      setIsMarketCurrencyEnabled(originalData.marketCurrencyOpen);
-      setFontColor(originalData.fontColor);
-      setBackgroundColor(originalData.backgroundColor);
-      setOptionBorderColor(originalData.optionBorderColor);
-      setSelectorPosition(originalData.selectorPosition);
-      setPositionData(originalData.positionData);
-      setEditData(originalData);
-    }
+    setEditData(originalData);
   };
 
   const switcherPositionOptions = [
@@ -590,7 +607,7 @@ const Index = () => {
         <button
           variant="primary"
           onClick={handleSave}
-          disabled={updateLoading}
+          disabled={updateLoading || !isDirty}
         >
           {updateLoading ? t("Saving...") : t("Save")}
         </button>
@@ -610,6 +627,17 @@ const Index = () => {
         <div className={styles.switcher_container}>
           <div className={styles.switcher_editor}>
             <div style={sectionContentStackStyle}>
+              {loadAlert ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={t(
+                    "Unable to load the latest switcher settings. You can continue editing with the default values.",
+                  )}
+                  closable
+                  onClose={() => setLoadAlert(false)}
+                />
+              ) : null}
               {saveAlert ? (
                 <Alert
                   type="error"
@@ -646,7 +674,9 @@ const Index = () => {
                       <Text strong>{t("Match market by IP")}</Text>
                     </div>
                     <Switch
-                      className={showPaidPlanHint ? defaultStyles.Switch_disable : ""}
+                      className={
+                        showPaidPlanHint ? defaultStyles.Switch_disable : ""
+                      }
                       checked={isGeoLocationEnabled}
                       onChange={handleIpOpenChange}
                     />
@@ -656,9 +686,9 @@ const Index = () => {
                       <Text strong>{t("Match currency by market")}</Text>
                     </div>
                     <Switch
-                        checked={isMarketCurrencyEnabled}
+                      checked={isMarketCurrencyEnabled}
                       onChange={(checked) => {
-                          handleEditData({ marketCurrencyOpen: checked });
+                        handleEditData({ marketCurrencyOpen: checked });
                       }}
                     />
                   </div>
@@ -667,9 +697,9 @@ const Index = () => {
                       <Text strong>{t("Switch by browser language")}</Text>
                     </div>
                     <Switch
-                        checked={isBrowserLanguageEnabled}
+                      checked={isBrowserLanguageEnabled}
                       onChange={(checked) => {
-                          handleEditData({ browserLanguageOpen: checked });
+                        handleEditData({ browserLanguageOpen: checked });
                       }}
                     />
                   </div>
@@ -887,14 +917,7 @@ const Index = () => {
                 <div
                   style={{
                     position: "relative",
-                    top:
-                      selectorPosition === "top_left" ||
-                      selectorPosition === "top_right"
-                        ? ((Number(positionData) * 81) / 100).toString() + "%"
-                        : (
-                            ((100 - Number(positionData)) * 81) /
-                            100
-                          ).toString() + "%",
+                    top: selectorPreviewOffset,
                     height: "auto",
                     display: "block",
                     zIndex: "1000",
@@ -905,7 +928,7 @@ const Index = () => {
                     id="ciwi-container"
                     style={{
                       minWidth: "100px",
-                      position: "absolute", // 改为绝对定位
+                      position: "absolute",
                       left:
                         selectorPosition === "top_left" ||
                         selectorPosition === "bottom_left"
@@ -919,7 +942,7 @@ const Index = () => {
                       background: backgroundColor,
                       border: `1px solid ${optionBorderColor}`,
                       borderRadius: "8px",
-                      transform: "none", // 移除transform，使用left/right定位
+                      transform: "none",
                       height: "auto",
                       display: isTransparent ? "none" : "block",
                       zIndex: "2",
@@ -966,14 +989,14 @@ const Index = () => {
                         </div>
                         <div
                           style={{
-                            display: `${languageSelector || (!languageSelector && !currencySelector) ? "block" : "none"}`,
+                            display: showLanguagePreview ? "block" : "none",
                             gap: "10px",
                           }}
                         >
                           <div
                             className={styles.custom_selector}
                             data-type="language"
-                            onClick={handleLanguageClick}
+                            onClick={() => handlePreviewMenuClick("language")}
                           >
                             <div
                               className={styles.selector_header}
@@ -990,11 +1013,7 @@ const Index = () => {
                                 {isIncludedFlag && (
                                   <img
                                     className={styles.country_flag}
-                                    src={
-                                      localization.languages.find(
-                                        (language) => language.selected,
-                                      )?.flag
-                                    }
+                                    src={selectedLanguage.flag}
                                     alt=""
                                     width="25%"
                                     height="25%"
@@ -1004,11 +1023,7 @@ const Index = () => {
                                   className={styles.selected_text}
                                   data-type="language"
                                 >
-                                  {
-                                    localization.languages.find(
-                                      (language) => language.selected,
-                                    )?.localeName
-                                  }
+                                  {selectedLanguage.localeName}
                                 </span>
                               </div>
                               <img
@@ -1034,7 +1049,10 @@ const Index = () => {
                                   selectorPosition === "top_right"
                                     ? "100%"
                                     : "auto",
-                                display: isLanguageOpen ? "block" : "none",
+                                display:
+                                  activePreviewMenu === "language"
+                                    ? "block"
+                                    : "none",
                                 backgroundColor: backgroundColor,
                                 zIndex: "2000",
                               }}
@@ -1046,13 +1064,16 @@ const Index = () => {
                                   border: `1px solid ${optionBorderColor}`,
                                 }}
                               >
-                                {localization.languages.map((language) => (
+                                {previewLanguages.map((language) => (
                                   <div
                                     className={styles.option_item}
                                     data-value={language.iso_code}
                                     data-type="language"
                                     onClick={() =>
-                                      handleOptionClick(language.iso_code)
+                                      handleOptionClick(
+                                        "language",
+                                        language.iso_code,
+                                      )
                                     }
                                     key={language.iso_code}
                                   >
@@ -1076,14 +1097,14 @@ const Index = () => {
                         </div>
                         <div
                           style={{
-                            display: `${currencySelector || (!languageSelector && !currencySelector) ? "block" : "none"}`,
+                            display: showCurrencyPreview ? "block" : "none",
                             marginBottom: "10px",
                           }}
                         >
                           <div
                             className={styles.custom_selector}
                             data-type="currency"
-                            onClick={handleCurrencyClick}
+                            onClick={() => handlePreviewMenuClick("currency")}
                           >
                             <div
                               className={styles.selector_header}
@@ -1101,17 +1122,9 @@ const Index = () => {
                                   className={styles.selected_text}
                                   data-type="currency"
                                 >
-                                  {
-                                    localization.currencies.find(
-                                      (currency) => currency.selected,
-                                    )?.localeName
-                                  }
+                                  {selectedCurrency.localeName}
                                   (
-                                  {
-                                    localization.currencies.find(
-                                      (currency) => currency.selected,
-                                    )?.symbol
-                                  }
+                                  {selectedCurrency.symbol}
                                   )
                                 </span>
                               </div>
@@ -1131,7 +1144,10 @@ const Index = () => {
                               style={{
                                 backgroundColor: backgroundColor,
                                 zIndex: "2000",
-                                display: isCurrencyOpen ? "block" : "none",
+                                display:
+                                  activePreviewMenu === "currency"
+                                    ? "block"
+                                    : "none",
                                 bottom:
                                   selectorPosition === "bottom_left" ||
                                   selectorPosition === "bottom_right"
@@ -1151,14 +1167,17 @@ const Index = () => {
                                   border: `1px solid ${optionBorderColor}`,
                                 }}
                               >
-                                {localization.currencies.map((currency) => (
+                                {previewCurrencies.map((currency) => (
                                   <div
                                     className={styles.option_item}
                                     data-value={currency.iso_code}
                                     data-type="currency"
                                     key={currency.iso_code}
                                     onClick={() =>
-                                      handleOptionClick(currency.iso_code)
+                                      handleOptionClick(
+                                        "currency",
+                                        currency.iso_code,
+                                      )
                                     }
                                   >
                                     <span className={styles.option_text}>
@@ -1187,21 +1206,14 @@ const Index = () => {
                       {isIncludedFlag && (
                         <img
                           className={styles.country_flag}
-                          src={selectedLanguage?.flag}
+                          src={selectedLanguage.flag}
                           alt=""
                           width="25%"
                           height="25%"
                         />
                       )}
                       <span id="display-text" className={styles.main_box_text}>
-                        {(languageSelector && currencySelector) ||
-                        (!languageSelector && !currencySelector)
-                          ? selectedLanguage?.localeName +
-                            " / " +
-                            selectedCurrency?.localeName
-                          : languageSelector
-                            ? selectedLanguage?.localeName
-                            : selectedCurrency?.localeName}
+                        {previewDisplayText}
                       </span>
                       <img
                         id="mainbox-arrow-icon"
