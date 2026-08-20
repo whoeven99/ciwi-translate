@@ -838,31 +838,6 @@ export default function TranslateV4MvpRoute() {
       return;
     }
 
-    if (remainingCredits > 30_000) {
-      setSubmittingRecommendationIds((current) =>
-        current.includes(item.id)
-          ? current
-          : [...current, item.id],
-      );
-      setCreating(true);
-      try {
-        await createTasksWithConfig({
-          nextTargets: item.targets,
-          nextModules: item.modules,
-          nextAiModel: DEFAULT_AI_MODEL,
-          nextIsCover: false,
-          nextIsHandle: false,
-          nextIncludeLiquid: false,
-        });
-      } finally {
-        setCreating(false);
-        setSubmittingRecommendationIds((current) =>
-          current.filter((id) => id !== item.id),
-        );
-      }
-      return;
-    }
-
     const estimatedCredits = recommendationEstimates[item.id] ?? null;
     setCreateConfirmConfig({
       recommendationId: item.id,
@@ -885,7 +860,6 @@ export default function TranslateV4MvpRoute() {
       },
     });
   }, [
-    createTasksWithConfig,
     createQuotaGatePending,
     recommendationEstimates,
     remainingCredits,

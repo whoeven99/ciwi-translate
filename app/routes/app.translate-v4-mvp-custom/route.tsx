@@ -197,7 +197,6 @@ export default function TranslateV4MvpCustomRoute() {
           ? "insufficient_trial"
           : "insufficient_pricing"
       : "ready";
-  const shouldSkipCreateConfirm = (remainingCredits ?? 0) > 30_000;
 
   const persistCreateTaskDraft = useCallback(() => {
     saveCreateTaskDraft(shop, {
@@ -376,12 +375,8 @@ export default function TranslateV4MvpCustomRoute() {
       );
       return;
     }
-    if (shouldSkipCreateConfirm) {
-      void handleCreateConfirm();
-      return;
-    }
     setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, handleCreateConfirm, shouldSkipCreateConfirm, t]);
+  }, [createQuotaGatePending, t]);
 
   return (
     <Page>
