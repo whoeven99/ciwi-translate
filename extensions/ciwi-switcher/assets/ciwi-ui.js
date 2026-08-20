@@ -2674,7 +2674,8 @@ export class CiwiswitcherForm extends HTMLElement {
 
 const AUTO_LIQUID_MAX_LEN = 200;
 const AUTO_LIQUID_MIN_LEN = 2;
-const AUTO_LIQUID_BATCH = 60; // 单次最多上报条数
+/** 单次 POST 分片大小（对齐服务端 MAX_PER_REQUEST）；候选本身不设条数上限。 */
+const AUTO_LIQUID_POST_CHUNK = 100;
 const AUTO_LIQUID_REPORTED_CAP = 1500; // 客户端已报指纹上限
 
 // 性能护栏：最多遍历节点数；扫描按 idle 分片（单片时间上限），不因超时整页放弃。
@@ -2780,23 +2781,77 @@ function latinLooksLikeLocale(locale, text) {
   return false;
 }
 
+/** 字母是否以 Basic Latin (A–Z) 为主（弱英文信号；有变音则否）。 */
+function isMostlyBasicLatinLetters(text) {
+  const letters = String(text || "").match(/\p{L}/gu) || [];
+  if (letters.length < 2) return false;
+  let basic = 0;
+  for (const ch of letters) {
+    if (/[A-Za-z]/.test(ch)) basic += 1;
+  }
+  return basic / letters.length >= 0.9;
+}
+
+/** 是否像「非主语言」的其它拉丁语（用于挡德/法等误采）。 */
+function latinLooksLikeOtherLocale(primaryLocale, text) {
+  const primaryBase = autoLiquidLocaleBase(primaryLocale) || "en";
+  const bases = new Set([
+    ...Object.keys(LATIN_DIACRITIC_RE),
+    ...Object.keys(LATIN_WORD_HINT_RE),
+  ]);
+  for (const base of bases) {
+    if (base === primaryBase) continue;
+    if (latinLooksLikeLocale(base, text)) return true;
+  }
+  return false;
+}
+
 /**
- * 相对目标语言判定文本：source | target | unknown
- * 不依赖 primaryLanguage：
- * - 非拉丁：含目标脚本 → target，否则 source
- * - 拉丁：变音/词像目标语 → target，否则 source（当未译残留）
+ * 是否像店铺主语言（采集只收这类「未译源语」）。
+ * - 脚本语言：含主语言脚本
+ * - 拉丁主语言：变音/词表命中；英文另允许「高 ASCII 字母占比且不像其它拉丁语」
  */
-function classifyAutoLiquidText(text, targetLocale) {
+function looksLikePrimaryLocale(primaryLocale, text) {
+  if (!primaryLocale || !text) return false;
+  const primaryRe = localeScriptRegex(primaryLocale);
+  if (primaryRe) return primaryRe.test(text);
+
+  if (latinLooksLikeLocale(primaryLocale, text)) return true;
+
+  const base = autoLiquidLocaleBase(primaryLocale);
+  // en（及未识别 base 当 en）：弱 ASCII 启发式，但其它拉丁语强信号优先否决
+  if (!base || base === "en") {
+    if (latinLooksLikeOtherLocale(primaryLocale || "en", text)) return false;
+    return isMostlyBasicLatinLetters(text);
+  }
+  return false;
+}
+
+/**
+ * 相对目标语 + 主语言判定：source | target | unknown
+ * 只采「像主语言」且「不像目标语」；无 primary 时不猜（unknown，避免德文当英文）。
+ */
+function classifyAutoLiquidText(text, targetLocale, primaryLocale) {
   const targetRe = localeScriptRegex(targetLocale);
 
-  // 目标语有独立脚本（zh/ja/ko…）：含目标脚本 → 已译；否则当未译残留
+  // 已像目标语 → 跳过
   if (targetRe) {
-    return targetRe.test(text) ? "target" : "source";
+    if (targetRe.test(text)) return "target";
+  } else if (latinLooksLikeLocale(targetLocale, text)) {
+    return "target";
   }
 
-  // 拉丁目标：变音/词命中 → 已像目标语；否则当未译残留
-  if (latinLooksLikeLocale(targetLocale, text)) return "target";
-  return "source";
+  if (!primaryLocale) return "unknown";
+
+  // 像其它拉丁语（相对主语言）→ 不采
+  if (
+    !localeScriptRegex(primaryLocale) &&
+    latinLooksLikeOtherLocale(primaryLocale, text)
+  ) {
+    return "unknown";
+  }
+
+  return looksLikePrimaryLocale(primaryLocale, text) ? "source" : "unknown";
 }
 
 function autoLiquidReportedKey(shopValue, language) {
@@ -2830,7 +2885,268 @@ function isAutoLiquidCandidate(text) {
   if (t.length < AUTO_LIQUID_MIN_LEN || t.length > AUTO_LIQUID_MAX_LEN) return false;
   // 至少含一个字母（含 CJK / 各语言字母），过滤纯数字 / 符号
   if (!/\p{L}/u.test(t)) return false;
+  if (looksLikeHtmlMarkupFragment(t)) return false;
+  if (looksLikeAutoLiquidJunk(t)) return false;
   return true;
+}
+
+/**
+ * 与 translation-core `looksLikeHtmlMarkupFragment` 对齐：拦 img/source 属性碎片。
+ * 例：`}" loading="lazy" width="1536" height="2048" />`
+ */
+function looksLikeHtmlMarkupFragment(text) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  if (/\b(loading|srcset|decoding|fetchpriority)\s*=\s*["']/i.test(t)) return true;
+  const attrs = t.match(/\b[\w:-]+\s*=\s*(["'])(?:(?!\1).)*\1/g);
+  if (attrs && attrs.length >= 2) return true;
+  if (/^[}\]"'`,;]+/.test(t) && /\b[\w:-]+\s*=\s*["']/.test(t)) return true;
+  if (/\/\s*>\s*$/.test(t) && /\b[\w:-]+\s*=\s*["']/.test(t)) return true;
+  return false;
+}
+
+/**
+ * 与 translation-core `autoLiquidJunk.ts` 对齐：评价/价格/SKU/年款 + A–E
+ *（品牌平台、人名、规格型号、尺码码、语言切换标签）。短 UI（FAQ/Price/Shop）不拦。
+ */
+function looksLikeAutoLiquidJunk(text) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  if (
+    /\b(reviews?|ratings?|verified|stars?|sterren|stelle|étoiles?|estrellas?|bewertungen?)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (/★/.test(t)) return true;
+  if (/\d+\s*stars?\s*:/i.test(t)) return true;
+  if (/\d+\s*[:：]\s*\d+/.test(t) && /%/.test(t)) return true;
+  if (/[$€£¥₹]\s*\d[\d,.'’]*/.test(t)) return true;
+  if (/\d[\d,.'’]*\s*(JPY|EUR|USD|GBP|CNY|RMB)\b/i.test(t)) return true;
+  if (/^SKU\s*[：:]/i.test(t)) return true;
+  if (/\b(19|20)\d{2}\s+and\s+later\b/i.test(t)) return true;
+  if (t.length <= 80 && /\b(19|20)\d{2}\s*[-–—]\s*(19|20)\d{2}\b/.test(t)) return true;
+  if (!/\s/.test(t) && /^[A-Z0-9]{4,12}$/i.test(t) && /\d/.test(t)) return true;
+  if (/^\d+\s*%\s*OFF$/i.test(t)) return true;
+  if (/^(EUR|USD|GBP|JPY|CNY|RMB)\s*[€$£¥]?$/i.test(t)) return true;
+  if (
+    /^(USD|EUR|GBP|JPY|CNY|RMB|SGD|AUD|CAD|HKD|CHF|NZD|SEK|NOK|DKK|PLN|INR|KRW|TWD|THB|MYR|PHP|VND|IDR)\s*[$€£¥]?$/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  // A brand / platform / payment / vehicle brand (exact)
+  if (
+    /^(facebook|instagram|youtube|tiktok|pinterest|twitter|linkedin|whatsapp|spotify|audible|google|apple|carplay|hicar|carlife|cgplay|bluetooth|waze|paypal|visa|mastercard|bancontact|amex|maestro|klarna|apple pay|google pay|american express|ducati|yamaha|honda|suzuki|triumph|bmw|ktm|wifi|wi-fi)$/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // E locale switcher labels (exact; keep FAQ/Shop/Price out)
+  if (
+    /^(english|deutsch|german|italiano|italian|nederlands|dutch|polski|polish|français|francais|french|español|espanol|spanish|português|portugues|portuguese|русский|russian|日本語|japanese|中文|简体中文|繁體中文|繁体中文|chinese|한국어|korean|العربية|arabic|svenska|swedish|dansk|danish|norsk|norwegian|suomi|finnish|čeština|cestina|czech|magyar|hungarian|română|romana|romanian|ελληνικά|greek|türkçe|turkce|turkish|ไทย|thai|українська|ukrainian|hrvatski|croatian|български|bulgarian|slovenčina|slovak|slovenščina|slovenian|hebrew|עברית|hindi|हिन्दी)$/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // D size codes
+  if (/^(XXS|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|5XL)$/i.test(t)) return true;
+  // B person / handle
+  if (/^anonymous$/i.test(t)) return true;
+  if (/^@[A-Za-z0-9._-]{2,40}$/.test(t)) return true;
+  if (/^[A-Z][a-z]{1,20}\s+[A-Z]\.?$/.test(t)) return true;
+  if (/^[A-Z]\.?\s+[A-Z]\.?$/.test(t)) return true;
+  // C spec / coupon / EU size / dimensions
+  if (/\d+(?:\.\d+)?\s*[*x×]\s*\d+/i.test(t)) return true;
+  if (
+    t.length <= 24 &&
+    /^\d+(?:[.,]\d+)?\s*(mm|cm|m|kg|g|hz|mhz|ghz|fps|v|w|mah)\b/i.test(t)
+  ) {
+    return true;
+  }
+  if (/^EU\s*\d{2}$/i.test(t)) return true;
+  if (/^[A-Z]{6,}\d{2,}$/.test(t)) return true;
+  if (/^,\s*[A-Za-z0-9][A-Za-z0-9 ./-]{0,30}$/.test(t)) return true;
+  if (/^\d+\s+likes?$/i.test(t)) return true;
+
+  // Product / vehicle model codes (keep aligned with autoLiquidJunk.ts)
+  if (/\b[A-Z]{2,}-\d+\b/i.test(t)) return true;
+  if (/^[A-Z]*\d+[A-Z]*\s+[A-Z]{1,4}$/i.test(t)) return true;
+  if (/^[A-Z]\d{3,4}(\s+[A-Z]{1,4})?$/i.test(t)) return true;
+  if (/^[A-Z]\s+[A-Z][a-z]+[A-Z][a-zA-Z0-9]*$/.test(t)) return true;
+  if (/^[A-Z]{1,6}(?:\s+[A-Z]{1,4})?\s+\d{1,4}[A-Z]?$/i.test(t)) return true;
+  if (
+    !/\s/.test(t) &&
+    /^[A-Z0-9]{4,8}$/.test(t) &&
+    /^[A-Z]{4,8}$/.test(t) &&
+    !/^(CART|SHOP|SALE|FREE|APP|USB|GPS|FAQ|PDF|HTML|HTTP|WIFI)$/.test(t)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** 评价 App 常见容器：采集时跳过整块 DOM。 */
+const AUTO_LIQUID_REVIEW_ANCESTOR_SELECTOR = [
+  '[class*="judgeme"]',
+  '[class*="loox"]',
+  '[class*="yotpo"]',
+  '[class*="stamped"]',
+  '[class*="review-widget"]',
+  '[class*="product-reviews"]',
+  '[class*="rating"]',
+  '[id*="review"]',
+].join(", ");
+
+function isAutoLiquidReviewAncestor(element) {
+  if (!element || typeof element.closest !== "function") return false;
+  try {
+    return Boolean(element.closest(AUTO_LIQUID_REVIEW_ANCESTOR_SELECTOR));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 采集扫描根：主文档 body + open shadowRoot + 同源 iframe（含嵌套同源）。
+ * 跨域 iframe / closed shadow 无法访问，自动跳过。
+ */
+function collectAutoLiquidScanRoots(ciwiBlock) {
+  const roots = [];
+  const seenRoots = new Set();
+  const seenDocs = new Set();
+
+  const pushRoot = (root) => {
+    if (!root || seenRoots.has(root)) return;
+    seenRoots.add(root);
+    roots.push(root);
+  };
+
+  // 跨 iframe realm 时 `instanceof ShadowRoot` 可能失败，用 host 特征判断。
+  const isShadowRootNode = (node) =>
+    !!(
+      node &&
+      node.nodeType === Node.DOCUMENT_FRAGMENT_NODE &&
+      node.host
+    );
+
+  const docOf = (node) => {
+    try {
+      if (!node) return document;
+      if (node.nodeType === Node.DOCUMENT_NODE) return node;
+      // ShadowRoot 无 createTreeWalker，必须用 host 所在 document
+      if (isShadowRootNode(node)) {
+        return node.ownerDocument || node.host?.ownerDocument || document;
+      }
+      return node.ownerDocument || document;
+    } catch {
+      return document;
+    }
+  };
+
+  const addShadowsIn = (scope) => {
+    if (!scope) return;
+    pushRoot(scope);
+    const walkerDoc = docOf(scope);
+
+    try {
+      if (scope.nodeType === Node.ELEMENT_NODE && scope.shadowRoot) {
+        addShadowsIn(scope.shadowRoot);
+      }
+      const elWalker = walkerDoc.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT, {
+        acceptNode(node) {
+          if (!node || skipTags.has(node.nodeName)) return NodeFilter.FILTER_REJECT;
+          try {
+            if (ciwiBlock && ciwiBlock.contains(node)) return NodeFilter.FILTER_REJECT;
+          } catch {
+            // 跨文档 contains 可能抛错 → 不据此拒绝
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
+      while (elWalker.nextNode()) {
+        const el = elWalker.currentNode;
+        if (el?.shadowRoot) addShadowsIn(el.shadowRoot);
+      }
+    } catch {
+      // ignore broken roots
+    }
+  };
+
+  const addDocumentTree = (doc) => {
+    if (!doc || seenDocs.has(doc)) return;
+    seenDocs.add(doc);
+    try {
+      if (doc.body) addShadowsIn(doc.body);
+    } catch {
+      // ignore
+    }
+    let iframes = [];
+    try {
+      iframes = Array.from(doc.querySelectorAll("iframe"));
+    } catch {
+      return;
+    }
+    for (const iframe of iframes) {
+      try {
+        const idoc = iframe.contentDocument;
+        if (idoc) addDocumentTree(idoc);
+      } catch {
+        // 跨域：读不到 contentDocument
+      }
+    }
+  };
+
+  try {
+    addDocumentTree(document);
+  } catch {
+    if (document.body) pushRoot(document.body);
+  }
+
+  return roots;
+}
+
+function createAutoLiquidTextWalker(root, ciwiBlock) {
+  let walkerDoc = document;
+  try {
+    if (
+      root &&
+      root.nodeType === Node.DOCUMENT_FRAGMENT_NODE &&
+      root.host
+    ) {
+      walkerDoc = root.ownerDocument || root.host?.ownerDocument || document;
+    } else if (root?.ownerDocument) {
+      walkerDoc = root.ownerDocument;
+    }
+  } catch {
+    walkerDoc = document;
+  }
+
+  return walkerDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (skipTags.has(parent.nodeName)) return NodeFilter.FILTER_REJECT;
+      try {
+        if (ciwiBlock && ciwiBlock.contains(parent)) return NodeFilter.FILTER_REJECT;
+        if (typeof parent.closest === "function" && parent.closest("#ciwi-container")) {
+          return NodeFilter.FILTER_REJECT;
+        }
+      } catch {
+        // ignore
+      }
+      if (parent.isContentEditable) return NodeFilter.FILTER_REJECT;
+      if (isElementHiddenForTranslation(parent)) return NodeFilter.FILTER_REJECT;
+      if (isPriceRelatedElement(parent)) return NodeFilter.FILTER_REJECT;
+      if (isAutoLiquidReviewAncestor(parent)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
 }
 
 /**
@@ -2847,6 +3163,11 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
       'input[name="language_code"]',
     )?.value;
     const primaryLanguage = options?.primaryLanguage || "";
+    autoLiquidLog("primary_language", {
+      primaryLanguage: primaryLanguage || null,
+      currentLanguage: language || null,
+      source: "options.primaryLanguage ← switcher config (Shopify primary locale)",
+    });
     autoLiquidLog("start", {
       shop: shopValue,
       language,
@@ -2878,12 +3199,22 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
     }
     autoLiquidCollectInFlight.add(flightKey);
 
+    if (!primaryLanguage) {
+      autoLiquidLog("skip", {
+        reason: "missing_primary_language",
+        hint: "switcher config 未带 primaryLanguage（服务端从 Shopify 主 locale 解析）；本轮不采以免误收其它语",
+      });
+      autoLiquidCollectInFlight.delete(flightKey);
+      return;
+    }
+
     const targetScript = localeScriptRegex(language);
     autoLiquidLog("classify_mode", {
       language,
+      primaryLanguage,
       targetHasScript: !!targetScript,
-      mode: targetScript ? "script" : "latin_heuristic",
-      note: "只上报像源语的文本；无覆盖率占比门控",
+      mode: targetScript ? "script+primary" : "latin+primary",
+      note: "只采像主语言且不像目标语的文本",
     });
 
     const reportedKey = autoLiquidReportedKey(shopValue, language);
@@ -2895,26 +3226,16 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
       return;
     }
 
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const parent = node.parentElement;
-          if (!parent) return NodeFilter.FILTER_REJECT;
-          if (skipTags.has(parent.nodeName)) return NodeFilter.FILTER_REJECT;
-          // 跳过 switcher 自身 UI
-          if (ciwiBlock && ciwiBlock.contains(parent))
-            return NodeFilter.FILTER_REJECT;
-          if (parent.closest("#ciwi-container"))
-            return NodeFilter.FILTER_REJECT;
-          if (parent.isContentEditable) return NodeFilter.FILTER_REJECT;
-          if (isElementHiddenForTranslation(parent))
-            return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      },
-    );
+    const scanRoots = collectAutoLiquidScanRoots(ciwiBlock);
+    if (!scanRoots.length) {
+      autoLiquidCollectInFlight.delete(flightKey);
+      autoLiquidLog("skip", { reason: "no_scan_roots" });
+      return;
+    }
+    autoLiquidLog("scan_roots", {
+      count: scanRoots.length,
+      note: "body + open shadowRoot + same-origin iframe(s)",
+    });
 
     const startedAt =
       typeof performance !== "undefined" && performance.now
@@ -2932,6 +3253,9 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
     let unknownCount = 0;
     let nodes = 0;
     let truncated = false;
+    let rootIndex = 0;
+    let walker = createAutoLiquidTextWalker(scanRoots[0], ciwiBlock);
+    rootIndex = 1;
 
     const scheduleSlice = (fn) => {
       if (typeof window !== "undefined" && "requestIdleCallback" in window) {
@@ -2950,6 +3274,7 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
         elapsedMs,
         truncated,
         truncateReason: truncated ? "max_nodes" : null,
+        scanRoots: scanRoots.length,
         sourceCount,
         targetCount,
         unknownCount,
@@ -2963,50 +3288,65 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
         return;
       }
 
-      // 乐观标记为已报，避免同页多次触发 / 短时间重复上报
-      candidates.forEach((t) => reported.add(t));
-      saveAutoLiquidReported(reportedKey, reported);
-
       autoLiquidLog("post", {
         language,
         primaryLanguage,
         count: candidates.length,
+        chunks: Math.ceil(candidates.length / AUTO_LIQUID_POST_CHUNK),
+        chunkSize: AUTO_LIQUID_POST_CHUNK,
         truncated,
         texts: candidates.slice(0, 15).map((t) => t.slice(0, 80)),
       });
 
-      CollectLiquidStrings({
-        shopName: shopValue,
-        languageCode: language,
-        texts: candidates,
-      })
-        .then((res) => {
-          const body = res?.response;
-          autoLiquidLog("response", {
-            success: res?.success,
-            scheduled: body?.scheduled,
-            skipped: body?.skipped,
-            reason: body?.reason,
-            raw: body,
-          });
-          const reason = body?.reason;
-          if (
-            body?.skipped &&
-            (reason === "disabled" ||
-              reason === "primary_locale" ||
-              reason === "total_cap" ||
-              reason === "daily_cap" ||
-              reason === "resource_not_ready")
-          ) {
-            try {
-              sessionStorage.setItem(sessionFlag, "1");
-            } catch {}
-            autoLiquidLog("session_off_from_server", { reason, sessionFlag });
+      // 分片上报；成功后再写入已报指纹（避免失败也被标已报）。
+      const postChunks = async () => {
+        for (let i = 0; i < candidates.length; i += AUTO_LIQUID_POST_CHUNK) {
+          const chunk = candidates.slice(i, i + AUTO_LIQUID_POST_CHUNK);
+          try {
+            const res = await CollectLiquidStrings({
+              shopName: shopValue,
+              languageCode: language,
+              texts: chunk,
+            });
+            const body = res?.response;
+            autoLiquidLog("response", {
+              success: res?.success,
+              chunkIndex: Math.floor(i / AUTO_LIQUID_POST_CHUNK),
+              chunkCount: chunk.length,
+              scheduled: body?.scheduled,
+              skipped: body?.skipped,
+              reason: body?.reason,
+              raw: body,
+            });
+            if (res?.success) {
+              chunk.forEach((t) => reported.add(t));
+              saveAutoLiquidReported(reportedKey, reported);
+            }
+            const reason = body?.reason;
+            if (
+              body?.skipped &&
+              (reason === "disabled" ||
+                reason === "primary_locale" ||
+                reason === "total_cap" ||
+                reason === "daily_cap" ||
+                reason === "resource_not_ready")
+            ) {
+              try {
+                sessionStorage.setItem(sessionFlag, "1");
+              } catch {}
+              autoLiquidLog("session_off_from_server", { reason, sessionFlag });
+              break;
+            }
+          } catch (err) {
+            autoLiquidLog("request_failed", {
+              chunkIndex: Math.floor(i / AUTO_LIQUID_POST_CHUNK),
+              err,
+            });
+            break;
           }
-        })
-        .catch((err) => {
-          autoLiquidLog("request_failed", err);
-        });
+        }
+      };
+      postChunks();
     };
 
     const pump = (deadline) => {
@@ -3023,7 +3363,19 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
           return now() - sliceStart >= AUTO_LIQUID_SLICE_MS;
         };
 
-        while (walker.nextNode()) {
+        while (!truncated) {
+          if (!walker) {
+            if (rootIndex >= scanRoots.length) break;
+            walker = createAutoLiquidTextWalker(scanRoots[rootIndex], ciwiBlock);
+            rootIndex += 1;
+            continue;
+          }
+
+          if (!walker.nextNode()) {
+            walker = null;
+            continue;
+          }
+
           nodes += 1;
           if (nodes > AUTO_LIQUID_MAX_NODES) {
             truncated = true;
@@ -3047,10 +3399,10 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
           }
           seen.add(t);
 
-          const cls = classifyAutoLiquidText(t, language);
+          const cls = classifyAutoLiquidText(t, language, primaryLanguage);
           if (cls === "source") {
             sourceCount += 1;
-            if (!reported.has(t) && candidates.length < AUTO_LIQUID_BATCH) {
+            if (!reported.has(t)) {
               candidates.push(t);
             }
           } else if (cls === "target") {

@@ -1,28 +1,18 @@
 /**
- * 过去 24 小时 Spark 自动翻译（TsFrontend-Auto）每小时新建任务数。
- * Usage: node scripts/auto-tasks-24h-trend.mjs
+ * 过去 24 小时自动翻译（TsFrontend-Auto）每小时新建任务数。
+ * 默认测环境；生产：--env=.env.prod
+ * Usage: node worker/scripts/auto-tasks-24h-trend.mjs
  */
 import { CosmosClient } from "@azure/cosmos";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadStackedEnv, resolveCosmos } from "../../scripts/lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, "../..");
 const TZ = process.env.AUTO_TRANSLATE_SCHEDULE_TZ?.trim() || "Asia/Shanghai";
 const AUTO = "TsFrontend-Auto";
-
-function loadEnvProd() {
-  const envPath = resolve(__dirname, "../../.env.prod");
-  const env = {};
-  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i <= 0) continue;
-    env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
-  }
-  return env;
-}
 
 function hourKeyInTz(iso, timeZone) {
   const d = new Date(iso);
@@ -47,17 +37,16 @@ function buildLast24HourBuckets(now, timeZone) {
   return [...new Set(buckets)];
 }
 
-const env = loadEnvProd();
-const endpoint = env.COSMOS_ENDPOINT?.trim();
-const key = env.COSMOS_KEY?.trim();
-const db = env.COSMOS_TRANSLATION_DATABASE_ID?.trim() || "translation";
-const containerId =
-  env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER?.trim() || "translation_v4_jobs";
-
-if (!endpoint || !key) {
-  console.error("COSMOS env missing in Spark .env.prod");
+const { env } = loadStackedEnv({ root });
+const cosmos = resolveCosmos(env);
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("COSMOS env missing");
   process.exit(1);
 }
+const endpoint = cosmos.endpoint;
+const key = cosmos.key;
+const db = cosmos.databaseId;
+const containerId = cosmos.containerId;
 
 const now = new Date();
 const since = new Date(now.getTime() - 24 * 60 * 60_000).toISOString();

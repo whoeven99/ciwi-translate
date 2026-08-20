@@ -501,6 +501,22 @@ async function ciwiOnload() {
       'input[name="language_code"]',
     )?.value;
     const primaryLanguage = configData?.primaryLanguage;
+    // 主语言来自 Switcher 配置接口附带字段（Shopify 店铺主 locale），非商户手填。
+    try {
+      const dbg = localStorage.getItem("ciwi_debug_auto_liquid");
+      if (dbg !== "0" && dbg !== "false") {
+        console.log("[ciwi-auto-liquid] primary_language", {
+          primaryLanguage: primaryLanguage || null,
+          currentLanguage: currentLanguage || null,
+          source: "switcher config → Shopify shop primary locale",
+        });
+      }
+    } catch {
+      console.log("[ciwi-auto-liquid] primary_language", {
+        primaryLanguage: primaryLanguage || null,
+        currentLanguage: currentLanguage || null,
+      });
+    }
     if (
       primaryLanguage &&
       currentLanguage &&

@@ -10,11 +10,14 @@ const TSF_DB_5XX_RETRY_STATUSES = new Set([502, 503, 504]);
 /**
  * 连接 TSF Turso 库，读取自动翻译配置、Session token、Glossary 等。
  *
- * 环境变量（在 Render worker 服务上配置）：
- *   TSF_TURSO_DATABASE_URL   libsql://xxx.turso.io
- *   TSF_TURSO_AUTH_TOKEN     eyJhbGci...
+ * 环境变量（本地 `.env` / Render Worker Environment）：
+ *   TURSO_DATABASE_URL   libsql://xxx.turso.io
+ *   TURSO_AUTH_TOKEN     eyJhbGci...
+ *
+ * 短期兼容：TSF_TURSO_* → TURSO_TEST_* → TURSO_PROD_*
  */
 let client: Client | null = null;
+let deprecationLogged = false;
 
 function normalizeEnv(value: string | undefined): string {
   let v = (value ?? "").trim();
@@ -24,19 +27,51 @@ function normalizeEnv(value: string | undefined): string {
   return v;
 }
 
+const PRIMARY_URL_KEY = "TURSO_DATABASE_URL";
+const PRIMARY_TOKEN_KEY = "TURSO_AUTH_TOKEN";
+
+const LEGACY_TURSO_PAIRS = [
+  ["TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN"],
+  ["TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN"],
+  ["TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN"],
+] as const;
+
+function readTursoPair(): { url: string; authToken: string; urlKey: string } {
+  const primaryUrl = normalizeEnv(process.env[PRIMARY_URL_KEY]);
+  const primaryToken = normalizeEnv(process.env[PRIMARY_TOKEN_KEY]);
+  if (primaryUrl.startsWith("libsql://") && primaryToken) {
+    return { url: primaryUrl, authToken: primaryToken, urlKey: PRIMARY_URL_KEY };
+  }
+
+  for (const [urlKey, tokenKey] of LEGACY_TURSO_PAIRS) {
+    const url = normalizeEnv(process.env[urlKey]);
+    const authToken = normalizeEnv(process.env[tokenKey]);
+    if (url.startsWith("libsql://") && authToken) {
+      if (!deprecationLogged) {
+        deprecationLogged = true;
+        console.warn(
+          `[tsfDb] 使用兼容键 ${urlKey}；请改为 ${PRIMARY_URL_KEY} / ${PRIMARY_TOKEN_KEY}`,
+        );
+      }
+      return { url, authToken, urlKey };
+    }
+  }
+
+  return { url: primaryUrl, authToken: primaryToken, urlKey: PRIMARY_URL_KEY };
+}
+
 export function hasTsfDbCredentials(): boolean {
-  const url = normalizeEnv(process.env.TSF_TURSO_DATABASE_URL);
-  const authToken = normalizeEnv(process.env.TSF_TURSO_AUTH_TOKEN);
+  const { url, authToken } = readTursoPair();
   return url.startsWith("libsql://") && Boolean(authToken);
 }
 
 export function getTsfDb(): Client {
   if (client) return client;
-  const url = normalizeEnv(process.env.TSF_TURSO_DATABASE_URL);
-  const authToken = normalizeEnv(process.env.TSF_TURSO_AUTH_TOKEN);
+  const { url, authToken, urlKey } = readTursoPair();
   if (!url.startsWith("libsql://") || !authToken) {
     throw new Error(
-      "TSF Turso 未配置：请设置 TSF_TURSO_DATABASE_URL（libsql://...）与 TSF_TURSO_AUTH_TOKEN",
+      `TSF Turso 未配置：请设置 ${PRIMARY_URL_KEY}（libsql://...）与 ${PRIMARY_TOKEN_KEY}` +
+        `（当前未命中可用键，含兼容 ${urlKey}）`,
     );
   }
   client = createClient({ url, authToken });

@@ -28,15 +28,28 @@ export {
   getExpectedAnnualGrants,
   getNextAnnualCreditGrantAt,
   MAX_ANNUAL_CREDIT_GRANTS,
-} from "./subscription/annualCreditCycle.server";
+} from "@ciwi/translation-core/annual-credit-cycle";
 export { cancelSubscription } from "./subscription/cancelSubscription.server";
 export { cleanupBillingOnUninstall } from "./subscription/cleanupOnUninstall.server";
 export {
   snapshotShopForUninstall,
   formatUninstallFeishuMessage,
+  formatInstallFeishuMessage,
+  formatFirstSubscribeFeishuMessage,
   type UninstallShopSnapshot,
 } from "./uninstallSnapshot.server";
+export {
+  scheduleFirstInstallFeishuNotify,
+  scheduleFirstSubscribeFeishuNotify,
+} from "./lifecycleFeishuNotify.server";
 export { applyTokenPackPurchase } from "./purchase/applyTokenPack.server";
+export {
+  grantLaunchCreditsIfEligible,
+  resolveLaunchCreditsForPlanKey,
+  LAUNCH_CREDITS_BY_TIER,
+  LAUNCH_CREDITS_REFERENCE_ID,
+  type GrantLaunchCreditsResult,
+} from "./grant/grantLaunchCredits.server";
 export {
   resolveBillingBinding,
   type BindingResolution,
@@ -61,3 +74,4 @@ export {
   handleTsfSubscriptionWebhook,
   handleTsfPurchaseWebhook,
 } from "./webhooks/handleBillingWebhook.server";
+export { scheduleUninstallWinbackEmail } from "./email/uninstallEmail.server";

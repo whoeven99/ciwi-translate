@@ -69,7 +69,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `app/root.tsx`                                               | Global Remix root, Redux provider, GTM/web-vitals, global client error reporting.         |
 | `app/entry.client.tsx` / `app/entry.server.tsx`              | Remix hydrate/SSR. Server inlines i18n boot (`app/lib/i18nBoot.ts`) so client hydrate does not await `/locales/*.json`. |
 | `app/shopify.server.ts`                                      | Shopify app config, auth exports, API version, session storage.                           |
-| `app/db.server.ts`                                           | Turso/Prisma client creation and runtime env loading.                                     |
+| `app/db.server.ts`                                           | Turso/Prisma client；凭据 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（见 `tursoTarget.server.ts`）。 |
 | `app/routes/app.tsx`                                         | Embedded app shell, auth, nav, bootstrap, install-time init, shop scan trigger.           |
 | `app/routes/*`                                               | Remix flat routes for pages and API endpoints.                                            |
 | `app/server/*`                                               | Server-side business logic. Prefer adding feature helpers here and keeping routes thin.   |
@@ -85,10 +85,10 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `worker/src/*`                                               | Background workers and services for translation, shop scan, email, Cosmos/Blob/Redis/LLM. |
 | `extensions/ciwi-switcher/*`                                 | Storefront language/currency switcher theme extension.                                    |
 | `extensions/web-pixel/*`                                     | Shopify web pixel extension.                                                              |
-| `scripts/*`                                                  | Migration, audit, diagnostic, cleanup, and one-off operational scripts.                   |
+| `scripts/*`                                                  | 运维 / 诊断 / 迁移 / 审计脚本；共用 `scripts/lib/loadEnv.mjs`；`eventReport.ts` 为 App 运行时埋点。 |
 | `public/locales/*/translation.json`                          | App i18n strings (15 locales，清单在 `app/lib/appI18nLanguages.ts`)。手写 `en` + `zh-CN`，其余可用 `npm run translate` 机翻补齐。 |
 | `.github/workflows/tsf-deploy.yml`                           | Manual Shopify extension/config and Render app/worker deployment workflow.                |
-| `Dockerfile`                                                 | Render container build for the Remix app; the worker is built from `worker/`.             |
+| `Dockerfile`                                                 | Render container build for the Remix app (`node:22-slim`); the worker is built from `worker/`. |
 
 
 
@@ -186,16 +186,31 @@ logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
 best-effort Shopify cancel when token present) before Account soft-delete and
 Session delete.
 `APP_UNINSTALLED` snapshots subscription/quota/size via
-`uninstallSnapshot.server.ts` before cleanup, then sends that text to Feishu.
+`uninstallSnapshot.server.ts` before cleanup, then fire-and-forgets
+`uninstallEmail.server.ts`: uninstall Feishu (same billing snapshot text;
+title is `emoji 店铺卸载 · 分群：shop`; if winback is skipped, last line is
+`挽回邮件：未发（原因）`) plus optional winback SES + Feishu metadata (no email
+body; payload `email` / `customer_email`; 互斥：已付费未完成 `212617` → 剩余积分
+`212612` → 从未 COMPLETED `212616`; 额度用清理前快照; Redis
+`tsf:uninstall-email:{shop}` NX 7d 只挡 SES；duplicate 仍发卸载飞书且标题
+仍带分群，末行 `挽回邮件：未发（7 天内已发过）`)。`SHOP_REDACT` does not send winback.
+Lifetime-first install (`bound: true` Account create in `app.tsx` loader) and
+lifetime-first `BillingLog.SUBSCRIPTION_ACTIVATED` (count === 1) also send to
+the same support webhook via `lifecycleFeishuNotify.server.ts`; reinstall /
+plan change / resubscribe do not. Worker `billingSubscriptionReconcile`
+notifies only when it inserts the shop's first ACTIVATED row (webhook miss).
 Billing webhooks ACK first and process in the background
 (`APP_PURCHASES_ONE_TIME_UPDATE` / `APP_SUBSCRIPTIONS_UPDATE` are fire-and-forget
 with `.catch`; ledger writes are idempotent and failures are recovered by worker
 `billingSubscriptionReconcile.ts`). Every `APP_UNINSTALLED` step is best-effort
 try/catch and never blocks the `200`.
 - `app/routes/currencyInit.tsx`: currency initialization route.
-- `app/routes/web-vitals-metrics.tsx`: web vitals receiver.
+- `app/routes/web-vitals-metrics.tsx`: 兼容保留的 web vitals receiver；已无调用方
+（要过 `authenticate.admin`，且 `fetcher.submit` 上报会触发全量 loader revalidate）。
 - `app/routes/log.tsx`: structured client log receiver plus legacy form payload
-compatibility; client helpers live in `app/utils/clientLog.ts`.
+compatibility; client helpers live in `app/utils/clientLog.ts`。对
+`event=lcp_diagnostics` 额外输出可 grep 的 `[perf][lcp] {json}` 单行（LCP 归因，
+见 Operations Debugging → LCP）。
 - `app/routes/publishAction.tsx`: publish/unpublish Shopify locales.
 - `app/routes/_index/route.tsx` and `app/routes/app._index/route.tsx`: root entry
 and embedded `/app` redirect/landing behavior.
@@ -371,10 +386,17 @@ then `api.translate-v4.tasks.ts`.
 - Runtime ports: `packages/translation-core/src/runtime.ts`.
 - TM 读走批量：`translationMemory.ts` `tmMGet` / `tmMGetByValue`（`mgetAligned`
  按 index 对齐、500 一批、异常整批当 miss），`llmTranslate.ts` 的 digest / value /
- leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同步两份
- `MigratingRedis`**（`app/server/translateV4/redisDualClient.server.ts` 与
- `worker/src/services/redisDualClient.ts`）：sole mode 下 core 拿到的是原生
- ioredis，但双写兼容层是手写代理，缺方法会让 TM 静默整批 miss（只烧钱不报错）。
+ leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同时在
+ `MigratingRedis` / pipeline / multi 代理里实现**（单一来源
+ `packages/translation-core/src/redisDualClient.ts`，App/Worker 经
+ `@ciwi/translation-core/redis-dual-client` 引用，不再有两份副本）：正常路径只连
+ `RENDER_KV`（原生 ioredis）。若仍走历史双写代理 `MigratingRedis`，缺方法会让
+ TM 静默整批 miss（只烧钱不报错）。
+- **新增 core 子路径导出要改四处**，漏一处就会掉到 `.d.ts` 上（esbuild 剥掉类型 →
+ 运行时空模块 → rollup 报 `"x" is not exported by ...d.ts`）：
+ `packages/translation-core/package.json` 的 `exports`、根 `tsconfig.json` paths、
+ `worker/tsconfig.json` paths、**以及 `vite.config.ts` 的 `translationCoreAliases`**
+ （App 侧靠这份 alias 指向 `src/*.ts` 源码，不走 `.build`）。
 - App adapter: `app/server/translateV4/translationCoreRuntime.server.ts`.
 - Worker adapter: `worker/src/services/translationCoreRuntime.ts`.
 - EMAIL / packing-slip Liquid HTML: `packages/translation-core/src/liquidHtmlTranslate.ts`
@@ -523,7 +545,10 @@ metric reconciliation helpers kept aligned with `app/server/translateV4/*`.
 - `worker/src/services/tsfQuota.ts`: quota query/deduct adapter.
 - `worker/src/services/stagePool.ts`: stage concurrency (auto/manual slot pools).
 - `worker/src/services/finalizeJobAfterWriteback.ts`: post-writeback final status
-selection and Redis `items_count` refresh for completed jobs.
+selection and Redis `items_count` refresh for completed jobs. Benign Shopify
+writeback rejections (`too many translation keys`, field length validation on
+resource) are reconciled to `writebackDone` at finalize so jobs are not marked
+`WRITEBACK_ALL_FAILED` when every failure is a platform constraint (`writebackUserErrors.ts`).
 - `worker/src/services/recordJobUsageSnapshot.ts`: task-terminal usage snapshot
 into Turso `TranslateV4JobUsage` (time / tokens / units / chars; survives Cosmos
 job retention cleanup).
@@ -577,7 +602,8 @@ Admin 体量标签另用 `COSMOS_SHOP_DATABASE_ID`（默认 `shop`）、
 - Redis: **仅** `RENDER_KV`（Render Key Value / Valkey）。不要再配或连接
   `REDIS_URL` / `REDIS_URL_V4`（Azure 已弃用，见 Operations → Redis）。
 - Blob: `AZURE_BLOB_CONNECTION_STRING`, `AZURE_BLOB_TRANSLATION_CONTAINER`.
-- Turso: `TSF_TURSO_DATABASE_URL`, `TSF_TURSO_AUTH_TOKEN`.
+- Turso: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`（测/产由各 Render 服务各自配值；
+ 短期兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）。
 - LLM: `DEEPSEEK_API_KEY`, `DEEPSEEK_API_KEYS`, `DEEPSEEK_BASE_URL`,
 `DEEPSEEK_MODEL` (default `deepseek-chat`; known id whitelist includes
 `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-reasoner`),
@@ -671,6 +697,8 @@ via clock-aligned `Asia/Shanghai` `:45` (not process-local `:30`).
 Prisma/LibSQL 多行栈常被 Render 拆开且只有中间行带 `level=error`；digest
 会对残缺的 `Error occurred during query execution` 回拉同资源邻近日志，
 把 `SqliteError.message`（如 `capacity temporarily exceeded`）拼进飞书样本。
+发版噪音默认过滤：`AbortError`、Render SIGTERM 时的 `npm error *`、旧 hash
+`/assets/*` 的 `No route matches URL`（见 `IGNORE_MESSAGE_PATTERNS`）。
 - Email: `TENCENT_CLOUD_KEY_ID`, `TENCENT_CLOUD_KEY`, and template/recipient
 variables consumed by `workerEmail.ts` and TSF email helpers.
 
@@ -703,24 +731,40 @@ redact billing cleanup (local cancel always; Shopify `appSubscriptionCancel`
 best-effort only on SHOP_REDACT when token present; APP_UNINSTALLED skips
 outbound cancel). Reinstall path in `ensureAccount.server.ts` also clears
 leftover `AppSubscription` when restoring a soft-deleted Account.
-- `app/server/billing/uninstallSnapshot.server.ts`: pre-cleanup snapshot for
-uninstall Feishu (plan, interval, quota, size tier via
-`shopScan/shopSizeProfile.server.ts`).
+- `app/server/billing/uninstallSnapshot.server.ts`: shop billing snapshot +
+ Feishu text for uninstall / first-install / first-subscribe (plan, interval,
+ quota, size tier via `shopScan/shopSizeProfile.server.ts`).
+- `app/server/billing/lifecycleFeishuNotify.server.ts`: lifetime-first install
+ (`bound: true`) and lifetime-first `SUBSCRIPTION_ACTIVATED` (Turso count === 1)
+ to `FEISHU_WEBHOOK_URL_SUPPORT`; same group as uninstall.
 - `app/server/billing/email/billingEmail.server.ts`: purchase/subscribe/renewal emails.
 - `app/server/billing/email/welcomeEmail.server.ts`: first-install welcome email
-(`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init).
+(`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init;
+ same `bound` gate also fires the first-install Feishu notify).
+- `app/server/billing/email/uninstallEmail.server.ts`: uninstall snapshot Feishu
+  (title `emoji 店铺卸载 · 分群`) + winback SES (templates `212617` / `212612`
+  / `212616`) + Feishu metadata (shop / recipient / segment / template / SES /
+  remaining credits / subject; no email body); skip (no email / no segment /
+  Redis NX duplicate) appends `挽回邮件：未发（原因）` on the snapshot message
+  (`7 天内已发过` for duplicate; SES 仍跳过，飞书照发且标题仍带分群). Scheduled from
+  `APP_UNINSTALLED` in `webhooks.tsx`.
 - 收件人/后台 token：`app/server/shop/fetchShopContact.server.ts`（Shopify
 GraphQL 拉店铺联系邮箱）与 `app/server/shop/offlineSessionToken.server.ts`
 （App 侧唯一的 offline token 读取口，Turso `Session`；storefront switcher /
 liquid collect 也走它）。卸载后取不到 token 属预期，调用方需静默降级。
 - `worker/src/services/billingSubscriptionReconcile.ts`: worker-only Shopify
 subscription reconciliation (writes Turso directly; does not call TSF Web).
+If it inserts the shop's first `SUBSCRIPTION_ACTIVATED` BillingLog, it sends
+the same first-subscribe Feishu notify (`lifecycleFeishuNotify.ts`).
 Syncs `AppSubscription.currentPeriodEnd/Start` from Shopify for MONTHLY and
 ANNUAL; for ANNUAL also grants monthly credits every 30 days (max 12 per
 Shopify year) derived from `currentPeriodEnd` (never from `createdAt`).
-- `worker/src/services/annualCreditCycle.ts` and
-`app/server/billing/subscription/annualCreditCycle.server.ts`: shared pure
-helpers for annual credit-cycle math.
+- `packages/translation-core/src/annualCreditCycle.ts`: **single source** of the
+annual credit-cycle pure math, imported by both sides as
+`@ciwi/translation-core/annual-credit-cycle` (App via
+`app/server/billing/index.server.ts` barrel, Worker via
+`billingSubscriptionReconcile.ts`). The old per-side copies were deleted; do not
+recreate them.
 - `worker/src/services/accountBalance.ts`: credit pool settle helpers for renewals.
 - `app/routes/webhooks.tsx`: Shopify webhook branching.
 - `app/routes/app.pricing/route.tsx`: pricing UI/actions. `action` 现在
@@ -764,6 +808,10 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
+- Launch Credits（新手礼包）：店铺终身首次 `SUBSCRIPTION_ACTIVATED` 时按档写入
+  `trialCredits`（Basic 4M / Pro 8M / Premium 16M），`BillingLog` `TRIAL_GRANTED`
+  + `referenceId=launch_credits` 幂等；续费结转、不随月额度替换；App
+  `grantLaunchCredits.server.ts` 与 Worker `grantLaunchCredits.ts` 双路径发放。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
 (MONTHLY ≈ +30d, ANNUAL ≈ +365d). `currentPeriodStart = end - intervalDays`.
@@ -776,7 +824,7 @@ not overwrite `currentPeriodEnd`. After 12 grants, wait for Shopify year renewal
 30-day window vs TSF `creditCycleIndex` watermark only (`maxGranted + 1`).
 Migrated shops with no TSF cycle logs (or a large gap vs the current window)
 are assumed already granted elsewhere; Worker writes `grantKind: migration_assumed` (`creditsDelta: 0`) as a baseline so the *next* window can
-fire normally. See `annualCreditCycle.ts` / `annualCreditCycle.server.ts`.
+fire normally. See `packages/translation-core/src/annualCreditCycle.ts`.
 - Worker runs a near-due reconciliation every 30 minutes (includes all ACTIVE
 ANNUAL shops for credit-cycle checks) and a full subscription reconciliation
 every 12 hours by default (both configurable) inside the worker process when
@@ -833,8 +881,11 @@ redirect records.
  `LiquidRule(status=PENDING, source=auto, afterTranslation="")`，**不在 Web
  进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
  `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
- 过滤）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
- shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
+ 过滤，含 `looksLikeHtmlMarkupFragment`（HTML 属性碎片）与
+ `looksLikeAutoLiquidJunk`（评价组件/价格/SKU/年款/产品型号等；经
+ `translationRuleJudgment("liquid", …)` 入库）。店面采集另跳过
+ `isPriceRelatedElement` 与评价 App 常见容器 class。其它门控：全局
+ `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
  名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
  Redis 日聚合 `tsf:auto_liquid:deny:req|texts|shops:{utcYmd}`（8d TTL）。
   服务端细日志默认开（`AUTO_LIQUID_DEBUG` 默认 true，可设 false）；店面
@@ -844,7 +895,12 @@ redirect records.
  主语言（Redis 缓存 1h）、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 0=
  不限；需背压时设正数如 100）、总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 50000）。
  店面扫描：`ciwi-ui.js` TreeWalker **分片 idle**（单片约 8ms yield），不因
- 时间预算整页放弃；触 `max_nodes` 仍上报已扫候选。店面 Switcher **全店采集上报**；
+ 时间预算整页放弃；扫描根 = `body` + **open shadowRoot** + **同源 iframe**
+ （含嵌套同源；跨域 iframe / closed shadow 不可访问则跳过）；触 `max_nodes`
+ 仍上报已扫候选；候选条数不设客户端上限，POST 按 100/片
+ （`AUTO_LIQUID_POST_CHUNK` / 服务端 `MAX_PER_REQUEST`）。语言门：只采「像
+ `primaryLanguage`（Switcher 配置接口附带，Shopify 主 locale，非商户手填）
+ 且不像当前目标语」；无 primary 则本轮不采。店面 Switcher **全店采集上报**；
  采集只写 PENDING，**不查额度**；真正扣费在后续 v4「自定义 Liquid」翻译阶段。
  `SwitcherConfiguration.autoLiquidCollect` 列保留且默认 `true`，保存时强制
  `true`，Switcher UI 开关已移除。
@@ -859,7 +915,17 @@ redirect records.
  `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
- 慢删 `source='auto'`（绝不碰 manual）。管理页
+ 慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 auto+PENDING junk：
+ 游标扫 PENDING，唯一判定 `isAutoLiquidCollectJunk`（与 claim/查询 junk 同一套
+ `looksLikeHtmlMarkupFragment` + `looksLikeAutoLiquidJunk`，**无** SQL LIKE
+ 预筛）。`looksLikeAutoLiquidJunk` 另拦品牌/平台/支付、评价人名、规格型号/优惠码、
+ 尺码码、语言切换标签（保留 FAQ/Price/Shop 等短 UI）；默认每 tick 最多删 5000 /
+ 扫 15 万行（
+ `AUTO_LIQUID_JUNK_CLEANUP_MAX_TOTAL_PER_TICK` /
+ `AUTO_LIQUID_JUNK_CLEANUP_MAX_SCAN_PER_TICK` /
+ `AUTO_LIQUID_JUNK_CLEANUP_BATCH_SIZE` / `AUTO_LIQUID_JUNK_CLEANUP_DELAY_MS`）。
+claim PENDING 时也会跳过并
+删除这类行，避免拿去翻译。管理页
  `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
 
 - **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
@@ -1248,17 +1314,20 @@ For "合入PR然后发布测试环境", the script will:
 | App Proxy 401/404                | `api.storefront.$.ts`                                 | `server/storefront/auth.server.ts`, extension caller                                                    |
 | 店面数据不更新 / Turso 502       | `app/server/storefront/cache.server.ts`               | `app/config/libsqlFetch.server.ts`, `api.storefront.$.ts`, 写入方的 `invalidateStorefrontCache` 调用     |
 | Manage Translation resource page | `app/routes/app.manage_translation_.<type>/route.tsx` | `manageTranslationRoute.server.ts`, `pictureClient.ts`                                                  |
+| `/app/...&icon=data:image` 404   | `app/lib/sanitizeEmbeddedAppPath.ts`                  | `app/routes/app.$.tsx`, `app/root.tsx` ErrorBoundary                                                    |
 | Picture translation/storage      | `app/server/picture/picture.server.ts`                | `api.picture.*`, `api.translate-v4.image`, `UserPicture`, App Proxy picture branches                    |
 | Glossary                         | `app/routes/app.glossary/route.tsx`                   | `glossary.server.ts`, Worker `tsfDb.loadGlossaryRowsFromTsf` via `translationCoreRuntime.ts`            |
 | Shop profile / AI profile        | `app/routes/app.shop-profile/route.tsx`               | `server/shopScan/*`, `shopProfileContext.server.ts` / `shopProfilePrompt.server.ts`, worker shop scan   |
 | Support chat / notifications     | `app/components/SupportChatWidget.tsx`                | `api.support.tsx`, `supportStore.server.ts`, Feishu/SES helpers                                         |
+| 安装 / 首次订阅 / 卸载飞书       | `app/server/billing/lifecycleFeishuNotify.server.ts`  | `uninstallSnapshot.server.ts`, `app.tsx` loader, `handleBillingWebhook.server.ts`, worker `lifecycleFeishuNotify.ts` |
+| 卸载挽回邮件                     | `app/server/billing/email/uninstallEmail.server.ts`   | `webhooks.tsx` `APP_UNINSTALLED`、腾讯云模板 `212617`/`212612`/`212616`、飞书按分群发元数据（不含邮件正文） |
 | First-time onboarding            | `app/routes/app.onboarding/route.tsx`                 | `app/server/onboarding/onboarding.server.ts`, `app/routes/app._index/route.tsx`, `ShopOnboarding`      |
 | Auto translate                   | `worker/src/services/autoTranslate.ts`                | `autoScanSchedule.ts`, `ShopTargetLocale`, module catalog                                               |
 | Scheduled shop scan              | `worker/src/services/scheduledShopScan.ts`            | `autoScanSchedule.ts`, `shopScanCosmos.ts`, `shopScanWorker.ts`                                         |
 | Public storefront locale audit   | `scripts/storefront-locale-audit.mjs`                 | Cursor browser locale discovery; local tree under `scripts/tmp/storefront-audit/`                       |
 | Translation core/filter rule     | `packages/translation-core/src/*`                     | App and Worker runtime adapters, focused builds                                                         |
 | i18n copy                        | `public/locales/en/translation.json`                  | `public/locales/zh-CN/translation.json`, other locales                                                  |
-| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml`             |
+| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`（`@shopify/shopify-app-remix` 5 / `@shopify/shopify-api` 14，需 Node ≥22）、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml` |
 | Deploy config                    | `shopify.app*.toml`                                   | `Dockerfile`, Render/GitHub Actions config                                                              |
 
 
@@ -1266,22 +1335,36 @@ For "合入PR然后发布测试环境", the script will:
 
 ## Scripts
 
+诊断脚本默认叠 `.env.test` → `.env.worker.test` → `.env`（`scripts/lib/loadEnv.mjs`）；
+查产需 `--env=.env.prod`；写产另需 `--confirm-prod`（见
+`.cursor/rules/env-prod-safety.mdc`）。
+
 Package-backed root scripts:
 
 - `scripts/translate.js`: `npm run translate`, i18n helper.
-- `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`.
+- `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`。
+ `test` 读 `.env`+`.env.test`，`prod` 读 `.env`+`.env.prod`；文件内同一对
+ `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（短期兼容 `TSF_TURSO_*` 与该
+ target 的旧 `TURSO_{TEST|PROD}_*`）。
+- `scripts/cursor-push-pr.mjs`: `npm run push:pr` — commit（跳过敏感文件）→ push → 创建 PR；
+成功输出 `PR_URL:`。
+- `scripts/merge-deploy-test.mjs`: `npm run merge:deploy:test` — 合入当前分支 PR 并触发
+TSF Web Test + Worker Test 部署；成功输出 `MERGED_PR_URL:` 与 `DEPLOY_RUN_URL:`。
 
-Operational root scripts:
+Operational root scripts（查任务 / 队列 / 日志 / 运维，保留）：
 
+- `scripts/lib/loadEnv.mjs`: 诊断脚本共用 env 叠载 + Turso / Redis / Cosmos 解析。
+- `scripts/lib/autoScanSchedule.mjs`: helper used by auto-scan scheduling
+scripts.
 - `scripts/inspect-v4-tasks.mjs`: inspect v4 tasks in Cosmos.
 - `scripts/reset-onboarding.mjs`: 把「指定 shop」重置为可重新看到首次翻译新手引导的状态
  （删 Turso `ShopOnboarding` + Cosmos 该店 v4 任务 + `TranslateV4JobUsage` +
  `ShopTargetLocale` + `ShopTranslationSettings` + Redis `tsf:items_count:{shop}:*` +
  Cosmos `shop_scan_jobs`（避免 install 因历史 COMPLETED 被 `skipped_existing`）；可选
  `--billing` 连带清 `Account/AppSubscription/BillingLog/AccountPeriodUsage` 让 `isNew=true`）。
- 默认 dry-run，`--write` 才落库；必须 `--shop=`；`--env=`（默认 `.env`）；Turso 目标按
- `--target`/`TURSO_TARGET` 解析并回退到实际存在的 `TURSO_{TEST,PROD}_*` / `TSF_TURSO_*` 凭据；
- Redis **只连** `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
+ 默认 dry-run，`--write` 才落库；必须 `--shop=`； `--env=`（默认 `.env`）；Turso 认 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`
+ （兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）；Redis **只连**
+ `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
  `latest-scan.json`；只打印脱敏 host。
  示例：`node scripts/reset-onboarding.mjs --shop=xxx.myshopify.com --env=.env.test --write`。
 - `scripts/check-task.mjs`: inspect one task and related Redis state.
@@ -1289,15 +1372,13 @@ Operational root scripts:
 - `scripts/auto-tasks-72h-trend.mjs`: auto-translate trend report over the
 recent 72-hour window.
 - `scripts/next-auto-slot-shops.mjs`: preview shops in next auto-translate scan slot.
-- `scripts/smoke-shop-counts.mjs`: focused shop/item count smoke check.
+- `scripts/lcp-trend.mjs`: 首屏 LCP 归因趋势（只读）。从 Render 运行日志抓
+ `[perf][lcp]` 单行，聚合 LCP / FCP / TTFB 的 p50/p75/p90，并按冷热缓存、LCP 元素、
+ 路由、网络档位分组。`--hours=` / `--route=/app` / `--service=srv-xxx` /
+ `--env=.env.prod` / `--json`；需要 `RENDER_API_KEY`。
 - `scripts/backfill-locale-coverage-from-redis.mjs`: Redis `items_count` →
   Turso `ShopTargetLocale.coverage*`（默认 dry-run；`--write` 写线上；
   支持 `--shop=` / `--only-missing`；MOVED 重连重试；Redis 源用 `RENDER_KV`）。
-- `scripts/migrate-redis-azure-to-render.mjs`: **历史** Azure → Render KV 回填脚本
-  （迁移已完成；日常运维不要再依赖 `REDIS_URL*`）。
-- `scripts/smoke-user-picture-read.mjs`, `smoke-user-picture-urls.mjs`: focused
-UserPicture read/URL checks.
-- `scripts/smoke-find-juicer.mjs`: focused storefront/shop lookup smoke check.
 - `scripts/storefront-locale-audit.mjs`: public storefront multi-locale product
 field audit (competitor research). Paginates `/products.json` (or
 `/{locale}/products.json`), writes a local tree mirroring v4 blob layout under
@@ -1306,8 +1387,6 @@ field audit (competitor research). Paginates `/products.json` (or
 `report.md`), and computes obviously-untranslated ratios vs primary.
 - `scripts/eventReport.ts`: imported by app routes/components; this is runtime
 client reporting code, not a throwaway script.
-- `scripts/lib/autoScanSchedule.mjs`: helper used by auto-scan scheduling
-scripts.
 
 Storefront locale audit playbook (trigger: 「审计店面多语言」):
 
@@ -1330,25 +1409,18 @@ Storefront locale audit playbook (trigger: 「审计店面多语言」):
    the auto-generated Chinese `report.md` in the run folder.
 5. Artifacts stay under ignored `scripts/tmp/`; do not commit them.
 
-Agent / deploy helper scripts:
-
-- `scripts/cursor-push-pr.mjs`: `npm run push:pr` — commit（跳过敏感文件）→ push → 创建 PR；
-成功输出 `PR_URL:`。供 Cursor Agent 在「提个pr」时直接调用。
-- `scripts/merge-deploy-test.mjs`: `npm run merge:deploy:test` — 合入当前分支 PR 并触发
-TSF Web Test + Worker Test 部署；成功输出 `MERGED_PR_URL:` 与 `DEPLOY_RUN_URL:`。
-
 Worker scripts to keep:
 
 - `worker/scripts/check-auto-translate-modules.mjs`: package-backed module
-catalog check.
-- `worker/scripts/cleanup-stale-hints.mjs`: package-backed cleanup command.
-- `worker/scripts/probe-hint-queues.mjs`, `probe-job-redis.mjs`,
-`probe-job-progress.mjs`, `probe-job-status-counts.mjs`, `probe-prod-jobs.mjs`,
-`probe-auto-batch.mjs`: queue/job probes.
-- `worker/scripts/diag-stuck-job.mjs`, `diag-failed-jobs.mjs`, and other
-`probe-*.mjs`: worker diagnostics.
+catalog check（`npm run check:auto-translate-modules --prefix worker`）。
+- `worker/scripts/cleanup-stale-hints.mjs`: package-backed cleanup
+（`npm run cleanup:stale-hints[--apply] --prefix worker`）。
+- `worker/scripts/probe-hint-queues.mjs`（`npm run probe:hint-queues --prefix worker`）、
+`probe-job-redis.mjs`、`probe-job-progress.mjs`、`probe-job-status-counts.mjs`、
+`probe-prod-jobs.mjs`、`probe-auto-batch.mjs`: queue/job probes.
+- `worker/scripts/diag-stuck-job.mjs`, `diag-failed-jobs.mjs`: worker diagnostics.
 - `worker/scripts/resume-job.mjs` and `resume-orphaned-processing.mjs`:
-operational recovery tools.
+operational recovery tools（写产需 `--confirm-prod`）。
 - `worker/scripts/auto-tasks-24h-trend.mjs`: auto-translate volume report.
 - `worker/scripts/v4-auto-translate-modules.json`: module catalog fixture/data.
 - `worker/src/scripts/exportTranslationReport.ts`: TypeScript source for the
@@ -1356,8 +1428,10 @@ translation quality report command; compiled output lives in `worker/dist/script
 
 Temporary script policy:
 
-- `scripts/tmp/`, `worker/scripts/tmp/`, and `worker/scripts/out/` are ignored
-and should not contain committed files.
+- `scripts/tmp/`、`scripts/out/`、`worker/scripts/tmp/`、`worker/scripts/out/` 已
+gitignore，勿提交。
+- 已删除、勿恢复：一次性 `smoke-*`、历史 `migrate-redis-azure-to-render.mjs`、
+以及失效的 `npm run i18n:key`（单 key 机翻已停用；用 `npm run translate`）。
 - Prefer one-off scripts outside the repo, or delete them immediately after the
 investigation. If a one-off becomes useful twice, promote it into the
 operational list above with a clear name and dry-run behavior when it writes.
@@ -1401,7 +1475,9 @@ node --experimental-vm-modules -e "
 
 
 **Prod access:** Turso prod credentials are in `.env.prod` as
-`TSF_TURSO_DATABASE_URL` / `TSF_TURSO_AUTH_TOKEN`. You can also read them
+`TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（与 App/Worker 同名；测/产靠不同
+env 文件或 Render 服务区分）。短期仍兼容旧名 `TSF_TURSO_*` /
+`TURSO_TEST_*` / `TURSO_PROD_*`。You can also read them
 from Render env vars (see Render section below).
 
 ### Cosmos DB (Translation V4 Jobs)
@@ -1455,21 +1531,16 @@ translation memory cache.
 - App、Worker、运维脚本、Agent 诊断：**只连** `RENDER_KV`。
 - **不要**再使用 `REDIS_URL` / `REDIS_URL_V4`（Azure Cache 已弃用；本地 `.env*` 里若仍残留可忽略或删除）。
 - 不要打印 URL/密码；只打印脱敏 host。
-- **新增 Redis 用法前先查 `RedisLike` 支持哪些命令**（`worker/src/services/redisDualClient.ts`
-  与 `app/server/translateV4/redisDualClient.server.ts`）。`getRedis()` 的返回类型标成
-  `IORedis`，但双写模式下实际是手写代理 `MigratingRedis`：类型检查会放过
-  `sadd`/`smembers`/`srem` 之类未实现的命令，运行时才崩。目前代理只有
-  get/mget/set/del/hset/hget/hgetall/hdel/expire/lpush/rpush/lpop/ltrim/ping/pipeline/multi
-  ——需要集合语义时用 Hash 代替 Set（见 `translate:v4:email:pending:*`），
-  或先把命令补进两份代理。
+- App / Worker：`RENDER_KV` 已配置则**只连它**；不再需要 `REDIS_DUAL_WRITE` /
+  `REDIS_CUTOVER`。未配 `RENDER_KV` 时才回退 `REDIS_URL*`（本地脚本应急）。
+- 集合语义用 Hash（见 `translate:v4:email:pending:*`），不要依赖已废弃双写代理的 Set 命令。
 - Render 服务内用 **Internal** URL（通常 `redis://…`）；本机 / Agent `.env*` 用 **External**
   `rediss://…`（需 Dashboard 放行 Inbound IP）。
 - 交互 CLI：Dashboard **Valkey CLI Command**，或服务同区 Shell 里
   `redis-cli -u "$RENDER_KV"`。
 
 历史说明：曾用 `REDIS_DUAL_WRITE` / `REDIS_CUTOVER` + Azure `REDIS_URL*` 做双写切流；
-迁移已完成。代码里若仍有 `redisDualClient` 兼容分支，运行时应处于 sole
-（`RENDER_KV` 已设、不再创建 Azure client）。新脚本与文档一律按 sole / 仅 `RENDER_KV` 写。
+迁移已完成，这两个开关可从环境变量删除（残留时仅打 deprecate 警告）。
 
 **Ping Render KV from local `.env` / `.env.test` (masks host only; never echo secrets):**
 
@@ -1511,6 +1582,7 @@ node worker/scripts/probe-hint-queues.mjs
 | `translate:v4:auto_scan:last_success_at` | String: last successful auto-scan completion |
 | `tsf:shop_scan:hints` | List: shop-scan wake hints `{scanId,shopName}` (Cosmos poll is fallback) |
 | `tsf:items_count:{shop}:{locale}` | Hash: module → `{total,translated,updatedAt}` (TTL 7d; language summary in Turso) |
+| `tsf:uninstall-email:{shop}` | String: uninstall **SES** send lock (`SET NX`, TTL 7d；duplicate 仍发卸载飞书) |
 | `tm:v5:{shop}:{target}:{model}:{digest}` | String: field-digest translation memory (TTL default 30d) |
 | `tm:v5:val:{source}:{target}:{model}:{id}` | String: value-level TM; id = digest or CRC-32 (TTL default 30d) |
 | `translate:v4:keystat:{label}` | Hash: LLM API-key snapshot (TTL 24h) |
@@ -1653,6 +1725,38 @@ const { logs } = await res.json();
 
 
 
+### LCP / 首屏性能归因
+
+嵌入式首页（`/app`、`/app/translate-v4`）的 LCP 有完整归因链，**不要再靠猜**：
+
+1. 采集：`app/utils/lcpDiagnostics.ts`（`app/root.tsx` 里 `observeLcpDiagnostics()`
+ 挂一次）。用 `PerformanceObserver('largest-contentful-paint')` + navigation /
+ paint / resource timing，在**首次交互 / 页面隐藏 / 12s 兜底**三者最早发生时
+ `sendBeacon` 发 `/log`（`event=lcp_diagnostics`，`context.reportReason` 标明时机）。
+ 一个文档只发一次。Shopify App Bridge 的 `webVitals.onReport` 也走同一通道
+ （`event=shopify_web_vitals`）。
+2. 落盘：`app/routes/log.tsx` 输出 `[perf][lcp] {json}` 单行 + 原有 `[client-log]` 全量行。
+3. 聚合：`node scripts/lcp-trend.mjs --hours=72 --route=/app`。
+ 分位数 + 冷热缓存 / LCP 元素 / 路由 / 网络档位分组。
+
+字段判读：
+
+- `coldLoad`：由 `scriptCachedCount < scriptCount/2` 推出。**首次安装冷加载和回访
+ 热加载的 LCP 能差 3 倍**，混在一起看分位数会得出错误结论。
+- `element`：LCP 元素的短选择器（标签 + class + nth-child）。首屏卡片带
+  `.v4-enter` / `.v4-enter-d1` / `.v4-lift`，据此能定位到具体卡片。
+  **有意不采文本内容** —— manage_translation 等页面的 LCP 元素可能是商户商品文案。
+- `/app` 与 `/app/translate-v4`：鉴权 + Shopify 语言列表只在父级 `app.tsx` loader
+  跑一次；子页经 `useRouteLoaderData("routes/app")` 读 `shopLocales`，避免同文档
+  双鉴权把 TTFB 抬到 ~2s。标题区 `PageHeaderBar` 固定尺寸并预留积分 pill 宽度。
+- `ttfbMs` vs `fcpMs` vs `lcpMs`：TTFB 高 → 服务端 loader（鉴权 / Shopify GraphQL）；
+  FCP 与 TTFB 差距大 → 阻塞 CSS/JS；LCP 明显晚于 FCP → 骨架屏换真实内容太晚
+  （对照 `context.resources.apiTimings` 里首屏接口的 `responseEnd`）。
+- `effectiveType` / `rttMs`：排除「其实是商户网络慢」。
+
+`app/utils/perf.ts` 的 `markPerfStart` / `logReactProfilerRender` 是另一条**按需**
+链路，只在 `?perf=1` 或 `localStorage.CIWI_PERF_DEBUG=1` 时上报，用于本地细查渲染。
+
 ### Combined Diagnostic Cheat Sheet
 
 
@@ -1665,6 +1769,7 @@ const { logs } = await res.json();
 | Currency/switcher not working        | Turso: `SwitcherConfiguration`, `Currency` tables              |
 | App 500 / worker crash               | Render deploy logs → check for missing env vars                |
 | Auto-translate not running           | `probe-hint-queues.mjs` auto queues + `auto_scan:last_at`      |
+| 首屏 LCP 慢                          | `scripts/lcp-trend.mjs` → `[perf][lcp]` 归因（见上一节）        |
 
 
 
@@ -1694,6 +1799,11 @@ logging uses beacon-style client logging instead of route `fetcher.submit`.
 - `pricing` AbortError: Remix fetcher replacement or route changes can produce
 expected aborts. Global client error reporting should ignore AbortError-like
 noise, and exposure logging should prefer `reportClientLog(..., { beacon: true })` over competing fetcher submits.
+- `/app/manage_translation&icon=data:image/png;base64,...` 404: Shopify Admin /
+  App Bridge can append the 32×32 nav icon with `&` and no `?`, so Remix treats
+  it as pathname. Recover via `sanitizeEmbeddedAppPath` (`app.$.tsx` redirect +
+  root ErrorBoundary `location.replace`). Do not add a dedicated route for the
+  junk URL. `entry.server` is too late (routing already ran).
 
 
 

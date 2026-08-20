@@ -96,17 +96,15 @@ export async function snapshotShopForUninstall(
   };
 }
 
-/** 组装卸载飞书纯文本（用清理前快照，避免清理后额度/订阅已空）。 */
-export function formatUninstallFeishuMessage(
+/** 安装 / 首次订阅 / 卸载共用的订阅·周期·额度·大小行。 */
+export function formatShopBillingFeishuLines(
   snap: UninstallShopSnapshot,
-): string {
+): string[] {
   const subscribeLine = snap.subscribed
     ? `订阅：是 · ${snap.planName}`
     : snap.status
       ? `订阅：否 · ${snap.planName}`
       : `订阅：否 · Free`;
-
-  const intervalLine = `计费周期：${snap.billingIntervalLabel}`;
 
   let quotaLine = "额度：未知";
   if (
@@ -144,10 +142,41 @@ export function formatUninstallFeishuMessage(
       : "大小：未知";
 
   return [
-    `🛑 店铺卸载：${snap.shop}`,
     subscribeLine,
-    intervalLine,
+    `计费周期：${snap.billingIntervalLabel}`,
     quotaLine,
     sizeLine,
-  ].join("\n");
+  ];
+}
+
+function formatLifecycleFeishuMessage(
+  title: string,
+  snap: UninstallShopSnapshot,
+): string {
+  return [title, ...formatShopBillingFeishuLines(snap)].join("\n");
+}
+
+/** 组装卸载飞书纯文本（用清理前快照，避免清理后额度/订阅已空）。 */
+export function formatUninstallFeishuMessage(
+  snap: UninstallShopSnapshot,
+  title?: string,
+): string {
+  return formatLifecycleFeishuMessage(
+    title ?? `🛑 店铺卸载：${snap.shop}`,
+    snap,
+  );
+}
+
+/** 店铺终身第一次创建 Account 时的安装飞书文案。 */
+export function formatInstallFeishuMessage(
+  snap: UninstallShopSnapshot,
+): string {
+  return formatLifecycleFeishuMessage(`✅ 店铺安装：${snap.shop}`, snap);
+}
+
+/** 店铺终身第一条 SUBSCRIPTION_ACTIVATED 时的飞书文案。 */
+export function formatFirstSubscribeFeishuMessage(
+  snap: UninstallShopSnapshot,
+): string {
+  return formatLifecycleFeishuMessage(`💰 首次订阅：${snap.shop}`, snap);
 }

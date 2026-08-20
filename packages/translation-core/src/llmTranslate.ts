@@ -541,9 +541,23 @@ function langPrefix(locale: string): string {
   return locale.toLowerCase().split(/[-_]/)[0] || "";
 }
 
+/**
+ * All script-detection regexes above are module-level consts without the "g"
+ * flag, so this always hit the `new RegExp(re.source, flags)` branch — i.e. a
+ * fresh RegExp was compiled from source on every call, and this runs once per
+ * field per script check inside meetsScriptThreshold (hot path: "already in
+ * target language" skip-check, evaluated per field). Cache the global-flag
+ * clone per source RegExp object instead of rebuilding it every call.
+ */
+const globalRegexCache = new WeakMap<RegExp, RegExp>();
 function countRegexMatches(text: string, re: RegExp): number {
-  const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
-  return [...text.matchAll(new RegExp(re.source, flags))].length;
+  let globalRe = globalRegexCache.get(re);
+  if (!globalRe) {
+    const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
+    globalRe = re.flags.includes("g") ? re : new RegExp(re.source, flags);
+    globalRegexCache.set(re, globalRe);
+  }
+  return [...text.matchAll(globalRe)].length;
 }
 
 function countMeaningfulChars(text: string): number {

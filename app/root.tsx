@@ -5,16 +5,23 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useFetcher,
   useRouteError,
 } from "@remix-run/react";
 import { Provider } from "react-redux";
 import store from "./store";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { createHead } from "remix-island";
 import { globalStore } from "./globalStore";
 import { patchToastDeduplication } from "./ui/message";
 import { reportClientError } from "./utils/clientLog";
+import {
+  observeLcpDiagnostics,
+  reportShopifyWebVitals,
+} from "./utils/lcpDiagnostics";
+import {
+  sanitizeEmbeddedAppHref,
+  sanitizeEmbeddedAppPath,
+} from "./lib/sanitizeEmbeddedAppPath";
 
 import "./styles.css";
 
@@ -236,8 +243,19 @@ function summarizeConsoleArg(value: unknown) {
 
 export function ErrorBoundary() {
   const error = useRouteError();
-  console.error("Root Error:", error);
   const loggedRef = useRef(false);
+  const recoverableHref =
+    typeof window === "undefined"
+      ? null
+      : sanitizeEmbeddedAppHref(
+          `${window.location.pathname}${window.location.search}${window.location.hash}`,
+        );
+
+  useLayoutEffect(() => {
+    if (!recoverableHref) return;
+    window.location.replace(recoverableHref);
+  }, [recoverableHref]);
+
   const htmlErrorStatusCode = getHtmlErrorStatusCode(error);
   let errorCode = "500";
   if (isRouteErrorResponse(error)) {
@@ -301,8 +319,18 @@ export function ErrorBoundary() {
 
   const currentError = errorMessages[errorCode] || errorMessages["500"];
 
+  if (!recoverableHref) {
+    console.error("Root Error:", error);
+  }
+
   useEffect(() => {
     if (loggedRef.current) return;
+    if (
+      typeof window !== "undefined" &&
+      sanitizeEmbeddedAppPath(window.location.pathname)
+    ) {
+      return;
+    }
     loggedRef.current = true;
     void reportClientError("root_error_boundary", error, {
       shop: globalStore.shop,
@@ -374,8 +402,6 @@ export function ErrorBoundary() {
 }
 
 export default function App() {
-  const fetcher = useFetcher<any>();
-
   // 从 loader 数据中获取国际化语言代码
   useEffect(() => {
     // GTM 初始化脚本
@@ -383,22 +409,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const callback = async (metrics: any) => {
-      const data = JSON.stringify(metrics);
-      fetcher.submit(
-        {
-          metrics: data,
-        },
-        {
-          method: "POST",
-          action: "/web-vitals-metrics",
-        },
-      );
-    };
-    // 确保 shopify 对象存在再调用
+    // LCP 归因日志（元素 / 阶段耗时 / 冷热缓存 / 网络档位）走 sendBeacon → `/log`。
+    // Shopify 的 web vitals 也改走同一通道：原先的 fetcher.submit 会在每次上报后触发
+    // Remix 全量 loader revalidate，等于把鉴权和 Shopify 语言查询再跑一遍。
+    const stopLcpDiagnostics = observeLcpDiagnostics();
     if (typeof shopify !== "undefined" && shopify?.webVitals?.onReport) {
-      shopify?.webVitals?.onReport(callback);
+      shopify.webVitals.onReport(reportShopifyWebVitals);
     }
+    return stopLcpDiagnostics;
   }, []);
 
   useEffect(() => {

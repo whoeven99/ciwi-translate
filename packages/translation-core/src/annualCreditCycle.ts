@@ -1,6 +1,8 @@
 /**
  * 年付额度周期纯函数：只从 Shopify/本地 currentPeriodEnd 对齐，禁止用 createdAt。
- * 与 app/server/billing/subscription/annualCreditCycle.server.ts 保持一致。
+ *
+ * App 与 Worker 的**唯一来源**（曾经是两份 286 行副本靠注释维持一致）。纯函数、零依赖，
+ * 账本读写留在各自的 IO 层（App `billing/subscription/*`、Worker `billingSubscriptionReconcile`）。
  *
  * 发放策略（禁止历史追补）：
  * - 看当前时间落在哪个 30 天窗口（creditCycleIndex）

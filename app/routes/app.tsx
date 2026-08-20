@@ -24,8 +24,14 @@ import {
 } from "~/server/appBootstrap.server";
 import { resolveBillingBinding } from "~/server/billing/index.server";
 import { scheduleTsfWelcomeEmail } from "~/server/billing/email/welcomeEmail.server";
+import { scheduleFirstInstallFeishuNotify } from "~/server/billing/lifecycleFeishuNotify.server";
 import { enqueueShopScan } from "~/server/shopScan/trigger.server";
-import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
+import {
+  loadShopLocalesForTranslation,
+  type LoadedShopLocales,
+} from "~/server/translateV4/shopLocales.server";
+import { ensureShopV4Settings } from "~/server/translateV4/migration.server";
+import { syncShopTargetLocalesFromShopify } from "~/server/translateV4/targetLocale.server";
 import { Profiler, Suspense, lazy, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useIdleReady } from "~/hooks/useIdleReady";
@@ -40,6 +46,7 @@ import {
   setSource,
   setShop,
   setTotalChars,
+  setTrialCredits,
   setUpdateTime,
   setUserConfigIsLoading,
 } from "~/store/modules/userConfig";
@@ -76,6 +83,17 @@ type AppBootstrapLocales = {
     primary: boolean;
     published: boolean;
   }>;
+};
+
+/** 嵌套页（translate-v4）复用的语言列表，避免子 loader 再鉴权/再打 Shopify。 */
+export type AppShellShopLocales = {
+  primaryLocale: string;
+  localeOptions: LoadedShopLocales["localeOptions"];
+};
+
+const EMPTY_SHOP_LOCALES: AppShellShopLocales = {
+  primaryLocale: "en",
+  localeOptions: [],
 };
 
 const logGraphQLErrorDetail = (context: string, error: unknown) => {
@@ -146,6 +164,7 @@ async function runAppInitialization({
       `${initLog} billing-resolved shop=${shop} bound=${binding.bound} persisted=${binding.persisted}`,
     );
     scheduleTsfWelcomeEmail(binding, shop, "app-loader-init");
+    scheduleFirstInstallFeishuNotify(binding, shop);
 
     // 安装/首次进 App：计量扫描（源语言总量 + 已发布语言覆盖率），幂等、best-effort。
     void enqueueShopScan({ shop, trigger: "install" }).then((result) => {
@@ -169,22 +188,32 @@ async function loadAppBootstrapLocales({
 }: {
   shop: string;
   accessToken?: string;
-}): Promise<AppBootstrapLocales> {
+}): Promise<{
+  bootstrap: AppBootstrapLocales;
+  shopLocales: AppShellShopLocales;
+  loaded: LoadedShopLocales | null;
+}> {
   let source = { code: "", name: "" };
   let targets: AppBootstrapLocales["targets"] = [];
+  let shopLocales = EMPTY_SHOP_LOCALES;
+  let loaded: LoadedShopLocales | null = null;
 
   try {
     if (accessToken) {
-      const loaded = await loadShopLocalesForTranslation({ shop, accessToken });
+      loaded = await loadShopLocalesForTranslation({ shop, accessToken });
       const mapped = bootstrapLocalesFromLoaded(loaded);
       source = mapped.source;
       targets = mapped.targets;
+      shopLocales = {
+        primaryLocale: loaded.primaryLocale,
+        localeOptions: loaded.localeOptions,
+      };
     }
   } catch (error) {
     logGraphQLErrorDetail("Error app bootstrap languages", error);
   }
 
-  return { source, targets };
+  return { bootstrap: { source, targets }, shopLocales, loaded };
 }
 
 function applyBootstrapToStore(
@@ -197,6 +226,7 @@ function applyBootstrapToStore(
   }
   dispatch(setChars({ chars: bootstrap.chars }));
   dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
+  dispatch(setTrialCredits({ trialCredits: bootstrap.trialCredits ?? 0 }));
   if (bootstrap.isNew !== null) {
     dispatch(setIsNew({ isNew: bootstrap.isNew }));
   }
@@ -209,11 +239,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const authMs = Date.now() - reqStart;
   const { shop, accessToken } = adminAuthResult.session;
   const localeStart = Date.now();
-  const bootstrap = await loadAppBootstrapLocales({
+  const { bootstrap, shopLocales, loaded } = await loadAppBootstrapLocales({
     shop,
     accessToken: accessToken as string | undefined,
   });
   const localeMs = Date.now() - localeStart;
+
+  // 语言同步 / v4 settings 不参与壳层渲染；放在父级一次完成，子页不再重复鉴权后执行。
+  if (loaded) {
+    void syncShopTargetLocalesFromShopify(
+      shop,
+      loaded.rows,
+      loaded.primaryLocale,
+    ).catch((syncErr) => {
+      console.error("[app] syncShopTargetLocales failed:", syncErr);
+    });
+    void ensureShopV4Settings(shop, loaded.primaryLocale).catch((err) => {
+      console.error("[app] ensureShopV4Settings failed:", err);
+    });
+  }
 
   void runAppInitialization({
     shop,
@@ -226,6 +270,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         authMs,
         localeMs,
         totalMs: Date.now() - reqStart,
+        localeCount: shopLocales.localeOptions.length,
       })}`,
     );
   }
@@ -234,6 +279,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     apiKey: process.env.SHOPIFY_API_KEY || "",
     bootstrap,
+    shopLocales,
     showShopProfilePage: !isProductionNodeEnv(),
     perfDebug,
   });

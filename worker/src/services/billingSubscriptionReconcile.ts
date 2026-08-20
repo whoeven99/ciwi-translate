@@ -15,7 +15,7 @@ import {
   collectGrantedAnnualCreditCycleIndexes,
   decideAnnualCreditGrant,
   getAnnualCreditWindow,
-} from "./annualCreditCycle.js";
+} from "@ciwi/translation-core/annual-credit-cycle";
 import {
   getOfflineAccessTokenFromTsf,
   getTsfDb,
@@ -24,6 +24,8 @@ import {
 } from "./tsfDb.js";
 import { fetchShopContact } from "./shopEmail.js";
 import { sendSubscriptionRenewalEmail } from "./workerEmail.js";
+import { notifyLifetimeFirstSubscribeFeishu } from "./lifecycleFeishuNotify.js";
+import { grantLaunchCreditsIfEligible } from "./grantLaunchCredits.js";
 import { buildShopifyAdminGraphqlUrl } from "./shopifyAdminApiVersion.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -528,6 +530,18 @@ async function activateOrReplaceSubscription(params: {
         }),
         now,
       ],
+    });
+    const launch = await grantLaunchCreditsIfEligible({ shop, planKey });
+    if (launch.granted) {
+      console.info(
+        `[billing reconcile] launch credits granted shop=${shop} planKey=${planKey} credits=${launch.credits}`,
+      );
+    }
+    void notifyLifetimeFirstSubscribeFeishu(shop).catch((err) => {
+      console.error(
+        `[billing reconcile] first-subscribe feishu failed shop=${shop}`,
+        err,
+      );
     });
   }
 }

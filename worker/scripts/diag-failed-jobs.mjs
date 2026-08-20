@@ -1,49 +1,34 @@
-import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CosmosClient } from "@azure/cosmos";
 import IORedis from "ioredis";
 import { BlobServiceClient } from "@azure/storage-blob";
+import {
+  loadStackedEnv,
+  resolveCosmos,
+  resolveRedisUrl,
+} from "../../scripts/lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function loadEnv(filePath) {
-  if (!existsSync(filePath)) return;
-  for (const raw of readFileSync(filePath, "utf8").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (!process.env[key]) process.env[key] = value;
-  }
-}
-
-loadEnv(resolve(__dirname, "../../.env"));
+const root = resolve(__dirname, "../..");
+const { env } = loadStackedEnv({ root });
 
 const prefixes = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const listFailed = process.argv.includes("--list-failed");
 
-const endpoint = process.env.COSMOS_ENDPOINT?.trim();
-const key = process.env.COSMOS_KEY?.trim();
-const db = process.env.COSMOS_TRANSLATION_DATABASE_ID?.trim() || "translation";
-const containerId =
-  process.env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER?.trim() || "translation_v4_jobs";
-
-if (!endpoint || !key) {
-  console.error("COSMOS_ENDPOINT / COSMOS_KEY not configured");
+const cosmos = resolveCosmos(env);
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("COSMOS 凭据未配置（默认测环境）");
   process.exit(1);
 }
 
-const client = new CosmosClient({ endpoint, key });
-const container = client.database(db).container(containerId);
+const client = new CosmosClient({
+  endpoint: cosmos.endpoint,
+  key: cosmos.key,
+});
+const container = client
+  .database(cosmos.databaseId)
+  .container(cosmos.containerId);
 
 const jobs = [];
 
@@ -98,15 +83,13 @@ for (const j of jobs) {
 }
 
 function createRedis() {
-  const url = process.env.REDIS_URL?.trim();
-  if (url) {
-    return new IORedis(url, {
-      maxRetriesPerRequest: 1,
-      connectTimeout: 8_000,
-      lazyConnect: true,
-    });
-  }
-  return null;
+  const { url } = resolveRedisUrl(env);
+  if (!url) return null;
+  return new IORedis(url, {
+    maxRetriesPerRequest: 1,
+    connectTimeout: 8_000,
+    lazyConnect: true,
+  });
 }
 
 const redis = createRedis();
@@ -114,10 +97,10 @@ if (redis) {
   await redis.connect();
   for (const j of jobs) {
     const prog = await redis.hgetall(`translate:v4:progress:${j.id}`);
-    const ctrl = await redis.hgetall(`translate:v4:control:${j.id}`);
+    const ctrl = await redis.get(`translate:v4:control:${j.id}`);
     console.log(`--- Redis progress ${j.id} ---`);
     console.log(prog);
-    if (Object.keys(ctrl).length) {
+    if (ctrl) {
       console.log(`--- Redis control ${j.id} ---`);
       console.log(ctrl);
     }
@@ -125,9 +108,9 @@ if (redis) {
   await redis.quit();
 }
 
-const blobConn = process.env.AZURE_BLOB_CONNECTION_STRING?.trim();
+const blobConn = env.AZURE_BLOB_CONNECTION_STRING?.trim();
 const blobContainer =
-  process.env.AZURE_BLOB_TRANSLATION_CONTAINER?.trim() || "translation-content";
+  env.AZURE_BLOB_TRANSLATION_CONTAINER?.trim() || "translation-content";
 
 if (blobConn) {
   const blobClient = BlobServiceClient.fromConnectionString(blobConn).getContainerClient(
