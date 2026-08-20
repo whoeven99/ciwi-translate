@@ -234,6 +234,7 @@ export function CreateTaskConfirmModal({
   const isReady = scenario === "ready";
   const isInsufficientPaid = scenario === "insufficient_paid";
   const isTrialOffer = scenario === "insufficient_trial";
+  const showTaskDetails = isReady;
   const hasPositiveCredits = remainingCredits != null && remainingCredits > 0;
   const hasNonPositiveCredits = remainingCredits != null && remainingCredits <= 0;
   const canStartPartial = !isReady && !hasNonPositiveCredits && hasPositiveCredits;
@@ -244,7 +245,7 @@ export function CreateTaskConfirmModal({
     shortfallCredits > 0 ? recommendPlanForShortfall(shortfallCredits) : null;
   const subscriptionBenefitValue =
     recommendedPlan &&
-    (scenario === "insufficient_trial" || scenario === "insufficient_pricing")
+    scenario === "insufficient_pricing"
       ? t("pricing.launchCredits", {
           credits: formatCreditsFull(recommendedPlan.launchCredits),
           defaultValue: "+{{credits}} Launch Credits (first subscribe only)",
@@ -252,7 +253,7 @@ export function CreateTaskConfirmModal({
       : null;
   const subscriptionBenefitCaption =
     recommendedPlan &&
-    (scenario === "insufficient_trial" || scenario === "insufficient_pricing")
+    scenario === "insufficient_pricing"
       ? t("v4.createTask.confirmRecommendedPlanMonthlyValue", {
           plan: recommendedPlan.title,
           monthly: formatCreditsFull(recommendedPlan.monthlyCredits),
@@ -479,17 +480,19 @@ export function CreateTaskConfirmModal({
             </div>
           </section>
 
-          <InfoCard title={t("v4.createTask.confirmTaskDetailTitle")}>
-            <div style={detailListStyle}>
-              {detailItems.map((item) => (
-                <DetailLine
-                  key={item.label}
-                  label={item.label}
-                  value={item.value}
-                />
-              ))}
-            </div>
-          </InfoCard>
+          {showTaskDetails ? (
+            <InfoCard title={t("v4.createTask.confirmTaskDetailTitle")}>
+              <div style={detailListStyle}>
+                {detailItems.map((item) => (
+                  <DetailLine
+                    key={item.label}
+                    label={item.label}
+                    value={item.value}
+                  />
+                ))}
+              </div>
+            </InfoCard>
+          ) : null}
 
           {!isReady && (recommendedPlan || recommendedPack) ? (
             <InfoCard title={t("v4.createTask.confirmRecommendationTitle")}>
