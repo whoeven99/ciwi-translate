@@ -581,34 +581,48 @@ async function ciwiOnload() {
     );
   }
 
-  //浏览器语言
-  let browserLanguage = navigator.language || navigator.userLanguage;
-
-  // 如果语言包含 'q=xx' 或类似的内容，提取前面的部分
-  browserLanguage = browserLanguage.split(";")[0];
-
-  if (!browserLanguage.includes("zh")) {
-    browserLanguage = browserLanguage.split("-")[0]; // 只保留语言部分
-  }
+  const browserLanguageSignals = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    navigator.language,
+    navigator.userLanguage,
+  ].filter(Boolean);
+  const resolvedBrowserLanguage =
+    browserLanguageSignals
+      .map((locale) => resolveAvailableLanguage(locale, availableLanguages))
+      .find(Boolean) || "";
+  const runtimeLanguage = detectRuntimeLanguage(ciwiBlock, availableLanguages);
 
   let detectedCountry = preferredCountry || countryValue;
-  let detectedLanguage = preferredLanguage || browserLanguage;
-  const shouldRunAutoLocalization =
+  let detectedLanguage =
+    preferredLanguage ||
+    runtimeLanguage ||
+    languageValue;
+  const shouldAutoMatchMarketByIP =
     !isInThemePreview &&
     configData?.ipOpen &&
     !hasUserLocalizationData;
+  const shouldAutoSwitchBrowserLanguage =
+    !isInThemePreview &&
+    configData?.browserLanguageOpen &&
+    !hasUserLocalizationData;
+  const shouldRunAutoLocalization =
+    shouldAutoMatchMarketByIP || shouldAutoSwitchBrowserLanguage;
+
+  if (shouldAutoSwitchBrowserLanguage && resolvedBrowserLanguage) {
+    detectedLanguage = resolvedBrowserLanguage;
+  }
 
   // IP 定位：每次进入都重新请求，不使用 localStorage 缓存
-  if (shouldRunAutoLocalization) {
+  if (shouldAutoMatchMarketByIP) {
     const iptokenValue = ciwiBlock.querySelector(
       'input[name="iptoken"]',
     )?.value;
 
-    if (!iptokenValue) return;
-
-    const IpData = await API.fetchUserCountryInfo(iptokenValue);
-    if (IpData?.countryCode) {
-      detectedCountry = IpData.countryCode;
+    if (iptokenValue) {
+      const IpData = await API.fetchUserCountryInfo(iptokenValue);
+      if (IpData?.countryCode) {
+        detectedCountry = IpData.countryCode;
+      }
     }
   }
 

@@ -446,7 +446,13 @@ async function refreshSelectedCurrency({ blockId, shop, ciwiBlock }) {
     }
   }
 
-  await initializeCurrency({ blockId, currencyData, shop, ciwiBlock });
+  await initializeCurrency({
+    blockId,
+    currencyData,
+    shop,
+    ciwiBlock,
+    marketCurrencyOpen: false,
+  });
 }
 
 function syncCurrencySelectionState({
@@ -488,6 +494,7 @@ export async function initializeCurrency({
   currencyData,
   shop,
   ciwiBlock,
+  marketCurrencyOpen = true,
 }) {
   const pageCurrencyCode = ciwiBlock.querySelector(
     'input[name="currency_code"]',
@@ -503,7 +510,10 @@ export async function initializeCurrency({
     typeof localStorage !== "undefined"
       ? localStorage.getItem("ciwi_selected_currency")
       : "";
-  const selectedCurrencyCode = persistedCurrencyCode || pageCurrencyCode;
+  const selectedCurrencyCode =
+    marketCurrencyOpen || !persistedCurrencyCode
+      ? pageCurrencyCode
+      : persistedCurrencyCode;
   const moneyFormat = ciwiBlock.querySelector("#queryMoneyFormat").value;
 
   let selectedCurrency = currencyData?.find(
@@ -544,6 +554,7 @@ export async function initializeCurrency({
     ciwiBlock,
     currencySelect,
     selectedCurrencyCode: effectiveSelectedCurrencyCode,
+    persist: !marketCurrencyOpen,
   });
 
   if (activePriceObserver) {
@@ -783,7 +794,13 @@ export async function CurrencySelectorTakeEffect(
   currencySelectorHeader.style.border = "none";
   currencySelector.style.display = "block";
 
-  initializeCurrency({ blockId, currencyData, shop, ciwiBlock });
+  initializeCurrency({
+    blockId,
+    currencyData,
+    shop,
+    ciwiBlock,
+    marketCurrencyOpen: data?.marketCurrencyOpen !== false,
+  });
 }
 
 /**

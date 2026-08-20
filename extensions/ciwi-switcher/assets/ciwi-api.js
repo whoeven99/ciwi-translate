@@ -214,6 +214,8 @@ export async function fetchSwitcherConfig({ shop }) {
     languageSelector: true,
     currencySelector: true,
     ipOpen: false,
+    browserLanguageOpen: true,
+    marketCurrencyOpen: true,
     fontColor: "#303030",
     backgroundColor: "#ffffff",
     buttonColor: "#ffffff",

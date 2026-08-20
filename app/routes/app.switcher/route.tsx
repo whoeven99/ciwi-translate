@@ -2,7 +2,6 @@ import { SaveBar, TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import {
   Alert,
-  Space,
   Card,
   Typography,
   Switch,
@@ -10,20 +9,17 @@ import {
   ColorPicker,
   Slider,
   Popconfirm,
-  Flex,
   Modal,
 } from "antd";
 import Button from "~/ui/components/AppButton";
 import { useTranslation } from "react-i18next";
 import {
-  buildTranslateV4Error,
   getTranslateV4ErrorMessage,
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
-import ScrollNotice from "~/components/ScrollNotice";
 import styles from "./styles.module.css";
 import { useEffect, useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import {
   useFetcher,
   useLoaderData,
@@ -39,14 +35,41 @@ import {
 } from "./switcherClient";
 import { useSelector } from "react-redux";
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { queryShopBaseConfigData } from "~/api/admin";
 import defaultStyles from "../styles/defaultStyles.module.css";
 import useReport from "scripts/eventReport";
 import CloseIcon from "~/components/icon/closeIcon";
 import { withEmbeddedSearch } from "~/utils/embeddedAction";
 import SwitcherSettingCard from "./components/switcherSettingCard";
+import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSectionCard from "~/ui/components/AppSectionCard";
+import AppStatusBadge from "~/ui/components/AppStatusBadge";
 
 const { Text, Title } = Typography;
+
+const pageContentStackStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 16,
+};
+
+const sectionContentStackStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 16,
+};
+
+const rowBetweenStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+};
+
+const fieldColumnStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 8,
+};
 
 const initialLocalization = {
   languages: [
@@ -105,69 +128,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const adminAuthResult = await authenticate.admin(request);
-  const { shop, accessToken } = adminAuthResult.session;
-
-  const formData = await request.formData();
-  const shopInfo = JSON.parse(formData.get("shopInfo") as string);
-  switch (true) {
-    case !!shopInfo:
-      try {
-        const shopLoad = await queryShopBaseConfigData({
-          shop,
-          accessToken: accessToken as string,
-        });
-        const moneyFormat = shopLoad?.shop?.currencyFormats?.moneyFormat;
-        const moneyWithCurrencyFormat =
-          shopLoad?.shop?.currencyFormats?.moneyWithCurrencyFormat;
-        if (shopLoad) {
-          return {
-            success: true,
-            errorCode: 0,
-            errorMsg: "",
-            response: {
-              moneyFormat,
-              moneyWithCurrencyFormat,
-            },
-          };
-        } else {
-          const appError = buildTranslateV4Error(
-            TRANSLATE_V4_ERROR_KEYS.SWITCHER_LOAD_FAILED,
-          );
-          return {
-            success: false,
-            errorCode: appError.errorCode,
-            errorMsg: appError.errorMsg,
-            response: undefined,
-          };
-        }
-      } catch (error) {
-        console.error("Error switcher shopInfo:", error);
-        const appError = buildTranslateV4Error(
-          TRANSLATE_V4_ERROR_KEYS.SWITCHER_LOAD_FAILED,
-        );
-        return {
-          success: false,
-          errorCode: appError.errorCode,
-          errorMsg: appError.errorMsg,
-          response: undefined,
-        };
-      }
-    default: {
-      const appError = buildTranslateV4Error(
-        TRANSLATE_V4_ERROR_KEYS.UNKNOWN_ACTION,
-      );
-      return {
-        success: false,
-        errorCode: appError.errorCode,
-        errorMsg: appError.errorMsg,
-        response: undefined,
-      };
-    }
-  }
-};
-
 const Index = () => {
   const { shop, migrated, ciwiSwitcherId, ciwiSwitcherBlocksId } =
     useLoaderData<typeof loader>();
@@ -181,6 +141,8 @@ const Index = () => {
   const [selectorPosition, setSelectorPosition] = useState("top_left");
   const [positionData, setPositionData] = useState<string>("0");
   const [isTransparent, setIsTransparent] = useState(false);
+  const [isBrowserLanguageEnabled, setIsBrowserLanguageEnabled] = useState(true);
+  const [isMarketCurrencyEnabled, setIsMarketCurrencyEnabled] = useState(true);
   const [isLanguageOpen, setIsLanguageOpen] = useState(false);
   const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -192,6 +154,8 @@ const Index = () => {
     languageSelector: false,
     currencySelector: false,
     ipOpen: false,
+    browserLanguageOpen: true,
+    marketCurrencyOpen: true,
     fontColor: "",
     backgroundColor: "",
     buttonColor: "",
@@ -211,12 +175,8 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showWarnModal, setShowWarnModal] = useState(false);
   const [saveAlert, setSaveAlert] = useState<string>("");
-  const [currencyFormatConfigCardOpen, setCurrencyFormatConfigCardOpen] =
-    useState<boolean>(false);
   const [switcherEnableCardOpen, setSwitcherEnableCardOpen] =
     useState<boolean>(false);
-  const [withMoneyValue, setWithMoneyValue] = useState<string>("");
-  const [withoutMoneyValue, setWithoutMoneyValue] = useState<string>("");
   const [cardLoading, setCardLoading] = useState<boolean>(true);
   const [updateLoading, setUpdateLoading] = useState<boolean>(false);
   const { report } = useReport();
@@ -228,15 +188,8 @@ const Index = () => {
   const fetcher = useFetcher<any>();
   const initFetcher = useFetcher<any>();
   const themeFetcher = useFetcher<any>();
-  const shopFetcher = useFetcher<any>();
 
   useEffect(() => {
-    const currencyFormatConfigCardOpen = localStorage.getItem(
-      "currencyFormatConfigCardOpen",
-    );
-    if (currencyFormatConfigCardOpen) {
-      setCurrencyFormatConfigCardOpen(currencyFormatConfigCardOpen === "true");
-    }
     const switcherEnableCardOpen = localStorage.getItem(
       "switcherEnableCardOpen",
     );
@@ -250,15 +203,6 @@ const Index = () => {
       {
         method: "post",
         action: withEmbeddedSearch("/app/currency", location.search),
-      },
-    );
-    shopFetcher.submit(
-      {
-        shopInfo: JSON.stringify(true),
-      },
-      {
-        method: "post",
-        action: withEmbeddedSearch("/app/switcher", location.search),
       },
     );
     initFetcher.submit(
@@ -287,6 +231,8 @@ const Index = () => {
         setLanguageSelector(res.languageSelector);
         setCurrencySelector(res.currencySelector);
         setIsGeoLocationEnabled(res.ipOpen);
+        setIsBrowserLanguageEnabled(res.browserLanguageOpen);
+        setIsMarketCurrencyEnabled(res.marketCurrencyOpen);
         setFontColor(res.fontColor);
         setBackgroundColor(res.backgroundColor);
         setOptionBorderColor(res.optionBorderColor);
@@ -301,6 +247,8 @@ const Index = () => {
         setLanguageSelector(initData.languageSelector);
         setCurrencySelector(initData.currencySelector);
         setIsGeoLocationEnabled(initData.ipOpen);
+        setIsBrowserLanguageEnabled(initData.browserLanguageOpen);
+        setIsMarketCurrencyEnabled(initData.marketCurrencyOpen);
         setFontColor(initData.fontColor);
         setBackgroundColor(initData.backgroundColor);
         setOptionBorderColor(initData.optionBorderColor);
@@ -322,7 +270,7 @@ const Index = () => {
         action: "/log",
       },
     );
-  }, [location.search, migrated, shop]);
+  }, [fetcher, initFetcher, location.search, migrated, shop, themeFetcher]);
 
   useEffect(() => {
     if (themeFetcher.data) {
@@ -347,71 +295,7 @@ const Index = () => {
 
       setCardLoading(false);
     }
-  }, [themeFetcher.data]);
-
-  useEffect(() => {
-    if (shopFetcher.data) {
-      if (shopFetcher.data.success) {
-        const parser = new DOMParser();
-        const moneyFormatHtmlData = parser.parseFromString(
-          shopFetcher.data.response.moneyFormat,
-          "text/html",
-        ).documentElement.textContent;
-        const moneyWithCurrencyFormatHtmlData = parser.parseFromString(
-          shopFetcher.data.response.moneyWithCurrencyFormat,
-          "text/html",
-        ).documentElement.textContent;
-        if (moneyFormatHtmlData && moneyWithCurrencyFormatHtmlData) {
-          const parser = new DOMParser();
-          const moneyWithMoneyDoc = parser.parseFromString(
-            moneyWithCurrencyFormatHtmlData,
-            "text/html",
-          );
-          const moneyWithoutMoneyDoc = parser.parseFromString(
-            moneyFormatHtmlData,
-            "text/html",
-          );
-
-          const moneyWithMoneyElement =
-            moneyWithMoneyDoc.querySelector(".ciwi-money");
-          const moneyWithoutMoneyElement =
-            moneyWithoutMoneyDoc.querySelector(".ciwi-money");
-          if (moneyWithMoneyElement && moneyWithoutMoneyElement) {
-            setCurrencyFormatConfigCardOpen(false);
-            localStorage.setItem("currencyFormatConfigCardOpen", "false");
-          } else {
-            setCurrencyFormatConfigCardOpen(true);
-            localStorage.setItem("currencyFormatConfigCardOpen", "true");
-          }
-
-          const spansWithMoney = moneyWithMoneyDoc.querySelectorAll("span");
-
-          if (spansWithMoney.length) {
-            spansWithMoney.forEach((span) => {
-              if (span.textContent && span.textContent.trim()) {
-                setWithMoneyValue(span.textContent.trim());
-              }
-            });
-          } else {
-            setWithMoneyValue(moneyWithCurrencyFormatHtmlData);
-          }
-
-          const spansWithoutMoney =
-            moneyWithoutMoneyDoc.querySelectorAll("span");
-
-          if (spansWithoutMoney.length) {
-            spansWithoutMoney.forEach((span) => {
-              if (span.textContent && span.textContent.trim()) {
-                setWithoutMoneyValue(span.textContent.trim());
-              }
-            });
-          } else {
-            setWithoutMoneyValue(moneyFormatHtmlData);
-          }
-        }
-      }
-    }
-  }, [shopFetcher.data]);
+  }, [ciwiSwitcherBlocksId, themeFetcher.data]);
 
   useEffect(() => {
     if (
@@ -444,6 +328,12 @@ const Index = () => {
         case "fontColor":
           setFontColor(value as string);
           break;
+        case "browserLanguageOpen":
+          setIsBrowserLanguageEnabled(value as boolean);
+          break;
+        case "marketCurrencyOpen":
+          setIsMarketCurrencyEnabled(value as boolean);
+          break;
         case "backgroundColor":
           setBackgroundColor(value as string);
           break;
@@ -466,54 +356,34 @@ const Index = () => {
     }));
   };
 
-  const handleOptionChange = (value: string) => {
-    const switcherType = {
-      "sidebar widget": {
-        status: 3,
-      },
-      language_and_currency: {
-        status: 0,
-      },
-      language: {
-        status: 1,
-      },
-      currency: {
-        status: 2,
-      },
-    } as any;
-    switch (value) {
-      case "sidebar widget":
-        handleEditData({
-          languageSelector: false,
-          currencySelector: false,
-        });
-        break;
-      case "language_and_currency":
-        handleEditData({
-          languageSelector: true,
-          currencySelector: true,
-        });
-        break;
-      case "language":
-        handleEditData({
-          languageSelector: true,
-          currencySelector: false,
-        });
-        break;
-      case "currency":
-        handleEditData({
-          languageSelector: false,
-          currencySelector: true,
-        });
-        setIsIncludedFlag(false);
-        handleEditData({
-          includedFlag: false,
-        });
-        break;
+  const applySelectorType = (
+    nextLanguageSelector: boolean,
+    nextCurrencySelector: boolean,
+  ) => {
+    handleEditData({
+      languageSelector: nextLanguageSelector,
+      currencySelector: nextCurrencySelector,
+    });
+
+    if (!nextLanguageSelector && nextCurrencySelector) {
+      setIsIncludedFlag(false);
+      handleEditData({
+        includedFlag: false,
+      });
     }
+
+    const status =
+      nextLanguageSelector && nextCurrencySelector
+        ? 0
+        : nextLanguageSelector
+          ? 1
+          : !nextLanguageSelector && !nextCurrencySelector
+            ? 3
+            : 2;
+
     report(
       {
-        status: switcherType[value].status,
+        status,
       },
       {
         action: "/app",
@@ -653,6 +523,8 @@ const Index = () => {
       setLanguageSelector(originalData.languageSelector);
       setCurrencySelector(originalData.currencySelector);
       setIsGeoLocationEnabled(originalData.ipOpen);
+      setIsBrowserLanguageEnabled(originalData.browserLanguageOpen);
+      setIsMarketCurrencyEnabled(originalData.marketCurrencyOpen);
       setFontColor(originalData.fontColor);
       setBackgroundColor(originalData.backgroundColor);
       setOptionBorderColor(originalData.optionBorderColor);
@@ -661,25 +533,6 @@ const Index = () => {
       setEditData(originalData);
     }
   };
-
-  const switcherOptions = [
-    {
-      label: t("Language Switcher"),
-      value: "language",
-    },
-    {
-      label: t("Currency Switcher"),
-      value: "currency",
-    },
-    {
-      label: t("Language and Currency Switcher"),
-      value: "language_and_currency",
-    },
-    {
-      label: t("Sidebar Widget"),
-      value: "sidebar widget",
-    },
-  ];
 
   const switcherPositionOptions = [
     {
@@ -700,6 +553,37 @@ const Index = () => {
     },
   ];
 
+  const switcherOptions = [
+    {
+      label: t("Language Switcher"),
+      value: "language",
+    },
+    {
+      label: t("Currency Switcher"),
+      value: "currency",
+    },
+    {
+      label: t("Language and Currency Switcher"),
+      value: "language_and_currency",
+    },
+    {
+      label: t("Sidebar Widget"),
+      value: "sidebar widget",
+    },
+  ];
+
+  const switcherTypeValue =
+    languageSelector && currencySelector
+      ? "language_and_currency"
+      : languageSelector
+        ? "language"
+        : !languageSelector && !currencySelector
+          ? "sidebar widget"
+          : "currency";
+
+  const showPaidPlanHint =
+    plan?.type == "Free" || typeof plan?.type === "undefined";
+
   return (
     <Page>
       <SaveBar id="switcher-save-bar">
@@ -713,28 +597,19 @@ const Index = () => {
         <button onClick={handleCancel}>{t("Cancel")}</button>
       </SaveBar>
       <TitleBar title={t("Switcher")} />
-      <ScrollNotice
-        text={t(
-          "Welcome to our app! If you have any questions, feel free to email us at support@ciwi.ai, and we will respond as soon as possible.",
-        )}
-      />
-      <Space direction="vertical" size="middle" style={{ display: "flex" }}>
+      <div style={pageContentStackStyle}>
+        <AppPageHeader
+          title={t("Switcher")}
+        />
         <SwitcherSettingCard
-          step1Visible={currencyFormatConfigCardOpen}
-          step2Visible={switcherEnableCardOpen}
+          visible={switcherEnableCardOpen}
           loading={cardLoading}
           shop={shop}
           ciwiSwitcherId={ciwiSwitcherId}
-          withMoneyValue={withMoneyValue}
-          withoutMoneyValue={withoutMoneyValue}
         />
         <div className={styles.switcher_container}>
           <div className={styles.switcher_editor}>
-            <Space
-              direction="vertical"
-              size="middle"
-              style={{ display: "flex" }}
-            >
+            <div style={sectionContentStackStyle}>
               {saveAlert ? (
                 <Alert
                   type="error"
@@ -744,56 +619,76 @@ const Index = () => {
                   onClose={() => setSaveAlert("")}
                 />
               ) : null}
-              <Card
-                loading={isLoading}
-                style={{ border: "none", boxShadow: "var(--app-shadow-card)" }}
-              >
-                <Space
-                  direction="vertical"
-                  size="middle"
-                  style={{ display: "flex" }}
-                >
-                  <Flex justify="space-between">
-                    <Title
-                      level={5}
-                      style={{ fontSize: 14, color: "var(--app-color-text)" }}
+              <AppSectionCard
+                title={t("Auto adaptation settings")}
+                extra={
+                  showPaidPlanHint ? (
+                    <Popconfirm
+                      title=""
+                      description={t(
+                        "This feature is available only with the paid plan.",
+                      )}
+                      trigger="hover"
+                      showCancel={false}
+                      okText={t("Upgrade")}
+                      onConfirm={() => navigate("/app/pricing")}
                     >
-                      {t("Selector Auto IP position configuration:")}
-                    </Title>
-                    {(plan?.type == "Free" ||
-                      typeof plan?.type === "undefined") && (
-                      <Popconfirm
-                        title=""
-                        description={t(
-                          "This feature is available only with the paid plan.",
-                        )}
-                        trigger="hover"
-                        showCancel={false}
-                        okText={t("Upgrade")}
-                        onConfirm={() => navigate("/app/pricing")}
-                      >
-                        <InfoCircleOutlined
-                          style={{ paddingBottom: "0.5rem" }}
-                        />
-                      </Popconfirm>
-                    )}
-                  </Flex>
-
-                  <Flex justify="space-between">
-                    <Text>{t("Geolocation: ")}</Text>
+                      <Button type="text" icon={<InfoCircleOutlined />}>
+                        {t("Paid feature")}
+                      </Button>
+                    </Popconfirm>
+                  ) : null
+                }
+              >
+                <div style={sectionContentStackStyle}>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Match market by IP")}</Text>
+                    </div>
                     <Switch
-                      className={
-                        plan?.type == "Free" ||
-                        typeof plan?.type === "undefined"
-                          ? defaultStyles.Switch_disable
-                          : ""
-                      }
+                      className={showPaidPlanHint ? defaultStyles.Switch_disable : ""}
                       checked={isGeoLocationEnabled}
                       onChange={handleIpOpenChange}
                     />
-                  </Flex>
-                  <Flex justify="space-between">
-                    <Text>{t("No Visible Switcher: ")}</Text>
+                  </div>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Match currency by market")}</Text>
+                    </div>
+                    <Switch
+                        checked={isMarketCurrencyEnabled}
+                      onChange={(checked) => {
+                          handleEditData({ marketCurrencyOpen: checked });
+                      }}
+                    />
+                  </div>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Switch by browser language")}</Text>
+                    </div>
+                    <Switch
+                        checked={isBrowserLanguageEnabled}
+                      onChange={(checked) => {
+                          handleEditData({ browserLanguageOpen: checked });
+                      }}
+                    />
+                  </div>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Auto-translate third-party apps")}</Text>
+                    </div>
+                    <AppStatusBadge tone="success">{t("Always on")}</AppStatusBadge>
+                  </div>
+                </div>
+              </AppSectionCard>
+              <AppSectionCard
+                title={t("Switcher style settings")}
+              >
+                <div style={sectionContentStackStyle}>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Hide visible switcher")}</Text>
+                    </div>
                     <Switch
                       checked={isTransparent}
                       onChange={() => {
@@ -811,160 +706,109 @@ const Index = () => {
                         );
                       }}
                     />
-                  </Flex>
-                </Space>
-              </Card>
-              <Card
-                loading={isLoading}
-                style={{
-                  display: isTransparent ? "none" : "block",
-                  border: "none",
-                  boxShadow: "var(--app-shadow-card)",
-                }}
-              >
-                <Title
-                  level={5}
-                  style={{ fontSize: 14, color: "var(--app-color-text)" }}
-                >
-                  {t("Selector type configuration:")}
-                </Title>
-                <Select
-                  options={switcherOptions}
-                  style={{ width: "100%" }}
-                  value={
-                    languageSelector && currencySelector
-                      ? "language_and_currency"
-                      : languageSelector
-                        ? "language"
-                        : !languageSelector && !currencySelector
-                          ? "sidebar widget"
-                          : "currency"
-                  }
-                  onChange={handleOptionChange}
-                />
-              </Card>
-              <Card
-                loading={isLoading}
-                style={{
-                  display: isTransparent ? "none" : "block",
-                  border: "none",
-                  boxShadow: "var(--app-shadow-card)",
-                }}
-              >
-                <Space
-                  direction="vertical"
-                  size="middle"
-                  style={{ display: "flex" }}
-                >
-                  <Title
-                    level={5}
-                    style={{ fontSize: 14, color: "var(--app-color-text)" }}
-                  >
-                    {t("Selector style configuration:")}
-                  </Title>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Text>{t("Included flag:")}</Text>
-                    <Switch
-                      disabled={!languageSelector && currencySelector}
-                      checked={isIncludedFlag}
-                      onChange={(checked) => {
-                        handleEditData({ includedFlag: checked });
-                        report(
-                          {
-                            status: checked ? 1 : 0,
-                          },
-                          {
-                            action: "/app",
-                            method: "post",
-                            eventType: "click",
-                          },
-                          "switcher_style_flag",
-                        );
-                      }}
-                    />
                   </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 20,
-                    }}
-                  >
-                    <div
-                      style={{
-                        flex: 1,
-                        flexDirection: "column",
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Text>{t("Font Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={fontColor}
-                        onChange={(e) =>
-                          handleEditData({ fontColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                    <div
-                      style={{
-                        flex: 1,
-                        flexDirection: "column",
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Text>{t("Background Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={backgroundColor}
-                        onChange={(e) =>
-                          handleEditData({ backgroundColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                    <div
-                      style={{
-                        flex: 1,
-                        flexDirection: "column",
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Text>{t("Option Border Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={optionBorderColor}
-                        onChange={(e) =>
-                          handleEditData({ optionBorderColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Text style={{ display: "block" }}>
-                      {t("Selector position:")}
-                    </Text>
-                    <Select
-                      options={switcherPositionOptions}
-                      style={{ width: "100%" }}
-                      value={selectorPosition}
-                      onChange={(value) =>
-                        handleEditData({ selectorPosition: value })
-                      }
-                    />
-                  </div>
-                  <div>
+                  {!isTransparent ? (
+                    <>
+                      <div style={fieldColumnStyle}>
+                        <Text style={{ display: "block" }}>
+                          {t("Selector type")}
+                        </Text>
+                        <Select
+                          options={switcherOptions}
+                          style={{ width: "100%" }}
+                          value={switcherTypeValue}
+                          onChange={(value) => {
+                            switch (value) {
+                              case "sidebar widget":
+                                applySelectorType(false, false);
+                                break;
+                              case "language_and_currency":
+                                applySelectorType(true, true);
+                                break;
+                              case "language":
+                                applySelectorType(true, false);
+                                break;
+                              case "currency":
+                                applySelectorType(false, true);
+                                break;
+                            }
+                          }}
+                        />
+                      </div>
+                      <div style={rowBetweenStyle}>
+                        <div className={styles.switcher_row_label}>
+                          <Text strong>{t("Include flag")}</Text>
+                        </div>
+                        <Switch
+                          disabled={!languageSelector && currencySelector}
+                          checked={isIncludedFlag}
+                          onChange={(checked) => {
+                            handleEditData({ includedFlag: checked });
+                            report(
+                              {
+                                status: checked ? 1 : 0,
+                              },
+                              {
+                                action: "/app",
+                                method: "post",
+                                eventType: "click",
+                              },
+                              "switcher_style_flag",
+                            );
+                          }}
+                        />
+                      </div>
+                      <div className={styles.switcher_style_fields}>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Font Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={fontColor}
+                            onChange={(e) =>
+                              handleEditData({ fontColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Background Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={backgroundColor}
+                            onChange={(e) =>
+                              handleEditData({ backgroundColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Option Border Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={optionBorderColor}
+                            onChange={(e) =>
+                              handleEditData({ optionBorderColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                      </div>
+                      <div style={fieldColumnStyle}>
+                        <Text style={{ display: "block" }}>
+                          {t("Selector position:")}
+                        </Text>
+                        <Select
+                          options={switcherPositionOptions}
+                          style={{ width: "100%" }}
+                          value={selectorPosition}
+                          onChange={(value) =>
+                            handleEditData({ selectorPosition: value })
+                          }
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                  <div style={fieldColumnStyle}>
                     <Text style={{ display: "block" }}>
                       {t("Selector position data:")}
                     </Text>
@@ -975,9 +819,9 @@ const Index = () => {
                       }
                     />
                   </div>
-                </Space>
-              </Card>
-            </Space>
+                </div>
+              </AppSectionCard>
+            </div>
           </div>
           <div className={styles.switcher_preview}>
             <Card
@@ -1388,7 +1232,7 @@ const Index = () => {
         >
           <Text>{t("This feature is available only with the paid plan.")}</Text>
         </Modal>
-      </Space>
+      </div>
     </Page>
   );
 };
