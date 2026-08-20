@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import useReport from "scripts/eventReport";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 interface SwitcherSettingCardProps {
   visible: boolean;
@@ -45,9 +45,21 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
   return (
     <AppSectionCard
       style={{ display: shouldShow ? "block" : "none" }}
-      title={t("Switcher Configuration Guide")}
+      title={
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>{t("Activate Switcher")}</span>
+          <AppStatusBadge tone="critical">{t("Uncompleted")}</AppStatusBadge>
+        </div>
+      }
       description={t(
-        "Enable the storefront switcher in your current theme so shoppers can switch language and currency.",
+        "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.",
       )}
       extra={
         <Button type="text" onClick={handleClose}>
@@ -61,24 +73,15 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
+              justifyContent: "flex-end",
             }}
           >
-            <AppStatusBadge tone="critical">{t("Uncompleted")}</AppStatusBadge>
             <a href={blockUrl} target="_blank" rel="noreferrer">
               <Button type="primary" onClick={handleOpenThemeEditor}>
-                {t("Open current theme and enable switcher")}
+                {t("Activate plugin")}
               </Button>
             </a>
           </div>
-          <Paragraph style={{ marginBottom: 0 }}>
-            {t(
-              "No extra currency format setup is required. Just enable the storefront switcher in your current theme.",
-            )}
-          </Paragraph>
           <Text style={{ color: "var(--app-color-text-secondary)" }}>
             {t(
               "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.",
