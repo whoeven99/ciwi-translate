@@ -1006,7 +1006,7 @@
   "v4.createTask.confirmTrialFeatureSpeedBadge": "Bonus",
   "v4.createTask.confirmTrialFeatureSpeedValue": "$31.99 value",
   "v4.createTask.confirmTrialOfferDesc": "Start the 5-day free trial to continue this task with 1.5M monthly credits and 4M launch credits on your first subscription.",
-  "v4.createTask.confirmTrialOfferTitle": "Free trial",
+  "v4.createTask.confirmTrialOfferTitle": "5 Days Free trial",
   "v4.createTask.confirmTrialSummary": "You are not on a paid plan yet, and the free trial is still available. Start the trial to continue with the current setup.",
   "v4.createTask.confirmTrialTitle": "Credits are not enough, but a free trial is still available",
   "v4.createTask.confirmViewPlans": "View Plans",

@@ -1006,7 +1006,7 @@
   "v4.createTask.confirmTrialFeatureSpeedBadge": "Bonus",
   "v4.createTask.confirmTrialFeatureSpeedValue": "$31.99 value",
   "v4.createTask.confirmTrialOfferDesc": "开启 5 天免费试用后，即可继续当前任务，并享有每月 150 万积分与首订赠送 400 万积分。",
-  "v4.createTask.confirmTrialOfferTitle": "免费试用",
+  "v4.createTask.confirmTrialOfferTitle": "5 Days Free trial",
   "v4.createTask.confirmTrialSummary": "你还没有订阅付费计划，但当前仍可开启免费试用。开启后可继续按当前配置创建任务。",
   "v4.createTask.confirmTrialTitle": "积分不足，可开启免费试用",
   "v4.createTask.confirmViewPlans": "查看套餐",

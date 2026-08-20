@@ -282,6 +282,8 @@ export function CreateTaskConfirmModal({
       : isInsufficientPaid || isTrialOffer
         ? t("v4.createTask.confirmViewPlans")
         : t("v4.createTask.confirmBuyCreditsOnly");
+  const showTrialTextLink =
+    isTrialOffer && !canStartPartial && secondaryActionLabel != null;
 
   const buildReturnPathForPlan = () => {
     if (typeof window === "undefined") return undefined;
@@ -525,8 +527,19 @@ export function CreateTaskConfirmModal({
           ) : null}
         </div>
 
-        <div style={footerStyle}>
-          <div style={primaryButtonStyle}>
+        <div
+          style={{
+            ...footerStyle,
+            flexDirection: showTrialTextLink ? "column" : "row",
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{
+              ...primaryButtonStyle,
+              width: showTrialTextLink ? 240 : undefined,
+            }}
+          >
             <Button
               fullWidth
               size="large"
@@ -537,7 +550,16 @@ export function CreateTaskConfirmModal({
               {primaryActionLabel}
             </Button>
           </div>
-          {secondaryActionLabel ? (
+          {showTrialTextLink ? (
+            <button
+              type="button"
+              onClick={handleSecondaryAction}
+              disabled={creating}
+              style={footerTextLinkStyle}
+            >
+              {secondaryActionLabel}
+            </button>
+          ) : secondaryActionLabel ? (
             <div style={secondaryButtonStyle}>
               <Button
                 fullWidth
@@ -1007,4 +1029,15 @@ const secondaryButtonStyle = {
   minWidth: 184,
   minHeight: 48,
   paddingInline: 18,
+} as const;
+
+const footerTextLinkStyle = {
+  border: "none",
+  background: "transparent",
+  padding: 0,
+  color: v4Colors.textMuted,
+  fontSize: 13,
+  fontWeight: 600,
+  lineHeight: "20px",
+  cursor: "pointer",
 } as const;
