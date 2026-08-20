@@ -52,6 +52,12 @@ type TranslateFn = (
   options?: Record<string, unknown>,
 ) => string;
 
+type OfferFeatureItem = {
+  title: string;
+  note?: string;
+  badge?: string;
+};
+
 export function CreateTaskConfirmModal({
   open,
   creating,
@@ -237,8 +243,6 @@ export function CreateTaskConfirmModal({
   const hasNonPositiveCredits = remainingCredits != null && remainingCredits <= 0;
   const canStartPartial = !isReady && !hasNonPositiveCredits && hasPositiveCredits;
   const scenarioMeta = getScenarioMeta(t, scenario, canStartPartial);
-  const recommendedPack =
-    shortfallCredits > 0 ? recommendCreditsPack(shortfallCredits) : null;
   const recommendedPlan =
     shortfallCredits > 0 ? recommendPlanForShortfall(shortfallCredits) : null;
   const subscriptionBenefitValue =
@@ -258,6 +262,7 @@ export function CreateTaskConfirmModal({
           defaultValue: "{{plan}} · {{monthly}} credits/month",
         })
       : null;
+  const offerDescriptionText = offerDescription(t, scenario);
 
   const primaryActionLabel = isReady
     ? t("v4.createTask.confirmStartNow")
@@ -479,34 +484,11 @@ export function CreateTaskConfirmModal({
             </InfoCard>
           ) : null}
 
-          {!isReady && (recommendedPlan || recommendedPack) ? (
-            <InfoCard title={t("v4.createTask.confirmRecommendationTitle")}>
-              <div style={detailListStyle}>
-                {recommendedPlan ? (
-                  <DetailLine
-                    label={t("v4.createTask.confirmRecommendedPlan")}
-                    value={t("v4.createTask.confirmRecommendedPlanValue", {
-                      plan: recommendedPlan.title,
-                      monthly: formatCreditsFull(recommendedPlan.monthlyCredits),
-                      launch: formatCreditsFull(recommendedPlan.launchCredits),
-                    })}
-                  />
-                ) : null}
-                {recommendedPack ? (
-                  <DetailLine
-                    label={t("Recommended pack")}
-                    value={`${recommendedPack.name} · ${formatCreditsFull(recommendedPack.credits)} ${t("credits")}`}
-                  />
-                ) : null}
-              </div>
-            </InfoCard>
-          ) : null}
-
           {!isReady && scenario !== "insufficient_paid" ? (
             <InfoCard title={offerTitle(t, scenario)} highlighted>
-              <div style={offerDescriptionStyle}>
-                {offerDescription(t, scenario)}
-              </div>
+              {offerDescriptionText ? (
+                <div style={offerDescriptionStyle}>{offerDescriptionText}</div>
+              ) : null}
               {subscriptionBenefitValue ? (
                 <div style={subscriptionBenefitStyle}>
                   <div style={subscriptionBenefitLabelStyle}>
@@ -528,8 +510,14 @@ export function CreateTaskConfirmModal({
               ) : null}
               <div style={offerFeatureGridStyle}>
                 {offerFeatures(t, scenario).map((feature) => (
-                  <div key={feature} style={offerFeatureItemStyle}>
-                    {feature}
+                  <div key={`${feature.title}-${feature.note ?? ""}`} style={offerFeatureItemStyle}>
+                    {feature.badge ? (
+                      <div style={offerFeatureBadgeStyle}>{feature.badge}</div>
+                    ) : null}
+                    <div style={offerFeatureTitleStyle}>{feature.title}</div>
+                    {feature.note ? (
+                      <div style={offerFeatureNoteStyle}>{feature.note}</div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -658,29 +646,36 @@ function offerTitle(t: TranslateFn, scenario: CreateTaskConfirmScenario): string
 function offerDescription(
   t: TranslateFn,
   scenario: CreateTaskConfirmScenario,
-): string {
+): string | null {
   if (scenario === "insufficient_paid") {
     return t("v4.createTask.confirmPaidOfferDesc");
   }
-  return scenario === "insufficient_trial"
-    ? t("v4.createTask.confirmTrialOfferDesc")
-    : t("v4.createTask.confirmPricingOfferDesc");
+  if (scenario === "insufficient_trial") {
+    return null;
+  }
+  return t("v4.createTask.confirmPricingOfferDesc");
 }
 
 function offerFeatures(
   t: TranslateFn,
   scenario: CreateTaskConfirmScenario,
-): string[] {
+): OfferFeatureItem[] {
   return scenario === "insufficient_trial"
     ? [
-        t("v4.createTask.confirmTrialFeatureCredits"),
-        t("v4.createTask.confirmTrialFeatureModel"),
-        t("v4.createTask.confirmTrialFeatureSpeed"),
+        {
+          title: t("v4.createTask.confirmTrialFeatureModel"),
+          note: t("v4.createTask.confirmTrialFeatureModelValue"),
+        },
+        {
+          title: t("v4.createTask.confirmTrialFeatureSpeed"),
+          note: t("v4.createTask.confirmTrialFeatureSpeedValue"),
+          badge: t("v4.createTask.confirmTrialFeatureSpeedBadge"),
+        },
       ]
     : [
-        t("v4.createTask.confirmPricingFeatureCredits"),
-        t("v4.createTask.confirmPricingFeatureModel"),
-        t("v4.createTask.confirmPricingFeatureSpeed"),
+        { title: t("v4.createTask.confirmPricingFeatureCredits") },
+        { title: t("v4.createTask.confirmPricingFeatureModel") },
+        { title: t("v4.createTask.confirmPricingFeatureSpeed") },
       ];
 }
 
@@ -691,30 +686,11 @@ function resolveScenarioFromOfferMode(
   return offerMode === "trial" ? "insufficient_trial" : "insufficient_pricing";
 }
 
-const CREDIT_PACK_OPTIONS = [
-  { name: "500K", credits: 500000 },
-  { name: "1M", credits: 1000000 },
-  { name: "2M", credits: 2000000 },
-  { name: "3M", credits: 3000000 },
-  { name: "5M", credits: 5000000 },
-  { name: "10M", credits: 10000000 },
-  { name: "20M", credits: 20000000 },
-  { name: "30M", credits: 30000000 },
-] as const;
-
 const PLAN_RECOMMENDATIONS = [
   { title: "Basic", monthlyCredits: 1500000, launchCredits: 4000000 },
   { title: "Pro", monthlyCredits: 3000000, launchCredits: 8000000 },
   { title: "Premium", monthlyCredits: 8000000, launchCredits: 16000000 },
 ] as const;
-
-function recommendCreditsPack(shortfallCredits: number) {
-  return (
-    CREDIT_PACK_OPTIONS.find((option) => option.credits >= shortfallCredits) ??
-    CREDIT_PACK_OPTIONS[CREDIT_PACK_OPTIONS.length - 1] ??
-    null
-  );
-}
 
 function recommendPlanForShortfall(shortfallCredits: number) {
   return (
@@ -977,20 +953,48 @@ const subscriptionBenefitCaptionStyle = {
 } as const;
 
 const offerFeatureItemStyle = {
-  minHeight: 88,
+  position: "relative",
+  minHeight: 108,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  flexDirection: "column",
   textAlign: "center",
-  padding: "14px 12px",
+  padding: "18px 12px 14px",
   borderRadius: 16,
   border: `1px solid ${v4Colors.cardBorder}`,
   background: v4Colors.cardBg,
+} as const;
+
+const offerFeatureBadgeStyle = {
+  position: "absolute",
+  top: 10,
+  right: 10,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "2px 8px",
+  borderRadius: 999,
+  background: "rgba(122, 60, 255, 0.1)",
+  color: "#7a3cff",
+  fontSize: 11,
+  fontWeight: 700,
+  lineHeight: "16px",
+} as const;
+
+const offerFeatureTitleStyle = {
   color: v4Colors.text,
   fontSize: 15,
-  fontWeight: 600,
-  lineHeight: "24px",
-  whiteSpace: "pre-line",
+  fontWeight: 700,
+  lineHeight: "22px",
+} as const;
+
+const offerFeatureNoteStyle = {
+  marginTop: 6,
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: "18px",
 } as const;
 
 const primaryButtonStyle = {
