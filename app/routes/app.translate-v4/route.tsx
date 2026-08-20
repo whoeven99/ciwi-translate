@@ -11,19 +11,22 @@ import { message } from "~/ui/message";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useLocation, useNavigate } from "@remix-run/react";
+import {
+  useLoaderData,
+  useLocation,
+  useNavigate,
+  useRouteLoaderData,
+} from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
-import { authenticate } from "~/shopify.server";
 import type { RootState } from "~/store";
-import { ensureShopV4Settings } from "~/server/translateV4/migration.server";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import type { ShopQuota } from "~/lib/translationQuota";
 import type { CoverageSummary } from "~/server/translateV4/coverage.server";
 import {
   createTranslateV4Tasks,
-  type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
+import type { loader as appLoader } from "~/routes/app";
 import { normalizeShopQuota } from "~/lib/translationQuota";
 import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import {
@@ -47,9 +50,7 @@ import {
 } from "./useCreateTaskEstimate";
 import { notifyTranslationStatsUpdated } from "~/lib/translationStatsSync";
 import { selectShopTargetLocales } from "~/lib/shopTargetLocales";
-import { syncShopTargetLocalesFromShopify } from "~/server/translateV4/targetLocale.server";
-import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
-import { isCurrentV4Job } from "./jobFilters";
+import { isCurrentV4Job, shouldPollV4Job } from "./jobFilters";
 import {
   finishClientLogTrace,
   startClientLogTrace,
@@ -75,6 +76,12 @@ import {
   stripBillingReturnParams,
 } from "~/utils/billingReturn";
 
+/**
+ * 额度轮询的最小间隔。任务列表在进度变化时会一直保持 3s 一轮，额度不需要跟到那么密
+ * （每次都是一次鉴权 + Turso Account 读）。
+ */
+const QUOTA_POLL_MIN_INTERVAL_MS = 60_000;
+
 /** 首屏骨架期的占位覆盖率；真实值由客户端首帧从 `coverage?cache=1` 拉取。 */
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -83,7 +90,6 @@ const EMPTY_COVERAGE: CoverageSummary = {
   overallPercent: null,
   locales: [],
 };
-
 async function readJsonResponse<T = any>(res: Response): Promise<T> {
   const text = await res.text();
   if (!text.trim()) {
@@ -102,63 +108,18 @@ async function readJsonResponse<T = any>(res: Response): Promise<T> {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const reqStart = Date.now();
+  // 鉴权 + Shopify 语言列表由父级 `routes/app` loader 统一完成。
+  // 同文档再跑一次 authenticate + loadShopLocales 会把 TTFB 抬到 ~2s（见 LCP 归因）。
   const perfDebug = new URL(request.url).searchParams.get("perf") === "1";
-  const { session } = await authenticate.admin(request);
-  const authMs = Date.now() - reqStart;
-
-  let locales: ShopLocaleOption[] = [];
-  let primaryLocale = "en";
-  let shopLocaleRows: Array<{ locale: string; primary: boolean }> = [];
-  const localeStart = Date.now();
-  try {
-    const loaded = await loadShopLocalesForTranslation({
-      shop: session.shop,
-      accessToken: session.accessToken as string,
-    });
-    shopLocaleRows = loaded.rows;
-    locales = loaded.localeOptions;
-    primaryLocale = loaded.primaryLocale;
-  } catch (err) {
-    console.error("[translateV4] load shopLocales failed:", err);
-  }
-  const localeMs = Date.now() - localeStart;
-
-  // 同步店铺语言到 TSF 是纯写操作，返回值不参与渲染 —— 移出关键路径，
-  // 后台执行，避免 N 个串行 upsert 阻塞首屏。
-  void syncShopTargetLocalesFromShopify(
-    session.shop,
-    shopLocaleRows,
-    primaryLocale,
-  ).catch((syncErr) => {
-    console.error("[translateV4] syncShopTargetLocales failed:", syncErr);
-  });
-
-  // 首屏文档只等渲染骨架必需的语言列表。任务列表与覆盖率改由客户端首帧并行拉取
-  // （`/api/translate-v4/tasks` + `coverage?cache=1`），把 Cosmos/Redis/Turso 往返
-  // 移出 LCP 关键路径。ensureShopV4Settings 是 Turso 写、返回值不参与渲染，后台执行。
-  void ensureShopV4Settings(session.shop, primaryLocale).catch((err) => {
-    console.error("[translateV4] ensureShopV4Settings failed:", err);
-  });
-
   if (perfDebug) {
     console.log(
       `[perf][loader] translate-v4 ${JSON.stringify({
-        shop: session.shop,
-        authMs,
-        localeMs,
-        totalMs: Date.now() - reqStart,
-        localeCount: locales.length,
+        skippedAuthLocales: true,
+        totalMs: 0,
       })}`,
     );
   }
-
-  return json({
-    shop: session.shop,
-    locales,
-    primaryLocale,
-    perfDebug,
-  });
+  return json({ perfDebug });
 };
 
 export default function AppTranslateV4() {
@@ -169,8 +130,11 @@ export default function AppTranslateV4() {
     | { spotlightTaskIds?: string[] }
     | null
     | undefined;
-  const { shop, locales, primaryLocale, perfDebug } =
-    useLoaderData<typeof loader>();
+  const appData = useRouteLoaderData<typeof appLoader>("routes/app");
+  const { perfDebug } = useLoaderData<typeof loader>();
+  const shop = appData?.shop ?? "";
+  const locales = appData?.shopLocales?.localeOptions ?? [];
+  const primaryLocale = appData?.shopLocales?.primaryLocale ?? "en";
   const [perfDebugEnabled, setPerfDebugEnabled] = useState(perfDebug);
 
   useEffect(() => {
@@ -356,6 +320,9 @@ export default function AppTranslateV4() {
   );
 
   const jobStatusRef = useRef<Map<string, string>>(new Map());
+  const jobTerminalRef = useRef<Map<string, boolean>>(new Map());
+  /** 额度刷新在 refreshQuota 定义之后才可用，这里用 ref 打通先后顺序。 */
+  const refreshQuotaRef = useRef<() => void>(() => {});
 
   const applyJobsUpdate = useCallback(
     (newJobs: TranslationJobProgressSummary[]) => {
@@ -365,7 +332,13 @@ export default function AppTranslateV4() {
           void refreshCoverageFromCache();
           notifyTranslationStatsUpdated({ target: j.target, source: j.source });
         }
+        // 任务刚落终态：额度轮询是低频的，这里补一次让扣费立即可见。
+        const wasTerminal = jobTerminalRef.current.get(j.taskId);
+        if (j.isTerminal && wasTerminal === false) {
+          refreshQuotaRef.current();
+        }
         jobStatusRef.current.set(j.taskId, j.status);
+        jobTerminalRef.current.set(j.taskId, Boolean(j.isTerminal));
       }
       setJobs(newJobs);
     },
@@ -417,6 +390,10 @@ export default function AppTranslateV4() {
       });
     }
   }, [shop]);
+
+  refreshQuotaRef.current = () => {
+    void refreshQuota();
+  };
 
   useEffect(() => {
     const perfStart = markPerfStart("translate-v4.first-load.quota");
@@ -549,16 +526,6 @@ export default function AppTranslateV4() {
         ? "trial"
         : "pricing"
       : null;
-  const handleCreateRequest = useCallback(() => {
-    if (createQuotaGatePending) {
-      message.info(
-        t("Checking your trial eligibility. Please try again in a moment."),
-      );
-      return;
-    }
-    setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, t]);
-
   // After Shopify billing return: restore create-task selections and reopen confirm.
   useEffect(() => {
     if (billingDraftRestoredRef.current) return;
@@ -744,6 +711,8 @@ export default function AppTranslateV4() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stablePollCount = 0;
     let lastActiveJobsSignature = "";
+    // 首屏 effect 已拉过一次额度，从挂载时刻开始计时。
+    let lastQuotaAt = Date.now();
 
     const getNextDelay = () => {
       if (typeof document !== "undefined" && document.hidden) return 30_000;
@@ -752,7 +721,7 @@ export default function AppTranslateV4() {
 
     const poll = () => {
       if (disposed) return;
-      const hasActive = jobsRef.current.some((j) => !j.isTerminal);
+      const hasActive = jobsRef.current.some(shouldPollV4Job);
       if (!hasActive) {
         stablePollCount = 0;
         timer = setTimeout(poll, 10_000);
@@ -760,7 +729,7 @@ export default function AppTranslateV4() {
       }
 
       const signature = jobsRef.current
-        .filter((j) => !j.isTerminal)
+        .filter(shouldPollV4Job)
         .map(
           (j) =>
             `${j.taskId}:${j.status}:${j.progressPercent ?? ""}:${j.updatedAt}`,
@@ -773,7 +742,12 @@ export default function AppTranslateV4() {
 
       if (typeof document === "undefined" || !document.hidden) {
         void refreshList();
-        void refreshQuota();
+        // 进度变化时列表会退回 3s 一轮，但额度不需要这个新鲜度：低频轮询兜住外部
+        // 变化（充值 / 其它标签页），扣费可见性由终态跃迁那次补刷负责。
+        if (Date.now() - lastQuotaAt >= QUOTA_POLL_MIN_INTERVAL_MS) {
+          lastQuotaAt = Date.now();
+          void refreshQuota();
+        }
       }
 
       timer = setTimeout(poll, getNextDelay());
@@ -833,6 +807,21 @@ export default function AppTranslateV4() {
           ? "insufficient_trial"
           : "insufficient_pricing"
       : "ready";
+  const shouldSkipCreateConfirm = (remainingCredits ?? 0) > 30_000;
+
+  const handleCreateRequest = useCallback(() => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (shouldSkipCreateConfirm) {
+      void handleCreateConfirm();
+      return;
+    }
+    setCreateConfirmOpen(true);
+  }, [createQuotaGatePending, handleCreateConfirm, shouldSkipCreateConfirm, t]);
 
   useEffect(() => {
     if (spotlightTaskIds.length === 0) return;
@@ -1021,6 +1010,17 @@ export default function AppTranslateV4() {
                     spotlightTaskIds={spotlightTaskIds}
                     translateSlotBusy={translateSlotBusy}
                     loading={jobsLoading}
+                    historyReturnTo="/app/translate-v4?tab=tasks"
+                    emptyStateActionLabel={t("onboarding.action.createTask")}
+                    onEmptyStateAction={() => {
+                      setActiveWorkbenchTab("create");
+                      setTimeout(() => {
+                        createTaskSectionRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
+                      }, 0);
+                    }}
                     onBuyCredits={openTaskCreditsModal}
                     onAction={handleAction}
                   />
@@ -1034,6 +1034,7 @@ export default function AppTranslateV4() {
       <CreateTaskConfirmModal
         open={createConfirmOpen}
         creating={creating}
+          planType={planType}
         targetOptions={targetOptions}
         targets={targets}
         modules={moduleKeys}
@@ -1044,6 +1045,7 @@ export default function AppTranslateV4() {
         sourceLocale={source}
         estimate={taskEstimate}
         scenario={createConfirmScenario}
+        quotaOfferMode={hasPaidPlan ? "paid" : isNew === true ? "trial" : "pricing"}
         previousTotalChars={
           typeof totalChars === "number" ? totalChars : undefined
         }
