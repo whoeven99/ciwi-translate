@@ -41,6 +41,7 @@ import {
   formatV4CreateTasksMessage,
   translateV4Message,
 } from "~/routes/app.translate-v4/v4I18n";
+import { notifyTranslationStatsUpdated } from "~/lib/translationStatsSync";
 import { TaskQueueSection } from "~/routes/app.translate-v4/components/TaskQueueSection";
 import { PageHeaderBar } from "~/routes/app.translate-v4/components/SummaryAndHeader";
 import { CreateTaskConfirmModal } from "~/routes/app.translate-v4/components/CreateTaskConfirmModal";
@@ -74,6 +75,8 @@ const EMPTY_COVERAGE: CoverageSummary = {
   overallPercent: null,
   locales: [],
 };
+
+const QUOTA_POLL_MIN_INTERVAL_MS = 60_000;
 
 const SUMMARY_VIDEO_URL = "https://www.youtube.com/watch?v=AJ0RZkCQMd0&t=9s";
 
@@ -461,25 +464,6 @@ export default function TranslateV4MvpRoute() {
     Record<string, number | null>
   >({});
 
-  const refreshTasks = useCallback(async () => {
-    setJobsLoading(true);
-    try {
-      const res = await fetch(
-        `/api/translate-v4/tasks?shopName=${encodeURIComponent(shop)}`,
-      );
-      const data = await readJsonResponse<{ ok?: boolean; jobs?: TranslationJobProgressSummary[] }>(
-        res,
-      );
-      if (data.ok && Array.isArray(data.jobs)) {
-        setJobs(data.jobs);
-      }
-    } catch (err) {
-      console.error("[translate-v4-mvp] refresh tasks failed:", err);
-    } finally {
-      setJobsLoading(false);
-    }
-  }, [shop]);
-
   const refreshQuota = useCallback(async () => {
     try {
       const res = await fetch(
@@ -493,6 +477,62 @@ export default function TranslateV4MvpRoute() {
       console.error("[translate-v4-mvp] refresh quota failed:", err);
     }
   }, [shop]);
+
+  const refreshQuotaRef = useRef<() => void>(() => {});
+  refreshQuotaRef.current = refreshQuota;
+
+  const refreshCoverageFromCache = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/translate-v4/coverage?shopName=${encodeURIComponent(shop)}&cache=1`,
+      );
+      const data = await readJsonResponse<{ ok?: boolean; summary?: CoverageSummary }>(res);
+      if (data.ok && data.summary) {
+        setCoverage(data.summary);
+      }
+    } catch (err) {
+      console.warn("[translate-v4-mvp] refresh coverage from cache failed:", err);
+    }
+  }, [shop]);
+
+  const jobStatusRef = useRef<Map<string, string>>(new Map());
+  const jobTerminalRef = useRef<Map<string, boolean>>(new Map());
+  const applyJobsUpdate = useCallback((newJobs: TranslationJobProgressSummary[]) => {
+    for (const job of newJobs) {
+      const previousStatus = jobStatusRef.current.get(job.taskId);
+      if (job.status === "COMPLETED" && previousStatus !== "COMPLETED") {
+        void refreshCoverageFromCache();
+        notifyTranslationStatsUpdated({ target: job.target, source: job.source });
+      }
+
+      const wasTerminal = jobTerminalRef.current.get(job.taskId);
+      if (job.isTerminal && wasTerminal === false) {
+        refreshQuotaRef.current();
+      }
+
+      jobStatusRef.current.set(job.taskId, job.status);
+      jobTerminalRef.current.set(job.taskId, Boolean(job.isTerminal));
+    }
+    setJobs(newJobs);
+  }, [refreshCoverageFromCache]);
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/translate-v4/tasks?shopName=${encodeURIComponent(shop)}`,
+      );
+      const data = await readJsonResponse<{ ok?: boolean; jobs?: TranslationJobProgressSummary[] }>(
+        res,
+      );
+      if (data.ok && Array.isArray(data.jobs)) {
+        applyJobsUpdate(data.jobs);
+      }
+    } catch (err) {
+      console.error("[translate-v4-mvp] refresh tasks failed:", err);
+    } finally {
+      setJobsLoading(false);
+    }
+  }, [applyJobsUpdate, shop]);
 
   const refreshCoverage = useCallback(
     async (forceRefresh = false) => {
@@ -711,9 +751,6 @@ export default function TranslateV4MvpRoute() {
   );
 
   const jobsRef = useRef<TranslationJobProgressSummary[]>([]);
-  const previousJobStatusesRef = useRef<Record<string, TranslationJobProgressSummary["status"]>>(
-    {},
-  );
 
   useEffect(() => {
     jobsRef.current = jobs;
@@ -722,45 +759,51 @@ export default function TranslateV4MvpRoute() {
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let stablePollCount = 0;
+    let lastActiveJobsSignature = "";
+    let lastQuotaAt = Date.now();
+
+    const getNextDelay = () => {
+      if (typeof document !== "undefined" && document.hidden) return 30_000;
+      return Math.min(30_000, 3_000 * 2 ** Math.min(stablePollCount, 3));
+    };
 
     const poll = () => {
       if (disposed) return;
-
       const hasActive = jobsRef.current.some(shouldPollV4Job);
-      timer = setTimeout(() => {
-        if (!hasActive) {
-          poll();
-          return;
-        }
+      if (!hasActive) {
+        stablePollCount = 0;
+        timer = setTimeout(poll, 10_000);
+        return;
+      }
 
-        void Promise.all([refreshTasks(), refreshQuota()]).finally(() => {
-          poll();
-        });
-      }, hasActive ? 4_000 : 10_000);
+      const signature = jobsRef.current
+        .filter(shouldPollV4Job)
+        .map((job) => `${job.taskId}:${job.status}:${job.progressPercent ?? ""}:${job.updatedAt}`)
+        .join("|");
+
+      stablePollCount =
+        signature === lastActiveJobsSignature ? stablePollCount + 1 : 0;
+      lastActiveJobsSignature = signature;
+
+      if (typeof document === "undefined" || !document.hidden) {
+        void refreshTasks();
+        if (Date.now() - lastQuotaAt >= QUOTA_POLL_MIN_INTERVAL_MS) {
+          lastQuotaAt = Date.now();
+          void refreshQuota();
+        }
+      }
+
+      timer = setTimeout(poll, getNextDelay());
     };
 
-    poll();
+    timer = setTimeout(poll, 3_000);
 
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
     };
   }, [refreshQuota, refreshTasks]);
-
-  useEffect(() => {
-    const previousStatuses = previousJobStatusesRef.current;
-    const completedTaskDetected = jobs.some((job) => {
-      const previousStatus = previousStatuses[job.taskId];
-      return previousStatus != null && previousStatus !== "COMPLETED" && job.status === "COMPLETED";
-    });
-
-    previousJobStatusesRef.current = Object.fromEntries(
-      jobs.map((job) => [job.taskId, job.status]),
-    );
-
-    if (!completedTaskDetected) return;
-    void refreshCoverage(true);
-  }, [jobs, refreshCoverage]);
 
   useEffect(() => {
     if (defaultWorkbenchTabResolvedRef.current) return;
