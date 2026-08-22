@@ -2,6 +2,7 @@
 /**
  * 包含价格转换、解析和格式化的工具函数
  */
+import { getStorageItem, setStorageItem, removeStorageItem } from "./ciwi-storage.js";
 
 export function convertToNumberFromMoneyFormat(moneyFormat, formattedPrice) {
   let number = formattedPrice;
@@ -391,27 +392,31 @@ export function updateLocalization({ country, language }) {
 const CIWI_MANUAL_LOCALIZATION_KEY = "ciwi_manual_localization_preference";
 const CIWI_MANUAL_LOCALIZATION_TTL_MS = 24 * 60 * 60 * 1000;
 
-export function persistManualLocalizationPreference({ country, language }) {
-  if (typeof localStorage === "undefined") return;
+export function persistManualLocalizationPreference({ country, language, shop }) {
   if (!country && !language) return;
 
   try {
-    localStorage.setItem(
+    setStorageItem(
       CIWI_MANUAL_LOCALIZATION_KEY,
       JSON.stringify({
         country: country || "",
         language: language || "",
         updatedAt: Date.now(),
       }),
+      {
+        scope: shop,
+        legacyKeys: [CIWI_MANUAL_LOCALIZATION_KEY],
+      },
     );
   } catch {}
 }
 
-export function getManualLocalizationPreference() {
-  if (typeof localStorage === "undefined") return null;
-
+export function getManualLocalizationPreference(shop) {
   try {
-    const raw = localStorage.getItem(CIWI_MANUAL_LOCALIZATION_KEY);
+    const raw = getStorageItem(CIWI_MANUAL_LOCALIZATION_KEY, {
+      scope: shop,
+      legacyKeys: [CIWI_MANUAL_LOCALIZATION_KEY],
+    });
     if (!raw) return null;
 
     const parsed = JSON.parse(raw);
@@ -420,7 +425,10 @@ export function getManualLocalizationPreference() {
       typeof parsed.updatedAt === "number" ? parsed.updatedAt : 0;
 
     if (!updatedAt || Date.now() - updatedAt > CIWI_MANUAL_LOCALIZATION_TTL_MS) {
-      localStorage.removeItem(CIWI_MANUAL_LOCALIZATION_KEY);
+      removeStorageItem(CIWI_MANUAL_LOCALIZATION_KEY, {
+        scope: shop,
+        legacyKeys: [CIWI_MANUAL_LOCALIZATION_KEY],
+      });
       return null;
     }
 

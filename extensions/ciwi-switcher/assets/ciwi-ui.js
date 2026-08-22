@@ -15,7 +15,12 @@ import {
   CIWI_TRANSLATION_TTL_MS,
   resolveStorefrontProductId,
 } from "./ciwi-page.js";
-import { useCacheThenRefresh } from "./ciwi-storage.js";
+import {
+  useCacheThenRefresh,
+  getStorageItem,
+  setStorageItem,
+  removeStorageItem,
+} from "./ciwi-storage.js";
 import {
   CIWI_MONEY_SELECTOR,
   isPriceRelatedElement,
@@ -426,10 +431,7 @@ async function refreshSelectedCurrency({ blockId, shop, ciwiBlock }) {
   if (!ciwiBlock || !shop) return;
 
   let currencyData = [];
-  const localStorageCurrencyDataJSON =
-    typeof localStorage !== "undefined"
-      ? localStorage.getItem("ciwi_currency_data")
-      : null;
+  const localStorageCurrencyDataJSON = getCurrencyDataCache(shop);
 
   if (localStorageCurrencyDataJSON) {
     try {
@@ -441,9 +443,7 @@ async function refreshSelectedCurrency({ blockId, shop, ciwiBlock }) {
 
   if (!Array.isArray(currencyData) || !currencyData.length) {
     currencyData = await fetchCurrencies({ blockId, shop });
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("ciwi_currency_data", JSON.stringify(currencyData));
-    }
+    setCurrencyDataCache(shop, currencyData);
   }
 
   await initializeCurrency({
@@ -462,6 +462,7 @@ function syncCurrencySelectionState({
   persist = true,
 }) {
   const nextCode = String(selectedCurrencyCode || "").trim();
+  const storageScope = getSwitcherStorageScope(ciwiBlock);
   const currencyInput = ciwiBlock?.querySelector('input[name="currency_code"]');
   if (currencySelect && nextCode && currencySelect.value !== nextCode) {
     currencySelect.value = nextCode;
@@ -470,8 +471,8 @@ function syncCurrencySelectionState({
     currencyInput.value = nextCode;
     currencyInput.setAttribute("value", nextCode);
   }
-  if (persist && typeof localStorage !== "undefined" && nextCode) {
-    localStorage.setItem("ciwi_selected_currency", nextCode);
+  if (persist && nextCode) {
+    setSelectedCurrencyCache(storageScope, nextCode);
   }
 
   const languageSelectorContainer = ciwiBlock?.querySelector(
@@ -506,10 +507,7 @@ export async function initializeCurrency({
   if (!ciwiBlock.dataset.ciwiBaseCurrencyCode && baseCurrencyCode) {
     ciwiBlock.dataset.ciwiBaseCurrencyCode = baseCurrencyCode;
   }
-  const persistedCurrencyCode =
-    typeof localStorage !== "undefined"
-      ? localStorage.getItem("ciwi_selected_currency")
-      : "";
+  const persistedCurrencyCode = getSelectedCurrencyCache(shop) || "";
   const selectedCurrencyCode =
     marketCurrencyOpen || !persistedCurrencyCode
       ? pageCurrencyCode
@@ -531,11 +529,10 @@ export async function initializeCurrency({
     !selectedCurrency &&
     persistedCurrencyCode &&
     pageCurrencyCode &&
-    persistedCurrencyCode !== pageCurrencyCode &&
-    typeof localStorage !== "undefined"
+    persistedCurrencyCode !== pageCurrencyCode
   ) {
-    localStorage.setItem("ciwi_selected_currency", pageCurrencyCode);
-    localStorage.removeItem("ciwi_selected_currency_rate");
+    setSelectedCurrencyCache(shop, pageCurrencyCode);
+    clearSelectedCurrencyRateCache(shop);
   }
   // 获取新的选择器元素
   const customSelector = ciwiBlock.querySelector(
@@ -581,9 +578,7 @@ export async function initializeCurrency({
     selectedCurrency?.exchangeRate == null
   ) {
     const localRateJSON =
-      typeof localStorage !== "undefined"
-        ? localStorage.getItem("ciwi_selected_currency_rate")
-        : null;
+      getSelectedCurrencyRateCache(shop);
     const localRate = localRateJSON ? JSON.parse(localRateJSON) : null;
     if (
       localRate &&
@@ -605,22 +600,15 @@ export async function initializeCurrency({
           currencySelect,
           selectedCurrencyCode: baseCurrencyCode,
         });
-        if (typeof localStorage !== "undefined") {
-          localStorage.removeItem("ciwi_selected_currency_rate");
-        }
+        clearSelectedCurrencyRateCache(shop);
         transformPrices({ rate: 1, moneyFormat, selectedCurrency: null });
         return;
       }
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem(
-          "ciwi_selected_currency_rate",
-          JSON.stringify({
-            currencyCode: selectedCurrency.currencyCode,
-            fromCurrencyCode: baseCurrencyCode,
-            exchangeRate: rate,
-          }),
-        );
-      }
+      setSelectedCurrencyRateCache(shop, {
+        currencyCode: selectedCurrency.currencyCode,
+        fromCurrencyCode: baseCurrencyCode,
+        exchangeRate: rate,
+      });
     }
   } else {
     rate = Number(selectedCurrency.exchangeRate);
@@ -630,9 +618,7 @@ export async function initializeCurrency({
         currencySelect,
         selectedCurrencyCode: baseCurrencyCode,
       });
-      if (typeof localStorage !== "undefined") {
-        localStorage.removeItem("ciwi_selected_currency_rate");
-      }
+      clearSelectedCurrencyRateCache(shop);
       transformPrices({ rate: 1, moneyFormat, selectedCurrency: null });
       return;
     }
@@ -762,8 +748,7 @@ export async function CurrencySelectorTakeEffect(
 ) {
   if (!isCurrencySelectorTakeEffect) return;
 
-  const localStorageCurrencyDataJSON =
-    localStorage.getItem("ciwi_currency_data");
+  const localStorageCurrencyDataJSON = getCurrencyDataCache(shop);
   let currencyData = [];
 
   if (localStorageCurrencyDataJSON) {
@@ -775,7 +760,7 @@ export async function CurrencySelectorTakeEffect(
   }
   if (!Array.isArray(currencyData) || !currencyData.length) {
     currencyData = await fetchCurrencies({ blockId, shop });
-    localStorage.setItem("ciwi_currency_data", JSON.stringify(currencyData));
+    setCurrencyDataCache(shop, currencyData);
   }
 
   const currencySelector = ciwiBlock.querySelector(
@@ -2419,11 +2404,11 @@ export class CiwiswitcherForm extends HTMLElement {
     // 初始化所有事件监听
     this.initializeEventListeners();
 
+    const storageScope = getSwitcherStorageScope(ciwiBlock);
     const shouldRestoreOpen =
       !this.isDirectSelectorMode() &&
       !this.isSidebarWidgetMode() &&
-      typeof localStorage !== "undefined" &&
-      localStorage.getItem("ciwi_switcher_panel_open") === "1";
+      getSwitcherPanelOpenCache(storageScope) === "1";
 
     if (shouldRestoreOpen) {
       requestAnimationFrame(() => this.openSelectorPanel());
@@ -2504,9 +2489,7 @@ export class CiwiswitcherForm extends HTMLElement {
       requestAnimationFrame(() => box.classList.add("is-open"));
     });
     this.rotateArrow("#mainbox-arrow-icon", 180);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("ciwi_switcher_panel_open", "1");
-    }
+    setSwitcherPanelOpenCache(getSwitcherStorageScope(this.elements.ciwiBlock), "1");
   }
 
   closeSelectorPanel() {
@@ -2519,9 +2502,7 @@ export class CiwiswitcherForm extends HTMLElement {
       this.elements.selectorBackdrop.style.display = "none";
     }
     this.rotateArrow("#mainbox-arrow-icon", 0);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("ciwi_switcher_panel_open", "0");
-    }
+    setSwitcherPanelOpenCache(getSwitcherStorageScope(this.elements.ciwiBlock), "0");
 
     // direct 模式常驻显示，不隐藏
     if (this.isDirectSelectorMode()) {
@@ -2586,7 +2567,10 @@ export class CiwiswitcherForm extends HTMLElement {
     } else if (selectorType === "currency") {
       if (!value || this.elements.currencyInput.value == value) return;
       this.elements.currencyInput.value = value;
-      localStorage.setItem("ciwi_selected_currency", value);
+      setSelectedCurrencyCache(
+        getSwitcherStorageScope(this.elements.ciwiBlock),
+        value,
+      );
       closePanelAfterSelection();
       event.preventDefault();
 
@@ -2645,6 +2629,7 @@ export class CiwiswitcherForm extends HTMLElement {
       persistManualLocalizationPreference({
         country: this.elements.countryInput?.value,
         language: this.elements.languageInput?.value,
+        shop: this.elements.ciwiBlock.querySelector("#queryCiwiId")?.value,
       });
       form.submit();
     }
@@ -2715,6 +2700,74 @@ const AUTO_LIQUID_MAX_NODES = 6000;
 const AUTO_LIQUID_SLICE_MS = 8;
 /** 同店同语采集防重入。 */
 const autoLiquidCollectInFlight = new Set();
+
+function getSwitcherStorageScope(shopOrCiwiBlock) {
+  if (typeof shopOrCiwiBlock === "string") return shopOrCiwiBlock;
+  return (
+    shopOrCiwiBlock?.querySelector?.("#queryCiwiId")?.value ||
+    shopOrCiwiBlock?.querySelector?.('input[name="shopName"]')?.value ||
+    ""
+  );
+}
+
+function getCurrencyDataCache(shop) {
+  return getStorageItem("ciwi_currency_data", {
+    scope: shop,
+    legacyKeys: ["ciwi_currency_data"],
+  });
+}
+
+function setCurrencyDataCache(shop, currencyData) {
+  setStorageItem("ciwi_currency_data", JSON.stringify(currencyData), {
+    scope: shop,
+  });
+}
+
+function getSelectedCurrencyCache(shop) {
+  return getStorageItem("ciwi_selected_currency", {
+    scope: shop,
+    legacyKeys: ["ciwi_selected_currency"],
+  });
+}
+
+function setSelectedCurrencyCache(shop, currencyCode) {
+  setStorageItem("ciwi_selected_currency", currencyCode, {
+    scope: shop,
+  });
+}
+
+function getSelectedCurrencyRateCache(shop) {
+  return getStorageItem("ciwi_selected_currency_rate", {
+    scope: shop,
+    legacyKeys: ["ciwi_selected_currency_rate"],
+  });
+}
+
+function setSelectedCurrencyRateCache(shop, payload) {
+  setStorageItem("ciwi_selected_currency_rate", JSON.stringify(payload), {
+    scope: shop,
+  });
+}
+
+function clearSelectedCurrencyRateCache(shop) {
+  removeStorageItem("ciwi_selected_currency_rate", {
+    scope: shop,
+    legacyKeys: ["ciwi_selected_currency_rate"],
+  });
+}
+
+function getSwitcherPanelOpenCache(shop) {
+  return getStorageItem("ciwi_switcher_panel_open", {
+    scope: shop,
+    legacyKeys: ["ciwi_switcher_panel_open"],
+  });
+}
+
+function setSwitcherPanelOpenCache(shop, value) {
+  setStorageItem("ciwi_switcher_panel_open", value, {
+    scope: shop,
+  });
+}
 
 /** 店面采集日志默认开；localStorage.ciwi_debug_auto_liquid=0 可关。 */
 function autoLiquidLog(...args) {

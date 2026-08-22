@@ -222,7 +222,9 @@ export async function fetchSwitcherConfig({ shop }) {
     buttonBackgroundColor: "#f6f6f7",
     optionBorderColor: "#d4d4d8",
     selectorPosition: "bottom_left",
-    positionData: 10,
+    positionData: "10",
+    isTransparent: false,
+    autoLiquidCollect: true,
   };
 
   try {

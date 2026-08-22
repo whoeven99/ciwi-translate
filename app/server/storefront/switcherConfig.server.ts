@@ -1,8 +1,9 @@
-import { ok, fail, type BaseResponse } from "./response.server";
+import { ok, type BaseResponse } from "./response.server";
 import {
   readSwitcherConfigPayload,
   type WidgetConfigResponse,
 } from "./switcherData.server";
+import { SWITCHER_UI_DEFAULTS } from "~/lib/switcherConstants";
 import { getOfflineSessionAccessToken } from "~/server/shop/offlineSessionToken.server";
 import { resolveShopPrimaryLocale } from "~/server/translateV4/shopLocales.server";
 
@@ -29,10 +30,11 @@ export async function getSwitcherConfig(
   shop: string,
 ): Promise<BaseResponse<WidgetConfigResponse>> {
   const payload = await readSwitcherConfigPayload(shop);
-  if (!payload) {
-    return fail(10001, "query error");
-  }
+  const response = payload ?? {
+    shopName: shop,
+    ...SWITCHER_UI_DEFAULTS,
+  };
   // 自动采集默认开：始终附带主语言，供店面跳过主语言页上报。
-  payload.primaryLanguage = await resolvePrimaryLanguageBestEffort(shop);
-  return ok(payload);
+  response.primaryLanguage = await resolvePrimaryLanguageBestEffort(shop);
+  return ok(response);
 }

@@ -1,6 +1,11 @@
 // main.js
 import * as API from "./ciwi-api.js";
-import { useCacheThenRefresh, setWithTTL, getWithTTL } from "./ciwi-storage.js";
+import {
+  useCacheThenRefresh,
+  setWithTTL,
+  getWithTTL,
+  setStorageItem,
+} from "./ciwi-storage.js";
 import {
   CiwiswitcherForm,
   updateDisplayText,
@@ -478,14 +483,22 @@ async function ciwiOnload() {
   runStorefrontTranslationTasks();
 
   // 加载配置（缓存 + 后台刷新，保留“最多两次”语义）
-  const configKey = `ciwi_switcher_config`;
+  const configKey = "ciwi_switcher_config";
+  const configStorageOptions = {
+    storageScope: shop.value,
+    legacyKeys: [configKey],
+  };
   // 记录本次是否命中缓存：仅命中缓存时才在末尾后台刷新，
   // 避免首次访问（无缓存）背靠背发两次相同的 config 请求
-  const hadConfigCache = !!getWithTTL(configKey);
+  const hadConfigCache = !!getWithTTL(configKey, {
+    scope: shop.value,
+    legacyKeys: [configKey],
+  });
   const fetchSwitcherConfig = await useCacheThenRefresh(
     configKey,
     async () => API.fetchSwitcherConfig({ shop: shop.value }),
     1000 * 60 * 60,
+    configStorageOptions,
   );
 
   const configData = fetchSwitcherConfig?.success
@@ -559,7 +572,7 @@ async function ciwiOnload() {
     ciwiBlock.querySelectorAll('ul[role="list"] a[data-value]'),
   ).map((link) => link.getAttribute("data-value"));
 
-  const manualLocalizationPreference = getManualLocalizationPreference();
+  const manualLocalizationPreference = getManualLocalizationPreference(shop.value);
   const preferredLanguage = availableLanguages.includes(
     manualLocalizationPreference?.language,
   )
@@ -868,7 +881,10 @@ async function ciwiOnload() {
     API.fetchSwitcherConfig({ shop: shop.value })
       .then((fresh) => {
         if (fresh) {
-          setWithTTL("ciwi_switcher_config", fresh);
+          setWithTTL("ciwi_switcher_config", fresh, 1000 * 60 * 60, {
+            scope: shop.value,
+            legacyKeys: [configKey],
+          });
         }
       })
       .catch(() => {});
@@ -878,7 +894,9 @@ async function ciwiOnload() {
     API.fetchCurrencies({ blockId, shop: shop.value })
       .then((fresh) => {
         if (fresh) {
-          localStorage.setItem("ciwi_currency_data", JSON.stringify(fresh));
+          setStorageItem("ciwi_currency_data", JSON.stringify(fresh), {
+            scope: shop.value,
+          });
         }
       })
       .catch(() => {});
