@@ -8,9 +8,12 @@ import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
 const { Text } = Typography;
 
+type SwitcherActivationStatus = "completed" | "uncompleted";
+
 interface SwitcherSettingCardProps {
   visible: boolean;
   loading: boolean;
+  status: SwitcherActivationStatus;
   shop: string;
   ciwiSwitcherId: string;
 }
@@ -18,6 +21,7 @@ interface SwitcherSettingCardProps {
 const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
   visible,
   loading,
+  status,
   shop,
   ciwiSwitcherId,
 }) => {
@@ -41,6 +45,7 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
   };
 
   const shouldShow = visible && !dismissed;
+  const isCompleted = status === "completed";
 
   return (
     <AppSectionCard
@@ -55,7 +60,9 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
           }}
         >
           <span>{t("Activate Switcher")}</span>
-          <AppStatusBadge tone="critical">{t("Uncompleted")}</AppStatusBadge>
+          <AppStatusBadge tone={isCompleted ? "success" : "critical"}>
+            {t(isCompleted ? "Completed" : "Uncompleted")}
+          </AppStatusBadge>
         </div>
       }
       description={t(

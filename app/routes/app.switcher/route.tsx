@@ -194,10 +194,12 @@ function areSwitcherConfigsEqual(
   return switcherComparableKeys.every((key) => left[key] === right[key]);
 }
 
-function extractSwitcherCardVisibility(
+type SwitcherActivationStatus = "completed" | "uncompleted";
+
+function extractSwitcherActivationStatus(
   payload: unknown,
   ciwiSwitcherBlocksId: string,
-): boolean | null {
+): SwitcherActivationStatus | null {
   const content =
     (payload as any)?.data?.nodes?.[0]?.files?.nodes?.[0]?.body?.content;
 
@@ -212,15 +214,23 @@ function extractSwitcherCardVisibility(
       return null;
     }
 
+    const normalizedSwitcherBlockId = ciwiSwitcherBlocksId.trim().toLowerCase();
     const switcherBlock = Object.values(blocks).find(
-      (block: any) => block?.type === ciwiSwitcherBlocksId,
+      (block: any) => {
+        const type = String(block?.type || "").trim().toLowerCase();
+        return (
+          type === normalizedSwitcherBlockId ||
+          type.includes(normalizedSwitcherBlockId) ||
+          type.includes("ciwi_i18n_switcher")
+        );
+      },
     ) as { disabled?: boolean } | undefined;
 
-    if (!switcherBlock || typeof switcherBlock.disabled !== "boolean") {
-      return null;
+    if (!switcherBlock) {
+      return "uncompleted";
     }
 
-    return switcherBlock.disabled;
+    return switcherBlock.disabled === true ? "uncompleted" : "completed";
   } catch {
     return null;
   }
@@ -257,8 +267,8 @@ const Index = () => {
   const [showWarnModal, setShowWarnModal] = useState(false);
   const [saveAlert, setSaveAlert] = useState<string>("");
   const [loadAlert, setLoadAlert] = useState(false);
-  const [switcherEnableCardOpen, setSwitcherEnableCardOpen] =
-    useState<boolean>(false);
+  const [switcherActivationStatus, setSwitcherActivationStatus] =
+    useState<SwitcherActivationStatus>("uncompleted");
   const [cardLoading, setCardLoading] = useState<boolean>(true);
   const [updateLoading, setUpdateLoading] = useState<boolean>(false);
   const { report } = useReport();
@@ -495,10 +505,14 @@ const Index = () => {
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
+    const cachedActivationStatus =
+      localStorage.getItem("switcherActivationStatus");
 
-    const cachedVisibility = localStorage.getItem("switcherEnableCardOpen");
-    if (cachedVisibility) {
-      setSwitcherEnableCardOpen(cachedVisibility === "true");
+    if (
+      cachedActivationStatus === "completed" ||
+      cachedActivationStatus === "uncompleted"
+    ) {
+      setSwitcherActivationStatus(cachedActivationStatus);
     }
 
     const loadSwitcherGuide = async () => {
@@ -519,14 +533,14 @@ const Index = () => {
         const payload = await response.json().catch(() => null);
         if (!active) return;
 
-        const nextVisible = extractSwitcherCardVisibility(
+        const nextStatus = extractSwitcherActivationStatus(
           payload,
           ciwiSwitcherBlocksId,
         );
 
-        if (typeof nextVisible === "boolean") {
-          setSwitcherEnableCardOpen(nextVisible);
-          localStorage.setItem("switcherEnableCardOpen", String(nextVisible));
+        if (nextStatus) {
+          setSwitcherActivationStatus(nextStatus);
+          localStorage.setItem("switcherActivationStatus", nextStatus);
         }
       } catch (error) {
         if (!active || controller.signal.aborted) {
@@ -541,9 +555,21 @@ const Index = () => {
 
     void loadSwitcherGuide();
 
+    const handleFocusRefresh = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      loadSwitcherGuide();
+    };
+
+    window.addEventListener("focus", handleFocusRefresh);
+    document.addEventListener("visibilitychange", handleFocusRefresh);
+
     return () => {
       active = false;
       controller.abort();
+      window.removeEventListener("focus", handleFocusRefresh);
+      document.removeEventListener("visibilitychange", handleFocusRefresh);
     };
   }, [ciwiSwitcherBlocksId, location.search]);
 
@@ -776,8 +802,9 @@ const Index = () => {
           title={t("Switcher")}
         />
         <SwitcherSettingCard
-          visible={switcherEnableCardOpen}
+          visible
           loading={cardLoading}
+          status={switcherActivationStatus}
           shop={shop}
           ciwiSwitcherId={ciwiSwitcherId}
         />
