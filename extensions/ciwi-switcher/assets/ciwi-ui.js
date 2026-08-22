@@ -842,21 +842,70 @@ export async function LanguageSelectorTakeEffect(
   syncMarketFlags(data, ciwiBlock);
 }
 
-function buildCountryFlagUrl(countryCode) {
-  const normalizedCountryCode = String(countryCode || "")
+function normalizeCountryCode(countryCode) {
+  return String(countryCode || "")
     .trim()
     .toUpperCase();
+}
+
+function buildFlagEmoji(countryCode) {
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+  if (!/^[A-Z]{2}$/.test(normalizedCountryCode)) {
+    return "🏳";
+  }
+
+  return Array.from(normalizedCountryCode)
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+}
+
+function buildInlineFlagDataUrl(countryCode) {
+  const emoji = buildFlagEmoji(countryCode);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 60 40"><rect width="60" height="40" rx="4" fill="white"/><text x="30" y="26" text-anchor="middle" font-size="22">${emoji}</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function buildCountryFlagUrl(countryCode) {
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
   if (!normalizedCountryCode) return "";
 
   return `https://img.bogdatech.com/app/${normalizedCountryCode}.webp`;
 }
 
-function getCurrentMarketFlagUrl(ciwiBlock) {
-  const countryCode = ciwiBlock?.querySelector('input[name="country_code"]')?.value;
-  return buildCountryFlagUrl(countryCode);
+function getCurrentMarketCountryCode(ciwiBlock) {
+  return normalizeCountryCode(
+    ciwiBlock?.querySelector('input[name="country_code"]')?.value,
+  );
 }
 
-export function updateLanguageSelectorFlag(ciwiBlock, flagUrl) {
+function setFlagImageSource(flagImage, countryCode, onLoad) {
+  if (!(flagImage instanceof HTMLImageElement)) return;
+
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+  if (!normalizedCountryCode) {
+    flagImage.hidden = true;
+    return;
+  }
+
+  const fallbackUrl = buildInlineFlagDataUrl(normalizedCountryCode);
+  const remoteUrl = buildCountryFlagUrl(normalizedCountryCode);
+
+  flagImage.alt = `${normalizedCountryCode} flag`;
+  flagImage.dataset.flagCountry = normalizedCountryCode;
+  flagImage.dataset.flagFallbackApplied = "0";
+  flagImage.onerror = () => {
+    if (flagImage.dataset.flagFallbackApplied === "1") return;
+    flagImage.dataset.flagFallbackApplied = "1";
+    flagImage.src = fallbackUrl;
+  };
+  if (typeof onLoad === "function") {
+    flagImage.addEventListener("load", onLoad, { once: true });
+  }
+  flagImage.src = remoteUrl || fallbackUrl;
+  flagImage.hidden = false;
+}
+
+export function updateLanguageSelectorFlag(ciwiBlock, countryCode) {
   const selectorFlag = ciwiBlock.querySelector("#language-selector-flag");
   const languageSelect = ciwiBlock.querySelector(".language_selector_header");
   if (!selectorFlag || !languageSelect) return;
@@ -867,14 +916,12 @@ export function updateLanguageSelectorFlag(ciwiBlock, flagUrl) {
     return;
   }
 
-  if (flagUrl) {
-    selectorFlag.addEventListener(
-      "load",
+  if (countryCode) {
+    setFlagImageSource(
+      selectorFlag,
+      countryCode,
       () => syncCompactSwitcherLayout(ciwiBlock),
-      { once: true },
     );
-    selectorFlag.src = flagUrl;
-    selectorFlag.hidden = false;
     languageSelect.style.paddingLeft = "40px";
   } else {
     selectorFlag.hidden = true;
@@ -887,27 +934,26 @@ export function syncMarketFlags(data, ciwiBlock) {
   const translateFloatBtnIcon = ciwiBlock.querySelector(
     "#translate-float-btn-icon",
   );
-  const flagUrl = data?.includedFlag ? getCurrentMarketFlagUrl(ciwiBlock) : "";
+  const marketCountryCode = data?.includedFlag
+    ? getCurrentMarketCountryCode(ciwiBlock)
+    : "";
 
-  updateLanguageSelectorFlag(ciwiBlock, flagUrl);
+  updateLanguageSelectorFlag(ciwiBlock, marketCountryCode);
 
   if (mainLanguageFlag) {
-    if (flagUrl && (data.languageSelector || data.currencySelector)) {
-      mainLanguageFlag.addEventListener(
-        "load",
+    if (marketCountryCode && (data.languageSelector || data.currencySelector)) {
+      setFlagImageSource(
+        mainLanguageFlag,
+        marketCountryCode,
         () => syncCompactSwitcherLayout(ciwiBlock),
-        { once: true },
       );
-      mainLanguageFlag.src = flagUrl;
-      mainLanguageFlag.hidden = false;
     } else {
       mainLanguageFlag.hidden = true;
     }
   }
   if (translateFloatBtnIcon) {
-    if (flagUrl && !data.languageSelector && !data.currencySelector) {
-      translateFloatBtnIcon.src = flagUrl;
-      translateFloatBtnIcon.hidden = false;
+    if (marketCountryCode && !data.languageSelector && !data.currencySelector) {
+      setFlagImageSource(translateFloatBtnIcon, marketCountryCode);
     } else {
       translateFloatBtnIcon.hidden = true;
     }
@@ -917,7 +963,12 @@ export function syncMarketFlags(data, ciwiBlock) {
   if (mainBox) {
     mainBox.classList.toggle(
       "has-flag",
-      Boolean(mainBoxText && mainLanguageFlag && !mainLanguageFlag.hidden && flagUrl),
+      Boolean(
+        mainBoxText &&
+          mainLanguageFlag &&
+          !mainLanguageFlag.hidden &&
+          marketCountryCode,
+      ),
     );
   }
 
@@ -2303,6 +2354,7 @@ export class CiwiswitcherForm extends HTMLElement {
   constructor() {
     super();
     this.elements = {}; // 空对象，等 connectedCallback 再赋值
+    this.data = null;
   }
   connectedCallback() {
     const blockId = this.querySelector('input[name="block_id"]')?.value;
@@ -2363,6 +2415,7 @@ export class CiwiswitcherForm extends HTMLElement {
       currencySelect: this.querySelector(".currency_selector_header"),
       closeButton: this.querySelector(".selector_box_close_button"),
     };
+    this.data = ciwiBlock.__ciwiConfigData || this.data;
     // 初始化所有事件监听
     this.initializeEventListeners();
 

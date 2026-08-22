@@ -121,14 +121,33 @@ const previewCurrencies: PreviewCurrencyOption[] = [
 ];
 
 const previewMarketCountryByCurrency: Record<string, string> = {
-  USD: "US",
+  USD: "GB",
   EUR: "FR",
   CNY: "CN",
 };
 
+function buildPreviewFlagEmoji(countryCode: string): string {
+  const normalizedCountryCode = countryCode.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalizedCountryCode)) {
+    return "🏳";
+  }
+
+  return Array.from(normalizedCountryCode)
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+}
+
 function buildPreviewFlagUrl(countryCode: string): string {
   const normalizedCountryCode = countryCode.trim().toUpperCase();
-  return `https://img.bogdatech.com/app/${normalizedCountryCode}.webp`;
+  const localFlagUrl = `/flags/${normalizedCountryCode}.webp`;
+  const fallbackEmoji = buildPreviewFlagEmoji(normalizedCountryCode);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 60 40"><rect width="60" height="40" rx="4" fill="white"/><text x="30" y="26" text-anchor="middle" font-size="22">${fallbackEmoji}</text></svg>`;
+
+  if (["CN", "FR", "GB", "KR"].includes(normalizedCountryCode)) {
+    return localFlagUrl;
+  }
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
 const switcherComparableKeys: Array<keyof SwitcherEditData> = [

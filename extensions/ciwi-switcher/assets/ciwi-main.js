@@ -491,6 +491,10 @@ async function ciwiOnload() {
   const configData = fetchSwitcherConfig?.success
     ? fetchSwitcherConfig?.response
     : null;
+  ciwiBlock.__ciwiConfigData = configData;
+  document.querySelectorAll("ciwiswitcher-form").forEach((formElement) => {
+    formElement.data = configData;
+  });
 
   // 自动抓取第三方未翻译文本（默认开；非预览）。浏览器空闲时执行，避免抢关键路径。
   const scheduleAutoLiquidCollect = () => {
