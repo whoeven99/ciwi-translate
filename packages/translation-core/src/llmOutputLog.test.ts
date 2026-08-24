@@ -68,7 +68,7 @@ describe("encodeSlsLogGroup", () => {
 });
 
 describe("buildSlsPutLogsRequest", () => {
-  it("signs gzip protobuf PutLogs", () => {
+  it("signs deflate protobuf PutLogs", () => {
     const raw = encodeSlsLogGroup({ time: 1, contents: { a: "b" } });
     const date = "Mon, 24 Aug 2026 02:00:00 GMT";
     const req = buildSlsPutLogsRequest(
@@ -87,7 +87,7 @@ describe("buildSlsPutLogsRequest", () => {
       "https://proj.cn-hangzhou.log.aliyuncs.com/logstores/store/shards/lb",
     );
     assert.equal(req.headers["Content-Type"], "application/x-protobuf");
-    assert.equal(req.headers["x-log-compresstype"], "gzip");
+    assert.equal(req.headers["x-log-compresstype"], "deflate");
     assert.equal(req.headers["x-log-bodyrawsize"], String(raw.length));
     const message = buildSlsSignatureMessage({
       contentMd5: req.headers["Content-MD5"] ?? "",

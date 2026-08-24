@@ -1,5 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { deflateSync } from "node:zlib";
 
 const LOG_PREFIX = "[llm-out]";
 const API_VERSION = "0.6.0";
@@ -155,14 +155,14 @@ export function buildSlsPutLogsRequest(
   rawProtobuf: Buffer,
   date: string,
 ): { url: string; headers: Record<string, string>; body: Buffer } {
-  const body = gzipSync(rawProtobuf);
+  const body = deflateSync(rawProtobuf);
   const contentType = "application/x-protobuf";
   const contentMd5 = md5UpperHex(body);
   const resource = `/logstores/${cfg.logstore}/shards/lb`;
   const logHeaders = {
     "x-log-apiversion": API_VERSION,
     "x-log-bodyrawsize": String(rawProtobuf.length),
-    "x-log-compresstype": "gzip",
+    "x-log-compresstype": "deflate",
     "x-log-signaturemethod": "hmac-sha1",
   };
   const message = buildSlsSignatureMessage({
