@@ -1834,17 +1834,20 @@ async function callLLMOnce(
       tokens: number,
       requestId?: string,
     ) => {
+      // 单条翻译只打 Render `[single-llm]`；阿里云 `[llm-out]` 仅批量 Worker。
+      if (logSingleTranslate) {
+        console.log("[single-llm] return", {
+          shopName,
+          model,
+          source: payload,
+          prompt: messages,
+          raw,
+          tokens,
+          requestId,
+        });
+        return;
+      }
       logLlmOutput({ shopName, model, raw, tokens, requestId });
-      if (!logSingleTranslate) return;
-      console.log("[single-llm] return", {
-        shopName,
-        model,
-        source: payload,
-        prompt: messages,
-        raw,
-        tokens,
-        requestId,
-      });
     };
 
     // GPT/Azure 引擎：aiModel 为 gpt-* 且配了 Gpt_ApiKey 时走这条，自成一路不进 DeepSeek 池。

@@ -614,11 +614,12 @@ Admin 体量标签另用 `COSMOS_SHOP_DATABASE_ID`（默认 `shop`）、
 `gpt-4.1-nano`); DeepSeek pool concurrency overrides:
 `DEEPSEEK_CONCURRENCY_LIMIT` / `DEEPSEEK_CONCURRENCY_UTIL` /
 `DEEPSEEK_INITIAL_CONCURRENCY`.
-LLM raw output log (optional, default off): `TRANSLATE_LLM_OUTPUT_LOG=true`
-then stdout `[llm-out]` plus Aliyun SLS PutLogs (`ALIBABA_CLOUD_ACCESS_KEY_ID` /
-`ALIBABA_CLOUD_ACCESS_KEY_SECRET` / `ALIBABA_CLOUD_ENDPOINT` /
-`ALIBABA_CLOUD_LOGSTORE` / `ALIBABA_CLOUD_PROJECT` / `ALIBABA_CLOUD_REGION`).
-Google fallback is not logged.
+LLM raw output log (optional, default off; **Worker batch only**, not
+single-field): `TRANSLATE_LLM_OUTPUT_LOG=true` then Aliyun SLS PutLogs
+(`ALIBABA_CLOUD_*`); per-call random sample default 30%
+(`TRANSLATE_LLM_OUTPUT_LOG_SAMPLE`, 0–1). If SLS env is complete, do
+**not** also `console.log` to Render. Missing SLS env falls back to
+stdout `[llm-out]`. Google fallback is not logged.
 - Quota: `QUOTA_ENFORCE`, `DEEPSEEK_QUOTA_TOKEN_MULTIPLIER`（DeepSeek 默认 1）,
 `QUOTA_TOKEN_MULTIPLIER`（GPT/Google 默认 1.5；Worker 额度读写直连 Turso）,
 `TRANSLATE_QUOTA_FLUSH_CHARGE`, `QUOTA_PER_CALL_COST`（默认 15k；`remaining < perCall` →

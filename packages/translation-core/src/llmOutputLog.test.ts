@@ -6,7 +6,10 @@ import {
   buildSlsSignatureMessage,
   encodeSlsLogGroup,
   isLlmOutputLogEnabled,
+  llmOutputLogDest,
+  readLlmOutputLogSample,
   readSlsConfig,
+  shouldSampleLlmOutput,
   resolveSlsEndpointHost,
   truncateLlmOutput,
 } from "./llmOutputLog.js";
@@ -17,6 +20,47 @@ describe("isLlmOutputLogEnabled", () => {
     assert.equal(isLlmOutputLogEnabled({ TRANSLATE_LLM_OUTPUT_LOG: "1" }), false);
     assert.equal(isLlmOutputLogEnabled({ TRANSLATE_LLM_OUTPUT_LOG: "TRUE" }), false);
     assert.equal(isLlmOutputLogEnabled({ TRANSLATE_LLM_OUTPUT_LOG: "true" }), true);
+  });
+});
+
+describe("readLlmOutputLogSample", () => {
+  it("defaults to 0.3 and clamps 0..1", () => {
+    assert.equal(readLlmOutputLogSample({}), 0.3);
+    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "1" }), 1);
+    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "0" }), 0);
+    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "0.3" }), 0.3);
+    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "2" }), 1);
+    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "nope" }), 0.3);
+  });
+});
+
+describe("shouldSampleLlmOutput", () => {
+  it("uses per-call random against the sample rate", () => {
+    const env = { TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "0.3" };
+    assert.equal(shouldSampleLlmOutput(env, () => 0.299), true);
+    assert.equal(shouldSampleLlmOutput(env, () => 0.3), false);
+    assert.equal(shouldSampleLlmOutput({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "0" }, () => 0), false);
+    assert.equal(shouldSampleLlmOutput({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "1" }, () => 0.999), true);
+  });
+});
+
+describe("llmOutputLogDest", () => {
+  const sls = {
+    TRANSLATE_LLM_OUTPUT_LOG: "true",
+    ALIBABA_CLOUD_ACCESS_KEY_ID: "id",
+    ALIBABA_CLOUD_ACCESS_KEY_SECRET: "secret",
+    ALIBABA_CLOUD_ENDPOINT: "cn-hangzhou.log.aliyuncs.com",
+    ALIBABA_CLOUD_LOGSTORE: "store",
+    ALIBABA_CLOUD_PROJECT: "proj",
+    ALIBABA_CLOUD_REGION: "cn-hangzhou",
+  };
+
+  it("uses SLS only when Aliyun env is complete (no Render duplicate)", () => {
+    assert.equal(llmOutputLogDest(sls), "sls");
+  });
+
+  it("falls back to stdout when the flag is on but SLS env is missing", () => {
+    assert.equal(llmOutputLogDest({ TRANSLATE_LLM_OUTPUT_LOG: "true" }), "stdout");
   });
 });
 

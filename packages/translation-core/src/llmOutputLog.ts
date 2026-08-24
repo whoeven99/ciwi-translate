@@ -5,6 +5,8 @@ const LOG_PREFIX = "[llm-out]";
 const API_VERSION = "0.6.0";
 const MAX_OUTPUT_CHARS = 64_000;
 const SLS_TIMEOUT_MS = 10_000;
+/** Default per-call sample rate when `TRANSLATE_LLM_OUTPUT_LOG=true`. */
+const DEFAULT_SAMPLE = 0.3;
 
 export type LlmOutputLogRecord = {
   shopName?: string;
@@ -29,6 +31,7 @@ type LlmOutputPayload = {
   tokens: number;
   output: string;
   truncated: boolean;
+  sample: string;
 };
 
 let slsConfigWarned = false;
@@ -37,6 +40,23 @@ export function isLlmOutputLogEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return env.TRANSLATE_LLM_OUTPUT_LOG?.trim() === "true";
+}
+
+export function readLlmOutputLogSample(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = env.TRANSLATE_LLM_OUTPUT_LOG_SAMPLE?.trim();
+  if (!raw) return DEFAULT_SAMPLE;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_SAMPLE;
+  return Math.min(1, Math.max(0, n));
+}
+
+export function shouldSampleLlmOutput(
+  env: NodeJS.ProcessEnv = process.env,
+  random: () => number = Math.random,
+): boolean {
+  return random() < readLlmOutputLogSample(env);
 }
 
 export function resolveSlsEndpointHost(endpoint: string, region: string): string {
@@ -197,6 +217,7 @@ async function putSlsLog(cfg: SlsConfig, payload: LlmOutputPayload): Promise<voi
       tokens: String(payload.tokens),
       output: payload.output,
       truncated: payload.truncated ? "1" : "0",
+      sample: payload.sample,
     },
     topic: "llm-out",
     source: process.env.RENDER_SERVICE_NAME?.trim() || "ciwi",
@@ -213,11 +234,22 @@ async function putSlsLog(cfg: SlsConfig, payload: LlmOutputPayload): Promise<voi
   throw new Error(`HTTP ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
 }
 
+export function llmOutputLogDest(
+  env: NodeJS.ProcessEnv = process.env,
+): "off" | "sls" | "stdout" {
+  if (!isLlmOutputLogEnabled(env)) return "off";
+  return readSlsConfig(env) ? "sls" : "stdout";
+}
+
 export function logLlmOutput(
   record: LlmOutputLogRecord,
   env: NodeJS.ProcessEnv = process.env,
+  random: () => number = Math.random,
 ): void {
-  if (!isLlmOutputLogEnabled(env)) return;
+  const dest = llmOutputLogDest(env);
+  if (dest === "off") return;
+  if (!shouldSampleLlmOutput(env, random)) return;
+  const sample = readLlmOutputLogSample(env);
   const { output, truncated } = truncateLlmOutput(record.raw);
   const payload: LlmOutputPayload = {
     shop: record.shopName ?? "",
@@ -226,16 +258,18 @@ export function logLlmOutput(
     tokens: record.tokens,
     output,
     truncated,
+    sample: String(sample),
   };
-  console.log(`${LOG_PREFIX} ${JSON.stringify(payload)}`);
-  const cfg = readSlsConfig(env);
-  if (!cfg) {
+  if (dest === "stdout") {
     if (!slsConfigWarned) {
       slsConfigWarned = true;
       console.warn(`${LOG_PREFIX} SLS env incomplete, stdout only`);
     }
+    console.log(`${LOG_PREFIX} ${JSON.stringify(payload)}`);
     return;
   }
+  const cfg = readSlsConfig(env);
+  if (!cfg) return;
   void putSlsLog(cfg, payload).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`${LOG_PREFIX} SLS put failed: ${msg}`);
