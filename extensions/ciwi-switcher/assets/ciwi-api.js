@@ -214,13 +214,17 @@ export async function fetchSwitcherConfig({ shop }) {
     languageSelector: true,
     currencySelector: true,
     ipOpen: false,
+    browserLanguageOpen: true,
+    marketCurrencyOpen: true,
     fontColor: "#303030",
     backgroundColor: "#ffffff",
     buttonColor: "#ffffff",
     buttonBackgroundColor: "#f6f6f7",
     optionBorderColor: "#d4d4d8",
     selectorPosition: "bottom_left",
-    positionData: 10,
+    positionData: "10",
+    isTransparent: false,
+    autoLiquidCollect: true,
   };
 
   try {

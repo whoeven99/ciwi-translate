@@ -2,7 +2,6 @@ import { SaveBar, TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import {
   Alert,
-  Space,
   Card,
   Typography,
   Switch,
@@ -10,22 +9,18 @@ import {
   ColorPicker,
   Slider,
   Popconfirm,
-  Flex,
   Modal,
 } from "antd";
 import Button from "~/ui/components/AppButton";
 import { useTranslation } from "react-i18next";
 import {
-  buildTranslateV4Error,
   getTranslateV4ErrorMessage,
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
-import ScrollNotice from "~/components/ScrollNotice";
 import styles from "./styles.module.css";
-import { useEffect, useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { useEffect, useMemo, useState } from "react";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import {
-  useFetcher,
   useLoaderData,
   useLocation,
   useNavigate,
@@ -39,60 +34,207 @@ import {
 } from "./switcherClient";
 import { useSelector } from "react-redux";
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { queryShopBaseConfigData } from "~/api/admin";
 import defaultStyles from "../styles/defaultStyles.module.css";
 import useReport from "scripts/eventReport";
 import CloseIcon from "~/components/icon/closeIcon";
 import { withEmbeddedSearch } from "~/utils/embeddedAction";
 import SwitcherSettingCard from "./components/switcherSettingCard";
+import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSectionCard from "~/ui/components/AppSectionCard";
+import AppStatusBadge from "~/ui/components/AppStatusBadge";
 
 const { Text, Title } = Typography;
 
-const initialLocalization = {
-  languages: [
-    {
-      iso_code: "en",
-      name: "English",
-      localeName: "English",
-      flag: "/flags/GB.webp",
-      selected: true,
-    },
-    {
-      iso_code: "kr",
-      name: "Korean",
-      localeName: "한국어",
-      flag: "/flags/KR.webp",
-      selected: false,
-    },
-    {
-      iso_code: "fr",
-      name: "French",
-      localeName: "Français",
-      flag: "/flags/FR.webp",
-      selected: false,
-    },
-  ],
-  currencies: [
-    {
-      iso_code: "USD",
-      symbol: "$",
-      localeName: "USD",
-      selected: true,
-    },
-    {
-      iso_code: "EUR",
-      symbol: "€",
-      localeName: "EUR",
-      selected: false,
-    },
-    {
-      iso_code: "CNY",
-      symbol: "¥",
-      localeName: "CNY",
-      selected: false,
-    },
-  ],
+type PreviewLanguageOption = {
+  iso_code: string;
+  name: string;
+  localeName: string;
 };
+
+type PreviewCurrencyOption = {
+  iso_code: string;
+  symbol: string;
+  localeName: string;
+};
+
+type PreviewMenuType = "language" | "currency";
+
+const pageContentStackStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 16,
+};
+
+const sectionContentStackStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 16,
+};
+
+const rowBetweenStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+};
+
+const fieldColumnStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 8,
+};
+
+const previewLanguages: PreviewLanguageOption[] = [
+  {
+    iso_code: "en",
+    name: "English",
+    localeName: "English",
+  },
+  {
+    iso_code: "kr",
+    name: "Korean",
+    localeName: "한국어",
+  },
+  {
+    iso_code: "fr",
+    name: "French",
+    localeName: "Français",
+  },
+];
+
+const previewCurrencies: PreviewCurrencyOption[] = [
+  {
+    iso_code: "USD",
+    symbol: "$",
+    localeName: "USD",
+  },
+  {
+    iso_code: "EUR",
+    symbol: "€",
+    localeName: "EUR",
+  },
+  {
+    iso_code: "CNY",
+    symbol: "¥",
+    localeName: "CNY",
+  },
+];
+
+const previewMarketCountryByCurrency: Record<string, string> = {
+  USD: "GB",
+  EUR: "FR",
+  CNY: "CN",
+};
+
+function buildPreviewFlagEmoji(countryCode: string): string {
+  const normalizedCountryCode = countryCode.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalizedCountryCode)) {
+    return "🏳";
+  }
+
+  return Array.from(normalizedCountryCode)
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+}
+
+function buildPreviewFlagUrl(countryCode: string): string {
+  const normalizedCountryCode = countryCode.trim().toUpperCase();
+  const localFlagUrl = `/flags/${normalizedCountryCode}.webp`;
+  const fallbackEmoji = buildPreviewFlagEmoji(normalizedCountryCode);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 60 40"><rect width="60" height="40" rx="4" fill="white"/><text x="30" y="26" text-anchor="middle" font-size="22">${fallbackEmoji}</text></svg>`;
+
+  if (["CN", "FR", "GB", "KR"].includes(normalizedCountryCode)) {
+    return localFlagUrl;
+  }
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+const switcherComparableKeys: Array<keyof SwitcherEditData> = [
+  "shopName",
+  "includedFlag",
+  "languageSelector",
+  "currencySelector",
+  "ipOpen",
+  "browserLanguageOpen",
+  "marketCurrencyOpen",
+  "fontColor",
+  "backgroundColor",
+  "buttonColor",
+  "buttonBackgroundColor",
+  "optionBorderColor",
+  "selectorPosition",
+  "positionData",
+  "isTransparent",
+  "autoLiquidCollect",
+];
+
+function buildResolvedSwitcherData(
+  shop: string,
+  response?: Partial<SwitcherEditData> | null,
+): SwitcherEditData {
+  const defaults = buildSwitcherEditDefaults(shop);
+  if (!response) return defaults;
+
+  const filteredResponse = Object.fromEntries(
+    Object.entries(response).filter(([_, value]) => value !== null),
+  ) as Partial<SwitcherEditData>;
+
+  return {
+    ...defaults,
+    ...filteredResponse,
+    shopName: filteredResponse.shopName || shop,
+  };
+}
+
+function areSwitcherConfigsEqual(
+  left: SwitcherEditData,
+  right: SwitcherEditData,
+): boolean {
+  return switcherComparableKeys.every((key) => left[key] === right[key]);
+}
+
+type SwitcherActivationStatus = "completed" | "uncompleted";
+
+function extractSwitcherActivationStatus(
+  payload: unknown,
+  ciwiSwitcherBlocksId: string,
+): SwitcherActivationStatus | null {
+  const content =
+    (payload as any)?.data?.nodes?.[0]?.files?.nodes?.[0]?.body?.content;
+
+  if (typeof content !== "string" || !content.trim()) {
+    return null;
+  }
+
+  try {
+    const sanitized = content.replace(/\/\*[\s\S]*?\*\//g, "").trim();
+    const blocks = JSON.parse(sanitized)?.current?.blocks;
+    if (!blocks || typeof blocks !== "object") {
+      return null;
+    }
+
+    const normalizedSwitcherBlockId = ciwiSwitcherBlocksId.trim().toLowerCase();
+    const switcherBlock = Object.values(blocks).find(
+      (block: any) => {
+        const type = String(block?.type || "").trim().toLowerCase();
+        return (
+          type === normalizedSwitcherBlockId ||
+          type.includes(normalizedSwitcherBlockId) ||
+          type.includes("ciwi_i18n_switcher")
+        );
+      },
+    ) as { disabled?: boolean } | undefined;
+
+    if (!switcherBlock) {
+      return "uncompleted";
+    }
+
+    return switcherBlock.disabled === true ? "uncompleted" : "completed";
+  } catch {
+    return null;
+  }
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const adminAuthResult = await authenticate.admin(request);
@@ -105,118 +247,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const adminAuthResult = await authenticate.admin(request);
-  const { shop, accessToken } = adminAuthResult.session;
-
-  const formData = await request.formData();
-  const shopInfo = JSON.parse(formData.get("shopInfo") as string);
-  switch (true) {
-    case !!shopInfo:
-      try {
-        const shopLoad = await queryShopBaseConfigData({
-          shop,
-          accessToken: accessToken as string,
-        });
-        const moneyFormat = shopLoad?.shop?.currencyFormats?.moneyFormat;
-        const moneyWithCurrencyFormat =
-          shopLoad?.shop?.currencyFormats?.moneyWithCurrencyFormat;
-        if (shopLoad) {
-          return {
-            success: true,
-            errorCode: 0,
-            errorMsg: "",
-            response: {
-              moneyFormat,
-              moneyWithCurrencyFormat,
-            },
-          };
-        } else {
-          const appError = buildTranslateV4Error(
-            TRANSLATE_V4_ERROR_KEYS.SWITCHER_LOAD_FAILED,
-          );
-          return {
-            success: false,
-            errorCode: appError.errorCode,
-            errorMsg: appError.errorMsg,
-            response: undefined,
-          };
-        }
-      } catch (error) {
-        console.error("Error switcher shopInfo:", error);
-        const appError = buildTranslateV4Error(
-          TRANSLATE_V4_ERROR_KEYS.SWITCHER_LOAD_FAILED,
-        );
-        return {
-          success: false,
-          errorCode: appError.errorCode,
-          errorMsg: appError.errorMsg,
-          response: undefined,
-        };
-      }
-    default: {
-      const appError = buildTranslateV4Error(
-        TRANSLATE_V4_ERROR_KEYS.UNKNOWN_ACTION,
-      );
-      return {
-        success: false,
-        errorCode: appError.errorCode,
-        errorMsg: appError.errorMsg,
-        response: undefined,
-      };
-    }
-  }
-};
-
 const Index = () => {
   const { shop, migrated, ciwiSwitcherId, ciwiSwitcherBlocksId } =
     useLoaderData<typeof loader>();
-  const [isGeoLocationEnabled, setIsGeoLocationEnabled] = useState(false);
-  const [isIncludedFlag, setIsIncludedFlag] = useState(true);
-  const [languageSelector, setLanguageSelector] = useState(true);
-  const [currencySelector, setCurrencySelector] = useState(true);
-  const [fontColor, setFontColor] = useState("#303030");
-  const [backgroundColor, setBackgroundColor] = useState("#ffffff");
-  const [optionBorderColor, setOptionBorderColor] = useState("#d4d4d8");
-  const [selectorPosition, setSelectorPosition] = useState("top_left");
-  const [positionData, setPositionData] = useState<string>("0");
-  const [isTransparent, setIsTransparent] = useState(false);
-  const [isLanguageOpen, setIsLanguageOpen] = useState(false);
-  const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
+  const defaultEditData = useMemo(() => buildSwitcherEditDefaults(shop), [shop]);
+  const [originalData, setOriginalData] =
+    useState<SwitcherEditData>(defaultEditData);
+  const [editData, setEditData] = useState<SwitcherEditData>(defaultEditData);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
-  const [localization, setLocalization] = useState(initialLocalization);
-  const [originalData, setOriginalData] = useState<SwitcherEditData>();
-  const [editData, setEditData] = useState<SwitcherEditData>({
-    shopName: "",
-    includedFlag: false,
-    languageSelector: false,
-    currencySelector: false,
-    ipOpen: false,
-    fontColor: "",
-    backgroundColor: "",
-    buttonColor: "",
-    buttonBackgroundColor: "",
-    optionBorderColor: "",
-    selectorPosition: "",
-    positionData: "0",
-    isTransparent: false,
-    autoLiquidCollect: true,
-  });
-  const [selectedLanguage, setSelectedLanguage] = useState<any>(
-    localization.languages.find((language) => language.selected),
+  const [activePreviewMenu, setActivePreviewMenu] =
+    useState<PreviewMenuType | null>(null);
+  const [selectedLanguageCode, setSelectedLanguageCode] = useState(
+    previewLanguages[0].iso_code,
   );
-  const [selectedCurrency, setSelectedCurrency] = useState<any>(
-    localization.currencies.find((currency) => currency.selected),
+  const [selectedCurrencyCode, setSelectedCurrencyCode] = useState(
+    previewCurrencies[0].iso_code,
   );
   const [isLoading, setIsLoading] = useState(true);
   const [showWarnModal, setShowWarnModal] = useState(false);
   const [saveAlert, setSaveAlert] = useState<string>("");
-  const [currencyFormatConfigCardOpen, setCurrencyFormatConfigCardOpen] =
-    useState<boolean>(false);
-  const [switcherEnableCardOpen, setSwitcherEnableCardOpen] =
-    useState<boolean>(false);
-  const [withMoneyValue, setWithMoneyValue] = useState<string>("");
-  const [withoutMoneyValue, setWithoutMoneyValue] = useState<string>("");
+  const [loadAlert, setLoadAlert] = useState(false);
+  const [switcherActivationStatus, setSwitcherActivationStatus] =
+    useState<SwitcherActivationStatus>("uncompleted");
   const [cardLoading, setCardLoading] = useState<boolean>(true);
   const [updateLoading, setUpdateLoading] = useState<boolean>(false);
   const { report } = useReport();
@@ -224,296 +276,361 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { plan } = useSelector((state: any) => state.userConfig);
+  const isGeoLocationEnabled = editData.ipOpen;
+  const isIncludedFlag = editData.includedFlag;
+  const languageSelector = editData.languageSelector;
+  const currencySelector = editData.currencySelector;
+  const fontColor = editData.fontColor;
+  const backgroundColor = editData.backgroundColor;
+  const optionBorderColor = editData.optionBorderColor;
+  const selectorPosition = editData.selectorPosition;
+  const positionData = editData.positionData;
+  const isTransparent = editData.isTransparent;
+  const isBrowserLanguageEnabled = editData.browserLanguageOpen;
+  const isMarketCurrencyEnabled = editData.marketCurrencyOpen;
+  const showLanguagePreview =
+    languageSelector || (!languageSelector && !currencySelector);
+  const showCurrencyPreview =
+    currencySelector || (!languageSelector && !currencySelector);
+  const shouldUseSidebarWidget = !languageSelector && !currencySelector;
+  const activeSelectorCount =
+    Number(Boolean(showLanguagePreview)) + Number(Boolean(showCurrencyPreview));
+  const isDirectSelectorPreview =
+    activeSelectorCount === 1 && !shouldUseSidebarWidget;
+  const isFloatingSelectorPreview =
+    activeSelectorCount > 1 && !shouldUseSidebarWidget;
+  const isOverlaySelectorPreview =
+    isFloatingSelectorPreview || shouldUseSidebarWidget;
+  const isSelectorBoxVisible = isDirectSelectorPreview || isSelectorOpen;
+  const selectedLanguage = useMemo(
+    () =>
+      previewLanguages.find(
+        (language) => language.iso_code === selectedLanguageCode,
+      ) ?? previewLanguages[0],
+    [selectedLanguageCode],
+  );
+  const selectedCurrency = useMemo(
+    () =>
+      previewCurrencies.find(
+        (currency) => currency.iso_code === selectedCurrencyCode,
+      ) ?? previewCurrencies[0],
+    [selectedCurrencyCode],
+  );
+  const previewMarketFlagUrl = useMemo(() => {
+    const previewMarketCountryCode =
+      previewMarketCountryByCurrency[selectedCurrencyCode] ?? "GB";
+    return buildPreviewFlagUrl(previewMarketCountryCode);
+  }, [selectedCurrencyCode]);
+  const selectorPreviewOffset = useMemo(() => {
+    const rawValue = Number(positionData);
+    const normalizedValue = Number.isFinite(rawValue)
+      ? Math.min(Math.max(rawValue, 0), 100)
+      : 0;
 
-  const fetcher = useFetcher<any>();
-  const initFetcher = useFetcher<any>();
-  const themeFetcher = useFetcher<any>();
-  const shopFetcher = useFetcher<any>();
+    return selectorPosition === "top_left" || selectorPosition === "top_right"
+      ? `${(normalizedValue * 81) / 100}%`
+      : `${((100 - normalizedValue) * 81) / 100}%`;
+  }, [positionData, selectorPosition]);
+  const previewDisplayText = useMemo(() => {
+    if (showLanguagePreview && showCurrencyPreview) {
+      return `${selectedLanguage.localeName} / ${selectedCurrency.localeName}`;
+    }
+
+    if (showLanguagePreview) {
+      return selectedLanguage.localeName;
+    }
+
+    return selectedCurrency.localeName;
+  }, [
+    selectedCurrency.localeName,
+    selectedLanguage.localeName,
+    showCurrencyPreview,
+    showLanguagePreview,
+  ]);
+  const previewSelectorBoxStyle = useMemo(() => {
+    if (isDirectSelectorPreview) {
+      return {
+        position: "static" as const,
+        padding: 0,
+        border: "none",
+        borderRadius: 0,
+        boxShadow: "none",
+        width: "100%",
+        display: "flex",
+        flexDirection: "column" as const,
+        gap: 10,
+        background: "transparent",
+      };
+    }
+
+    return {
+      position: "absolute" as const,
+      bottom:
+        selectorPosition === "bottom_left" || selectorPosition === "bottom_right"
+          ? "100%"
+          : "auto",
+      top:
+        selectorPosition === "top_left" || selectorPosition === "top_right"
+          ? "100%"
+          : "auto",
+      background: backgroundColor,
+      border: `1px solid ${optionBorderColor}`,
+      padding: "10px",
+      borderRadius: "8px",
+      marginBottom: "1px",
+      width: shouldUseSidebarWidget ? "180px" : "100%",
+      display: isSelectorBoxVisible ? "flex" : "none",
+      flexDirection: "column" as const,
+      gap: "10px",
+      boxShadow: "0 14px 32px rgba(15, 23, 42, 0.14)",
+    };
+  }, [
+    backgroundColor,
+    isDirectSelectorPreview,
+    isSelectorBoxVisible,
+    optionBorderColor,
+    selectorPosition,
+    shouldUseSidebarWidget,
+  ]);
+  const previewNativeSelectorWrapperStyle = useMemo(
+    () => ({
+      width: "100%",
+      position: "relative" as const,
+      borderRadius: "10px",
+      overflow: "hidden",
+      border: `1px solid ${optionBorderColor}`,
+      background: backgroundColor,
+      boxSizing: "border-box" as const,
+    }),
+    [backgroundColor, optionBorderColor],
+  );
+  const previewNativeSelectorStyle = useMemo(
+    () => ({
+      display: "flex",
+      alignItems: "center",
+      width: "100%",
+      minHeight: "44px",
+      padding: isIncludedFlag ? "0 38px 0 42px" : "0 38px 0 14px",
+      boxSizing: "border-box" as const,
+      fontSize: "14px",
+      lineHeight: 1.4,
+      color: fontColor,
+      whiteSpace: "nowrap" as const,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      position: "relative" as const,
+    }),
+    [fontColor, isIncludedFlag],
+  );
+  const previewNativeCurrencyStyle = useMemo(
+    () => ({
+      ...previewNativeSelectorStyle,
+      padding: "0 38px 0 14px",
+    }),
+    [previewNativeSelectorStyle],
+  );
+  const previewNativeArrowStyle = {
+    position: "absolute" as const,
+    top: "50%",
+    right: 14,
+    width: 8,
+    height: 8,
+    borderRight: "1.5px solid rgba(17, 24, 39, 0.68)",
+    borderBottom: "1.5px solid rgba(17, 24, 39, 0.68)",
+    transform: "translateY(-65%) rotate(45deg)",
+    pointerEvents: "none" as const,
+  };
+  const previewNativeFlagStyle = {
+    position: "absolute" as const,
+    left: 14,
+    top: "50%",
+    width: 18,
+    height: 13,
+    objectFit: "cover" as const,
+    borderRadius: 3,
+    transform: "translateY(-50%)",
+    boxShadow: "0 0 0 1px rgba(15, 23, 42, 0.06)",
+  };
+  const isDirty = useMemo(
+    () => !areSwitcherConfigsEqual(editData, originalData),
+    [editData, originalData],
+  );
 
   useEffect(() => {
-    const currencyFormatConfigCardOpen = localStorage.getItem(
-      "currencyFormatConfigCardOpen",
-    );
-    if (currencyFormatConfigCardOpen) {
-      setCurrencyFormatConfigCardOpen(currencyFormatConfigCardOpen === "true");
-    }
-    const switcherEnableCardOpen = localStorage.getItem(
-      "switcherEnableCardOpen",
-    );
-    if (switcherEnableCardOpen) {
-      setSwitcherEnableCardOpen(switcherEnableCardOpen === "true");
-    }
-    themeFetcher.submit(
-      {
-        theme: JSON.stringify(true),
-      },
-      {
-        method: "post",
-        action: withEmbeddedSearch("/app/currency", location.search),
-      },
-    );
-    shopFetcher.submit(
-      {
-        shopInfo: JSON.stringify(true),
-      },
-      {
-        method: "post",
-        action: withEmbeddedSearch("/app/switcher", location.search),
-      },
-    );
-    initFetcher.submit(
-      {},
-      {
-        method: "post",
-        action: "/currencyInit",
-      },
-    );
+    const controller = new AbortController();
+    let active = true;
+
     const getSwitcherConfig = async () => {
-      const data = await loadSwitcherConfigCompat({
-        migrated,
-        shop,
-      });
-      const initData = buildSwitcherEditDefaults(shop);
-      if (data?.success && data.response) {
-        const filteredResponse = Object.fromEntries(
-          Object.entries(data.response).filter(([_, value]) => value !== null),
-        );
-        const res = {
-          ...initData,
-          ...filteredResponse,
-        };
-        setOriginalData(res);
-        setIsIncludedFlag(res.includedFlag);
-        setLanguageSelector(res.languageSelector);
-        setCurrencySelector(res.currencySelector);
-        setIsGeoLocationEnabled(res.ipOpen);
-        setFontColor(res.fontColor);
-        setBackgroundColor(res.backgroundColor);
-        setOptionBorderColor(res.optionBorderColor);
-        setSelectorPosition(res.selectorPosition);
-        setPositionData(res.positionData);
-        setIsTransparent(res.isTransparent);
-        setEditData(res);
-        setIsLoading(false);
-      } else {
-        setOriginalData(initData);
-        setIsIncludedFlag(initData.includedFlag);
-        setLanguageSelector(initData.languageSelector);
-        setCurrencySelector(initData.currencySelector);
-        setIsGeoLocationEnabled(initData.ipOpen);
-        setFontColor(initData.fontColor);
-        setBackgroundColor(initData.backgroundColor);
-        setOptionBorderColor(initData.optionBorderColor);
-        setSelectorPosition(initData.selectorPosition);
-        setPositionData(initData.positionData);
-        setIsTransparent(initData.isTransparent);
-        setEditData(initData);
-        setIsLoading(false);
+      setIsLoading(true);
+      setLoadAlert(false);
+
+      try {
+        const data = await loadSwitcherConfigCompat({
+          migrated,
+          shop,
+          signal: controller.signal,
+        });
+        if (!active) return;
+
+        const nextData = data?.success
+          ? buildResolvedSwitcherData(shop, data.response)
+          : defaultEditData;
+
+        setOriginalData(nextData);
+        setEditData(nextData);
+        setLoadAlert(!data?.success);
+      } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
+        setOriginalData(defaultEditData);
+        setEditData(defaultEditData);
+        setLoadAlert(true);
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
       }
     };
 
-    getSwitcherConfig();
-    fetcher.submit(
-      {
-        log: `${shop} 目前在切换器页面`,
-      },
-      {
-        method: "POST",
-        action: "/log",
-      },
-    );
-  }, [location.search, migrated, shop]);
+    void getSwitcherConfig();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [defaultEditData, migrated, shop]);
 
   useEffect(() => {
-    if (themeFetcher.data) {
-      const switcherData =
-        themeFetcher.data.data.nodes[0].files.nodes[0]?.body?.content;
-      const jsonString = switcherData.replace(/\/\*[\s\S]*?\*\//g, "").trim();
-      const blocks = JSON.parse(jsonString).current?.blocks;
-      if (blocks) {
-        const switcherJson: any = Object.values(blocks).find(
-          (block: any) => block.type === ciwiSwitcherBlocksId,
-        );
-        if (switcherJson) {
-          if (!switcherJson.disabled) {
-            setSwitcherEnableCardOpen(false);
-            localStorage.setItem("switcherEnableCardOpen", "false");
-          } else {
-            setSwitcherEnableCardOpen(true);
-            localStorage.setItem("switcherEnableCardOpen", "true");
-          }
-        }
-      }
+    const controller = new AbortController();
+    let active = true;
+    const cachedActivationStatus =
+      localStorage.getItem("switcherActivationStatus");
 
-      setCardLoading(false);
-    }
-  }, [themeFetcher.data]);
-
-  useEffect(() => {
-    if (shopFetcher.data) {
-      if (shopFetcher.data.success) {
-        const parser = new DOMParser();
-        const moneyFormatHtmlData = parser.parseFromString(
-          shopFetcher.data.response.moneyFormat,
-          "text/html",
-        ).documentElement.textContent;
-        const moneyWithCurrencyFormatHtmlData = parser.parseFromString(
-          shopFetcher.data.response.moneyWithCurrencyFormat,
-          "text/html",
-        ).documentElement.textContent;
-        if (moneyFormatHtmlData && moneyWithCurrencyFormatHtmlData) {
-          const parser = new DOMParser();
-          const moneyWithMoneyDoc = parser.parseFromString(
-            moneyWithCurrencyFormatHtmlData,
-            "text/html",
-          );
-          const moneyWithoutMoneyDoc = parser.parseFromString(
-            moneyFormatHtmlData,
-            "text/html",
-          );
-
-          const moneyWithMoneyElement =
-            moneyWithMoneyDoc.querySelector(".ciwi-money");
-          const moneyWithoutMoneyElement =
-            moneyWithoutMoneyDoc.querySelector(".ciwi-money");
-          if (moneyWithMoneyElement && moneyWithoutMoneyElement) {
-            setCurrencyFormatConfigCardOpen(false);
-            localStorage.setItem("currencyFormatConfigCardOpen", "false");
-          } else {
-            setCurrencyFormatConfigCardOpen(true);
-            localStorage.setItem("currencyFormatConfigCardOpen", "true");
-          }
-
-          const spansWithMoney = moneyWithMoneyDoc.querySelectorAll("span");
-
-          if (spansWithMoney.length) {
-            spansWithMoney.forEach((span) => {
-              if (span.textContent && span.textContent.trim()) {
-                setWithMoneyValue(span.textContent.trim());
-              }
-            });
-          } else {
-            setWithMoneyValue(moneyWithCurrencyFormatHtmlData);
-          }
-
-          const spansWithoutMoney =
-            moneyWithoutMoneyDoc.querySelectorAll("span");
-
-          if (spansWithoutMoney.length) {
-            spansWithoutMoney.forEach((span) => {
-              if (span.textContent && span.textContent.trim()) {
-                setWithoutMoneyValue(span.textContent.trim());
-              }
-            });
-          } else {
-            setWithoutMoneyValue(moneyFormatHtmlData);
-          }
-        }
-      }
-    }
-  }, [shopFetcher.data]);
-
-  useEffect(() => {
     if (
-      originalData &&
-      editData.shopName &&
-      JSON.stringify(editData) !== JSON.stringify(originalData)
+      cachedActivationStatus === "completed" ||
+      cachedActivationStatus === "uncompleted"
     ) {
+      setSwitcherActivationStatus(cachedActivationStatus);
+    }
+
+    const loadSwitcherGuide = async () => {
+      setCardLoading(true);
+
+      try {
+        const formData = new FormData();
+        formData.append("theme", JSON.stringify(true));
+
+        const response = await fetch(
+          withEmbeddedSearch("/app/currency", location.search),
+          {
+            method: "POST",
+            body: formData,
+            signal: controller.signal,
+          },
+        );
+        const payload = await response.json().catch(() => null);
+        if (!active) return;
+
+        const nextStatus = extractSwitcherActivationStatus(
+          payload,
+          ciwiSwitcherBlocksId,
+        );
+
+        if (nextStatus) {
+          setSwitcherActivationStatus(nextStatus);
+          localStorage.setItem("switcherActivationStatus", nextStatus);
+        }
+      } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+      } finally {
+        if (active) {
+          setCardLoading(false);
+        }
+      }
+    };
+
+    void loadSwitcherGuide();
+
+    const handleFocusRefresh = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      loadSwitcherGuide();
+    };
+
+    window.addEventListener("focus", handleFocusRefresh);
+    document.addEventListener("visibilitychange", handleFocusRefresh);
+
+    return () => {
+      active = false;
+      controller.abort();
+      window.removeEventListener("focus", handleFocusRefresh);
+      document.removeEventListener("visibilitychange", handleFocusRefresh);
+    };
+  }, [ciwiSwitcherBlocksId, location.search]);
+
+  useEffect(() => {
+    if (isDirty) {
       shopify.saveBar.show("switcher-save-bar");
     } else {
       shopify.saveBar.hide("switcher-save-bar");
     }
-  }, [editData, originalData]);
+  }, [isDirty]);
+
+  useEffect(() => {
+    return () => {
+      shopify.saveBar.hide("switcher-save-bar");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isTransparent) {
+      setIsSelectorOpen(false);
+      setActivePreviewMenu(null);
+    }
+  }, [isTransparent]);
+
+  useEffect(() => {
+    setIsSelectorOpen(false);
+    setActivePreviewMenu(null);
+  }, [isDirectSelectorPreview, shouldUseSidebarWidget, isFloatingSelectorPreview]);
 
   const handleEditData = (updates: Partial<SwitcherEditData>) => {
-    // 更新对应的状态
-    Object.entries(updates).forEach(([key, value]) => {
-      switch (key) {
-        case "isTransparent":
-          setIsTransparent(value as boolean);
-          break;
-        case "includedFlag":
-          setIsIncludedFlag(value as boolean);
-          break;
-        case "languageSelector":
-          setLanguageSelector(value as boolean);
-          break;
-        case "currencySelector":
-          setCurrencySelector(value as boolean);
-          break;
-        case "fontColor":
-          setFontColor(value as string);
-          break;
-        case "backgroundColor":
-          setBackgroundColor(value as string);
-          break;
-        case "optionBorderColor":
-          setOptionBorderColor(value as string);
-          break;
-        case "selectorPosition":
-          setSelectorPosition(value as string);
-          break;
-        case "positionData":
-          setPositionData(value as string);
-          break;
-      }
-    });
-
-    // 更新 editData
     setEditData((prev) => ({
       ...prev,
       ...updates,
     }));
   };
 
-  const handleOptionChange = (value: string) => {
-    const switcherType = {
-      "sidebar widget": {
-        status: 3,
-      },
-      language_and_currency: {
-        status: 0,
-      },
-      language: {
-        status: 1,
-      },
-      currency: {
-        status: 2,
-      },
-    } as any;
-    switch (value) {
-      case "sidebar widget":
-        handleEditData({
-          languageSelector: false,
-          currencySelector: false,
-        });
-        break;
-      case "language_and_currency":
-        handleEditData({
-          languageSelector: true,
-          currencySelector: true,
-        });
-        break;
-      case "language":
-        handleEditData({
-          languageSelector: true,
-          currencySelector: false,
-        });
-        break;
-      case "currency":
-        handleEditData({
-          languageSelector: false,
-          currencySelector: true,
-        });
-        setIsIncludedFlag(false);
-        handleEditData({
-          includedFlag: false,
-        });
-        break;
-    }
+  const applySelectorType = (
+    nextLanguageSelector: boolean,
+    nextCurrencySelector: boolean,
+  ) => {
+    handleEditData({
+      languageSelector: nextLanguageSelector,
+      currencySelector: nextCurrencySelector,
+      includedFlag:
+        !nextLanguageSelector && nextCurrencySelector
+          ? false
+          : editData.includedFlag,
+    });
+
+    const status =
+      nextLanguageSelector && nextCurrencySelector
+        ? 0
+        : nextLanguageSelector
+          ? 1
+          : !nextLanguageSelector && !nextCurrencySelector
+            ? 3
+            : 2;
+
     report(
       {
-        status: switcherType[value].status,
+        status,
       },
       {
         action: "/app",
@@ -524,65 +641,35 @@ const Index = () => {
     );
   };
 
-  const handleLanguageClick = () => {
-    setIsLanguageOpen(!isLanguageOpen);
-    setIsCurrencyOpen(false);
-  };
-
-  const handleCurrencyClick = () => {
-    setIsCurrencyOpen(!isCurrencyOpen);
-    setIsLanguageOpen(false);
+  const handlePreviewMenuClick = (menu: PreviewMenuType) => {
+    setActivePreviewMenu((current) => (current === menu ? null : menu));
   };
 
   const handleSelectorClick = () => {
-    setIsSelectorOpen(!isSelectorOpen);
-    setIsLanguageOpen(false);
-    setIsCurrencyOpen(false);
-    setSelectedLanguage(
-      localization.languages.find((language) => language.selected),
-    );
+    if (!isOverlaySelectorPreview) {
+      return;
+    }
 
-    setSelectedCurrency(
-      localization.currencies.find((currency) => currency.selected),
-    );
+    setIsSelectorOpen((prev) => !prev);
+    setActivePreviewMenu(null);
   };
 
   const handleCancelClick = () => {
-    setIsSelectorOpen(!isSelectorOpen);
-    setIsLanguageOpen(false);
-    setIsCurrencyOpen(false);
+    setIsSelectorOpen(false);
+    setActivePreviewMenu(null);
   };
 
-  const handleOptionClick = (value: string) => {
-    setIsLanguageOpen(false);
-    setIsCurrencyOpen(false);
-
-    if (
-      localization.languages.find((language) => language.iso_code === value)
-    ) {
-      localization.languages.forEach((language) => {
-        if (language.iso_code !== value) {
-          language.selected = false;
-        } else {
-          language.selected = true;
-          setSelectedLanguage(language);
-        }
-      });
-      setLocalization({ ...localization });
-    } else if (
-      localization.currencies.find((currency) => currency.iso_code === value)
-    ) {
-      localization.currencies.forEach((currency) => {
-        if (currency.iso_code !== value) {
-          currency.selected = false;
-        } else {
-          currency.selected = true;
-          setSelectedCurrency(currency);
-        }
-      });
-      setLocalization({ ...localization });
+  const handleOptionClick = (menu: PreviewMenuType, value: string) => {
+    if (menu === "language") {
+      setSelectedLanguageCode(value);
+    } else {
+      setSelectedCurrencyCode(value);
     }
-    setIsSelectorOpen(false);
+
+    setActivePreviewMenu(null);
+    if (isOverlaySelectorPreview) {
+      setIsSelectorOpen(false);
+    }
   };
 
   const handleIpOpenChange = (checked: boolean) => {
@@ -590,13 +677,8 @@ const Index = () => {
       return;
     }
     if (plan?.type !== "Free" || !checked) {
-      setIsGeoLocationEnabled(checked);
-      setEditData((prev) => ({
-        ...prev,
-        ipOpen: checked,
-      }));
+      handleEditData({ ipOpen: checked });
     } else {
-      setIsGeoLocationEnabled(false);
       setShowWarnModal(true);
     }
     report(
@@ -613,73 +695,43 @@ const Index = () => {
   };
 
   const handleSave = async () => {
+    if (!isDirty) {
+      return;
+    }
+
     setUpdateLoading(true);
     setSaveAlert("");
-    const data = await saveSwitcherConfigCompat({
-      migrated,
-      shop,
-      data: editData,
-    });
-    if (data?.success && data.response != undefined) {
-      setOriginalData(data.response);
-      setEditData(data.response);
-      shopify.toast.show(t("Switcher configuration updated successfully"));
-    } else {
-      setSaveAlert(
-        getTranslateV4ErrorMessage(
-          t,
-          data?.errorMsg,
-          TRANSLATE_V4_ERROR_KEYS.SWITCHER_SAVE_FAILED,
-        ),
-      );
+    try {
+      const data = await saveSwitcherConfigCompat({
+        migrated,
+        shop,
+        data: editData,
+      });
+
+      if (data?.success && data.response !== undefined) {
+        const nextData = buildResolvedSwitcherData(shop, data.response);
+        setOriginalData(nextData);
+        setEditData(nextData);
+        setLoadAlert(false);
+        shopify.toast.show(t("Switcher configuration updated successfully"));
+      } else {
+        setSaveAlert(
+          getTranslateV4ErrorMessage(
+            t,
+            data?.errorMsg,
+            TRANSLATE_V4_ERROR_KEYS.SWITCHER_SAVE_FAILED,
+          ),
+        );
+      }
+    } finally {
+      setUpdateLoading(false);
     }
-    setUpdateLoading(false);
-    fetcher.submit(
-      {
-        log: `${shop} 切换器配置修改数据保存成功`,
-      },
-      {
-        method: "POST",
-        action: "/log",
-      },
-    );
   };
 
   const handleCancel = () => {
-    shopify.saveBar.hide("switcher-save-bar");
     setSaveAlert("");
-    if (originalData) {
-      setIsIncludedFlag(originalData.includedFlag);
-      setLanguageSelector(originalData.languageSelector);
-      setCurrencySelector(originalData.currencySelector);
-      setIsGeoLocationEnabled(originalData.ipOpen);
-      setFontColor(originalData.fontColor);
-      setBackgroundColor(originalData.backgroundColor);
-      setOptionBorderColor(originalData.optionBorderColor);
-      setSelectorPosition(originalData.selectorPosition);
-      setPositionData(originalData.positionData);
-      setEditData(originalData);
-    }
+    setEditData(originalData);
   };
-
-  const switcherOptions = [
-    {
-      label: t("Language Switcher"),
-      value: "language",
-    },
-    {
-      label: t("Currency Switcher"),
-      value: "currency",
-    },
-    {
-      label: t("Language and Currency Switcher"),
-      value: "language_and_currency",
-    },
-    {
-      label: t("Sidebar Widget"),
-      value: "sidebar widget",
-    },
-  ];
 
   const switcherPositionOptions = [
     {
@@ -700,41 +752,76 @@ const Index = () => {
     },
   ];
 
+  const switcherOptions = [
+    {
+      label: t("Language Switcher"),
+      value: "language",
+    },
+    {
+      label: t("Currency Switcher"),
+      value: "currency",
+    },
+    {
+      label: t("Language and Currency Switcher"),
+      value: "language_and_currency",
+    },
+    {
+      label: t("Sidebar Widget"),
+      value: "sidebar widget",
+    },
+  ];
+
+  const switcherTypeValue =
+    languageSelector && currencySelector
+      ? "language_and_currency"
+      : languageSelector
+        ? "language"
+        : !languageSelector && !currencySelector
+          ? "sidebar widget"
+          : "currency";
+  const showMarketFlagSetting = switcherTypeValue !== "currency";
+
+  const showPaidPlanHint =
+    plan?.type == "Free" || typeof plan?.type === "undefined";
+
   return (
     <Page>
       <SaveBar id="switcher-save-bar">
         <button
           variant="primary"
           onClick={handleSave}
-          disabled={updateLoading}
+          disabled={updateLoading || !isDirty}
         >
           {updateLoading ? t("Saving...") : t("Save")}
         </button>
         <button onClick={handleCancel}>{t("Cancel")}</button>
       </SaveBar>
       <TitleBar title={t("Switcher")} />
-      <ScrollNotice
-        text={t(
-          "Welcome to our app! If you have any questions, feel free to email us at support@ciwi.ai, and we will respond as soon as possible.",
-        )}
-      />
-      <Space direction="vertical" size="middle" style={{ display: "flex" }}>
+      <div style={pageContentStackStyle}>
+        <AppPageHeader
+          title={t("Switcher")}
+        />
         <SwitcherSettingCard
-          step1Visible={currencyFormatConfigCardOpen}
-          step2Visible={switcherEnableCardOpen}
+          visible
           loading={cardLoading}
+          status={switcherActivationStatus}
           shop={shop}
           ciwiSwitcherId={ciwiSwitcherId}
-          withMoneyValue={withMoneyValue}
-          withoutMoneyValue={withoutMoneyValue}
         />
         <div className={styles.switcher_container}>
           <div className={styles.switcher_editor}>
-            <Space
-              direction="vertical"
-              size="middle"
-              style={{ display: "flex" }}
-            >
+            <div style={sectionContentStackStyle}>
+              {loadAlert ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={t(
+                    "Unable to load the latest switcher settings. You can continue editing with the default values.",
+                  )}
+                  closable
+                  onClose={() => setLoadAlert(false)}
+                />
+              ) : null}
               {saveAlert ? (
                 <Alert
                   type="error"
@@ -744,56 +831,78 @@ const Index = () => {
                   onClose={() => setSaveAlert("")}
                 />
               ) : null}
-              <Card
-                loading={isLoading}
-                style={{ border: "none", boxShadow: "var(--app-shadow-card)" }}
-              >
-                <Space
-                  direction="vertical"
-                  size="middle"
-                  style={{ display: "flex" }}
-                >
-                  <Flex justify="space-between">
-                    <Title
-                      level={5}
-                      style={{ fontSize: 14, color: "var(--app-color-text)" }}
+              <AppSectionCard
+                title={t("Auto adaptation settings")}
+                extra={
+                  showPaidPlanHint ? (
+                    <Popconfirm
+                      title=""
+                      description={t(
+                        "This feature is available only with the paid plan.",
+                      )}
+                      trigger="hover"
+                      showCancel={false}
+                      okText={t("Upgrade")}
+                      onConfirm={() => navigate("/app/pricing")}
                     >
-                      {t("Selector Auto IP position configuration:")}
-                    </Title>
-                    {(plan?.type == "Free" ||
-                      typeof plan?.type === "undefined") && (
-                      <Popconfirm
-                        title=""
-                        description={t(
-                          "This feature is available only with the paid plan.",
-                        )}
-                        trigger="hover"
-                        showCancel={false}
-                        okText={t("Upgrade")}
-                        onConfirm={() => navigate("/app/pricing")}
-                      >
-                        <InfoCircleOutlined
-                          style={{ paddingBottom: "0.5rem" }}
-                        />
-                      </Popconfirm>
-                    )}
-                  </Flex>
-
-                  <Flex justify="space-between">
-                    <Text>{t("Geolocation: ")}</Text>
+                      <Button type="text" icon={<InfoCircleOutlined />}>
+                        {t("Paid feature")}
+                      </Button>
+                    </Popconfirm>
+                  ) : null
+                }
+              >
+                <div style={sectionContentStackStyle}>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Match market by IP")}</Text>
+                    </div>
                     <Switch
                       className={
-                        plan?.type == "Free" ||
-                        typeof plan?.type === "undefined"
-                          ? defaultStyles.Switch_disable
-                          : ""
+                        showPaidPlanHint ? defaultStyles.Switch_disable : ""
                       }
                       checked={isGeoLocationEnabled}
                       onChange={handleIpOpenChange}
                     />
-                  </Flex>
-                  <Flex justify="space-between">
-                    <Text>{t("No Visible Switcher: ")}</Text>
+                  </div>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Match currency by market")}</Text>
+                    </div>
+                    <Switch
+                      checked={isMarketCurrencyEnabled}
+                      onChange={(checked) => {
+                        handleEditData({ marketCurrencyOpen: checked });
+                      }}
+                    />
+                  </div>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Switch by browser language")}</Text>
+                    </div>
+                    <Switch
+                      checked={isBrowserLanguageEnabled}
+                      onChange={(checked) => {
+                        handleEditData({ browserLanguageOpen: checked });
+                      }}
+                    />
+                  </div>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Auto-translate third-party apps")}</Text>
+                    </div>
+                    <AppStatusBadge tone="success">{t("Always on")}</AppStatusBadge>
+                  </div>
+                </div>
+              </AppSectionCard>
+              <AppSectionCard
+                title={t("Switcher style settings")}
+              >
+                <div style={sectionContentStackStyle}>
+                  <div style={rowBetweenStyle}>
+                    <div className={styles.switcher_row_label}>
+                      <Text strong>{t("Hide visible switcher")}</Text>
+                    </div>
                     <Switch
                       checked={isTransparent}
                       onChange={() => {
@@ -811,160 +920,110 @@ const Index = () => {
                         );
                       }}
                     />
-                  </Flex>
-                </Space>
-              </Card>
-              <Card
-                loading={isLoading}
-                style={{
-                  display: isTransparent ? "none" : "block",
-                  border: "none",
-                  boxShadow: "var(--app-shadow-card)",
-                }}
-              >
-                <Title
-                  level={5}
-                  style={{ fontSize: 14, color: "var(--app-color-text)" }}
-                >
-                  {t("Selector type configuration:")}
-                </Title>
-                <Select
-                  options={switcherOptions}
-                  style={{ width: "100%" }}
-                  value={
-                    languageSelector && currencySelector
-                      ? "language_and_currency"
-                      : languageSelector
-                        ? "language"
-                        : !languageSelector && !currencySelector
-                          ? "sidebar widget"
-                          : "currency"
-                  }
-                  onChange={handleOptionChange}
-                />
-              </Card>
-              <Card
-                loading={isLoading}
-                style={{
-                  display: isTransparent ? "none" : "block",
-                  border: "none",
-                  boxShadow: "var(--app-shadow-card)",
-                }}
-              >
-                <Space
-                  direction="vertical"
-                  size="middle"
-                  style={{ display: "flex" }}
-                >
-                  <Title
-                    level={5}
-                    style={{ fontSize: 14, color: "var(--app-color-text)" }}
-                  >
-                    {t("Selector style configuration:")}
-                  </Title>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Text>{t("Included flag:")}</Text>
-                    <Switch
-                      disabled={!languageSelector && currencySelector}
-                      checked={isIncludedFlag}
-                      onChange={(checked) => {
-                        handleEditData({ includedFlag: checked });
-                        report(
-                          {
-                            status: checked ? 1 : 0,
-                          },
-                          {
-                            action: "/app",
-                            method: "post",
-                            eventType: "click",
-                          },
-                          "switcher_style_flag",
-                        );
-                      }}
-                    />
                   </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 20,
-                    }}
-                  >
-                    <div
-                      style={{
-                        flex: 1,
-                        flexDirection: "column",
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Text>{t("Font Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={fontColor}
-                        onChange={(e) =>
-                          handleEditData({ fontColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                    <div
-                      style={{
-                        flex: 1,
-                        flexDirection: "column",
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Text>{t("Background Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={backgroundColor}
-                        onChange={(e) =>
-                          handleEditData({ backgroundColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                    <div
-                      style={{
-                        flex: 1,
-                        flexDirection: "column",
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Text>{t("Option Border Color:")}</Text>
-                      <ColorPicker
-                        style={{ alignSelf: "flex-start" }}
-                        value={optionBorderColor}
-                        onChange={(e) =>
-                          handleEditData({ optionBorderColor: e.toHexString() })
-                        }
-                        showText
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Text style={{ display: "block" }}>
-                      {t("Selector position:")}
-                    </Text>
-                    <Select
-                      options={switcherPositionOptions}
-                      style={{ width: "100%" }}
-                      value={selectorPosition}
-                      onChange={(value) =>
-                        handleEditData({ selectorPosition: value })
-                      }
-                    />
-                  </div>
-                  <div>
+                  {!isTransparent ? (
+                    <>
+                      <div style={fieldColumnStyle}>
+                        <Text style={{ display: "block" }}>
+                          {t("Selector type")}
+                        </Text>
+                        <Select
+                          options={switcherOptions}
+                          style={{ width: "100%" }}
+                          value={switcherTypeValue}
+                          onChange={(value) => {
+                            switch (value) {
+                              case "sidebar widget":
+                                applySelectorType(false, false);
+                                break;
+                              case "language_and_currency":
+                                applySelectorType(true, true);
+                                break;
+                              case "language":
+                                applySelectorType(true, false);
+                                break;
+                              case "currency":
+                                applySelectorType(false, true);
+                                break;
+                            }
+                          }}
+                        />
+                      </div>
+                      {showMarketFlagSetting ? (
+                        <div style={rowBetweenStyle}>
+                          <div className={styles.switcher_row_label}>
+                            <Text strong>{t("Show current market flag")}</Text>
+                          </div>
+                          <Switch
+                            checked={isIncludedFlag}
+                            onChange={(checked) => {
+                              handleEditData({ includedFlag: checked });
+                              report(
+                                {
+                                  status: checked ? 1 : 0,
+                                },
+                                {
+                                  action: "/app",
+                                  method: "post",
+                                  eventType: "click",
+                                },
+                                "switcher_style_flag",
+                              );
+                            }}
+                          />
+                        </div>
+                      ) : null}
+                      <div className={styles.switcher_style_fields}>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Font Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={fontColor}
+                            onChange={(e) =>
+                              handleEditData({ fontColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Background Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={backgroundColor}
+                            onChange={(e) =>
+                              handleEditData({ backgroundColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                        <div style={fieldColumnStyle}>
+                          <Text>{t("Option Border Color:")}</Text>
+                          <ColorPicker
+                            style={{ alignSelf: "flex-start" }}
+                            value={optionBorderColor}
+                            onChange={(e) =>
+                              handleEditData({ optionBorderColor: e.toHexString() })
+                            }
+                            showText
+                          />
+                        </div>
+                      </div>
+                      <div style={fieldColumnStyle}>
+                        <Text style={{ display: "block" }}>
+                          {t("Selector position:")}
+                        </Text>
+                        <Select
+                          options={switcherPositionOptions}
+                          style={{ width: "100%" }}
+                          value={selectorPosition}
+                          onChange={(value) =>
+                            handleEditData({ selectorPosition: value })
+                          }
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                  <div style={fieldColumnStyle}>
                     <Text style={{ display: "block" }}>
                       {t("Selector position data:")}
                     </Text>
@@ -975,9 +1034,9 @@ const Index = () => {
                       }
                     />
                   </div>
-                </Space>
-              </Card>
-            </Space>
+                </div>
+              </AppSectionCard>
+            </div>
           </div>
           <div className={styles.switcher_preview}>
             <Card
@@ -1043,14 +1102,7 @@ const Index = () => {
                 <div
                   style={{
                     position: "relative",
-                    top:
-                      selectorPosition === "top_left" ||
-                      selectorPosition === "top_right"
-                        ? ((Number(positionData) * 81) / 100).toString() + "%"
-                        : (
-                            ((100 - Number(positionData)) * 81) /
-                            100
-                          ).toString() + "%",
+                    top: selectorPreviewOffset,
                     height: "auto",
                     display: "block",
                     zIndex: "1000",
@@ -1060,8 +1112,17 @@ const Index = () => {
                   <div
                     id="ciwi-container"
                     style={{
-                      minWidth: "100px",
-                      position: "absolute", // 改为绝对定位
+                      minWidth: shouldUseSidebarWidget
+                        ? "30px"
+                        : isDirectSelectorPreview
+                          ? "180px"
+                          : "100px",
+                      width: shouldUseSidebarWidget
+                        ? "30px"
+                        : isDirectSelectorPreview
+                          ? "180px"
+                          : "auto",
+                      position: "absolute",
                       left:
                         selectorPosition === "top_left" ||
                         selectorPosition === "bottom_left"
@@ -1072,302 +1133,381 @@ const Index = () => {
                         selectorPosition === "bottom_right"
                           ? "0"
                           : "auto",
-                      background: backgroundColor,
-                      border: `1px solid ${optionBorderColor}`,
-                      borderRadius: "8px",
-                      transform: "none", // 移除transform，使用left/right定位
+                      background:
+                        shouldUseSidebarWidget || isDirectSelectorPreview
+                          ? "transparent"
+                          : backgroundColor,
+                      border:
+                        shouldUseSidebarWidget || isDirectSelectorPreview
+                          ? "none"
+                          : `1px solid ${optionBorderColor}`,
+                      borderRadius:
+                        shouldUseSidebarWidget || isDirectSelectorPreview
+                          ? 0
+                          : "8px",
+                      transform: "none",
                       height: "auto",
                       display: isTransparent ? "none" : "block",
                       zIndex: "2",
                     }}
                   >
-                    {isSelectorOpen && (
+                    {isSelectorBoxVisible ? (
                       <div
                         id="selector-box"
-                        style={{
-                          position: "absolute",
-                          bottom:
-                            selectorPosition === "bottom_left" ||
-                            selectorPosition === "bottom_right"
-                              ? "100%"
-                              : "auto",
-                          top:
-                            selectorPosition === "top_left" ||
-                            selectorPosition === "top_right"
-                              ? "100%"
-                              : "auto",
-                          background: backgroundColor,
-                          border: `1px solid ${optionBorderColor}`,
-                          padding: "10px",
-                          borderRadius: "8px",
-                          height:
-                            languageSelector === currencySelector
-                              ? "140px"
-                              : "90px",
-                          marginBottom: "1px",
-                          width: "100%",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "10px",
-                        }}
+                        style={previewSelectorBoxStyle}
                       >
-                        <div className={styles.close_button_wrapper}>
-                          <button
-                            onClick={handleCancelClick}
-                            className={styles.selector_box_close_button}
-                            id="selector-box-close-button"
-                          >
-                            <CloseIcon color={fontColor} />
-                          </button>
-                        </div>
-                        <div
-                          style={{
-                            display: `${languageSelector || (!languageSelector && !currencySelector) ? "block" : "none"}`,
-                            gap: "10px",
-                          }}
-                        >
-                          <div
-                            className={styles.custom_selector}
-                            data-type="language"
-                            onClick={handleLanguageClick}
-                          >
-                            <div
-                              className={styles.selector_header}
-                              data-type="language"
-                              style={{
-                                backgroundColor: backgroundColor,
-                                border: `1px solid ${optionBorderColor}`,
-                              }}
+                        {!isDirectSelectorPreview ? (
+                          <div className={styles.close_button_wrapper}>
+                            <button
+                              onClick={handleCancelClick}
+                              className={styles.selector_box_close_button}
+                              id="selector-box-close-button"
                             >
-                              <div
-                                className={styles.selected_option}
-                                data-type="language"
-                              >
-                                {isIncludedFlag && (
+                              <CloseIcon color={fontColor} />
+                            </button>
+                          </div>
+                        ) : null}
+                        {isDirectSelectorPreview ? (
+                          <>
+                            {showLanguagePreview ? (
+                              <div style={previewNativeSelectorWrapperStyle}>
+                                {isIncludedFlag ? (
                                   <img
-                                    className={styles.country_flag}
-                                    src={
-                                      localization.languages.find(
-                                        (language) => language.selected,
-                                      )?.flag
-                                    }
+                                    src={previewMarketFlagUrl}
                                     alt=""
-                                    width="25%"
-                                    height="25%"
+                                    style={previewNativeFlagStyle}
                                   />
-                                )}
-                                <span
-                                  className={styles.selected_text}
-                                  data-type="language"
-                                >
-                                  {
-                                    localization.languages.find(
-                                      (language) => language.selected,
-                                    )?.localeName
-                                  }
-                                </span>
+                                ) : null}
+                                <div style={previewNativeSelectorStyle}>
+                                  {selectedLanguage.localeName}
+                                </div>
+                                <div style={previewNativeArrowStyle} />
                               </div>
-                              <img
-                                id="currency-arrow-icon"
-                                className={styles.arrow_icon}
-                                src="/arrow.svg"
-                                alt="Arrow Icon"
-                                width="25%"
-                                height="25%"
-                              />
-                            </div>
+                            ) : null}
+                            {showCurrencyPreview ? (
+                              <div style={previewNativeSelectorWrapperStyle}>
+                                <div style={previewNativeCurrencyStyle}>
+                                  {selectedCurrency.localeName} ({selectedCurrency.symbol})
+                                </div>
+                                <div style={previewNativeArrowStyle} />
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
                             <div
-                              className={styles.options_container}
-                              data-type="language"
                               style={{
-                                bottom:
-                                  selectorPosition === "bottom_left" ||
-                                  selectorPosition === "bottom_right"
-                                    ? "100%"
-                                    : "auto",
-                                top:
-                                  selectorPosition === "top_left" ||
-                                  selectorPosition === "top_right"
-                                    ? "100%"
-                                    : "auto",
-                                display: isLanguageOpen ? "block" : "none",
-                                backgroundColor: backgroundColor,
-                                zIndex: "2000",
+                                display: showLanguagePreview ? "block" : "none",
+                                gap: "10px",
                               }}
                             >
                               <div
-                                className={styles.options_list}
-                                style={{
-                                  backgroundColor: backgroundColor,
-                                  border: `1px solid ${optionBorderColor}`,
-                                }}
+                                className={styles.custom_selector}
+                                data-type="language"
+                                onClick={() => handlePreviewMenuClick("language")}
                               >
-                                {localization.languages.map((language) => (
+                                <div
+                                  className={styles.selector_header}
+                                  data-type="language"
+                                  style={{
+                                    backgroundColor: backgroundColor,
+                                    border: `1px solid ${optionBorderColor}`,
+                                  }}
+                                >
                                   <div
-                                    className={styles.option_item}
-                                    data-value={language.iso_code}
+                                    className={styles.selected_option}
                                     data-type="language"
-                                    onClick={() =>
-                                      handleOptionClick(language.iso_code)
-                                    }
-                                    key={language.iso_code}
                                   >
                                     {isIncludedFlag && (
                                       <img
                                         className={styles.country_flag}
-                                        src={language.flag}
+                                        src={previewMarketFlagUrl}
                                         alt=""
                                         width="25%"
                                         height="25%"
                                       />
                                     )}
-                                    <span className={styles.option_text}>
-                                      {language.localeName}
+                                    <span
+                                      className={styles.selected_text}
+                                      data-type="language"
+                                    >
+                                      {selectedLanguage.localeName}
                                     </span>
                                   </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            display: `${currencySelector || (!languageSelector && !currencySelector) ? "block" : "none"}`,
-                            marginBottom: "10px",
-                          }}
-                        >
-                          <div
-                            className={styles.custom_selector}
-                            data-type="currency"
-                            onClick={handleCurrencyClick}
-                          >
-                            <div
-                              className={styles.selector_header}
-                              data-type="currency"
-                              style={{
-                                backgroundColor: backgroundColor,
-                                border: `1px solid ${optionBorderColor}`,
-                              }}
-                            >
-                              <div
-                                className={styles.selected_option}
-                                data-type="currency"
-                              >
-                                <span
-                                  className={styles.selected_text}
-                                  data-type="currency"
+                                  <img
+                                    id="currency-arrow-icon"
+                                    className={styles.arrow_icon}
+                                    src="/arrow.svg"
+                                    alt="Arrow Icon"
+                                    width="25%"
+                                    height="25%"
+                                  />
+                                </div>
+                                <div
+                                  className={styles.options_container}
+                                  data-type="language"
+                                  style={{
+                                    bottom:
+                                      selectorPosition === "bottom_left" ||
+                                      selectorPosition === "bottom_right"
+                                        ? "100%"
+                                        : "auto",
+                                    top:
+                                      selectorPosition === "top_left" ||
+                                      selectorPosition === "top_right"
+                                        ? "100%"
+                                        : "auto",
+                                    display:
+                                      activePreviewMenu === "language"
+                                        ? "block"
+                                        : "none",
+                                    backgroundColor: backgroundColor,
+                                    zIndex: "2000",
+                                  }}
                                 >
-                                  {
-                                    localization.currencies.find(
-                                      (currency) => currency.selected,
-                                    )?.localeName
-                                  }
-                                  (
-                                  {
-                                    localization.currencies.find(
-                                      (currency) => currency.selected,
-                                    )?.symbol
-                                  }
-                                  )
-                                </span>
+                                  <div
+                                    className={styles.options_list}
+                                    style={{
+                                      backgroundColor: backgroundColor,
+                                      border: `1px solid ${optionBorderColor}`,
+                                    }}
+                                  >
+                                    {previewLanguages.map((language) => (
+                                      <div
+                                        className={styles.option_item}
+                                        data-value={language.iso_code}
+                                        data-type="language"
+                                        onClick={() =>
+                                          handleOptionClick(
+                                            "language",
+                                            language.iso_code,
+                                          )
+                                        }
+                                        key={language.iso_code}
+                                      >
+                                        <span className={styles.option_text}>
+                                          {language.localeName}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
-                              <img
-                                id="currency-arrow-icon"
-                                className={styles.arrow_icon}
-                                src="/arrow.svg"
-                                alt="Arrow Icon"
-                                width="25%"
-                                height="25%"
-                              />
                             </div>
-
                             <div
-                              className={styles.options_container}
-                              data-type="currency"
                               style={{
-                                backgroundColor: backgroundColor,
-                                zIndex: "2000",
-                                display: isCurrencyOpen ? "block" : "none",
-                                bottom:
-                                  selectorPosition === "bottom_left" ||
-                                  selectorPosition === "bottom_right"
-                                    ? "100%"
-                                    : "auto",
-                                top:
-                                  selectorPosition === "top_left" ||
-                                  selectorPosition === "top_right"
-                                    ? "100%"
-                                    : "auto",
+                                display: showCurrencyPreview ? "block" : "none",
+                                marginBottom: "10px",
                               }}
                             >
                               <div
-                                className={styles.options_list}
-                                style={{
-                                  backgroundColor: backgroundColor,
-                                  border: `1px solid ${optionBorderColor}`,
-                                }}
+                                className={styles.custom_selector}
+                                data-type="currency"
+                                onClick={() => handlePreviewMenuClick("currency")}
                               >
-                                {localization.currencies.map((currency) => (
+                                <div
+                                  className={styles.selector_header}
+                                  data-type="currency"
+                                  style={{
+                                    backgroundColor: backgroundColor,
+                                    border: `1px solid ${optionBorderColor}`,
+                                  }}
+                                >
                                   <div
-                                    className={styles.option_item}
-                                    data-value={currency.iso_code}
+                                    className={styles.selected_option}
                                     data-type="currency"
-                                    key={currency.iso_code}
-                                    onClick={() =>
-                                      handleOptionClick(currency.iso_code)
-                                    }
                                   >
-                                    <span className={styles.option_text}>
-                                      {currency.localeName}
-                                    </span>
-                                    <span className={styles.currency_code}>
-                                      ({currency.symbol})
+                                    <span
+                                      className={styles.selected_text}
+                                      data-type="currency"
+                                    >
+                                      {selectedCurrency.localeName}
+                                      (
+                                      {selectedCurrency.symbol}
+                                      )
                                     </span>
                                   </div>
-                                ))}
+                                  <img
+                                    id="currency-arrow-icon"
+                                    className={styles.arrow_icon}
+                                    src="/arrow.svg"
+                                    alt="Arrow Icon"
+                                    width="25%"
+                                    height="25%"
+                                  />
+                                </div>
+
+                                <div
+                                  className={styles.options_container}
+                                  data-type="currency"
+                                  style={{
+                                    backgroundColor: backgroundColor,
+                                    zIndex: "2000",
+                                    display:
+                                      activePreviewMenu === "currency"
+                                        ? "block"
+                                        : "none",
+                                    bottom:
+                                      selectorPosition === "bottom_left" ||
+                                      selectorPosition === "bottom_right"
+                                        ? "100%"
+                                        : "auto",
+                                    top:
+                                      selectorPosition === "top_left" ||
+                                      selectorPosition === "top_right"
+                                        ? "100%"
+                                        : "auto",
+                                  }}
+                                >
+                                  <div
+                                    className={styles.options_list}
+                                    style={{
+                                      backgroundColor: backgroundColor,
+                                      border: `1px solid ${optionBorderColor}`,
+                                    }}
+                                  >
+                                    {previewCurrencies.map((currency) => (
+                                      <div
+                                        className={styles.option_item}
+                                        data-value={currency.iso_code}
+                                        data-type="currency"
+                                        key={currency.iso_code}
+                                        onClick={() =>
+                                          handleOptionClick(
+                                            "currency",
+                                            currency.iso_code,
+                                          )
+                                        }
+                                      >
+                                        <span className={styles.option_text}>
+                                          {currency.localeName}
+                                        </span>
+                                        <span className={styles.currency_code}>
+                                          ({currency.symbol})
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </div>
+                          </>
+                        )}
                       </div>
-                    )}
-                    <div
-                      id="main-box"
-                      className={styles.main_box}
-                      style={{
-                        justifyContent: isIncludedFlag ? "" : "center",
-                        background: backgroundColor,
-                      }}
-                      onClick={handleSelectorClick}
-                    >
-                      {isIncludedFlag && (
+                    ) : null}
+                    {isFloatingSelectorPreview ? (
+                      <div
+                        id="main-box"
+                        className={styles.main_box}
+                        style={{
+                          justifyContent: isIncludedFlag ? "" : "center",
+                          background: backgroundColor,
+                        }}
+                        onClick={handleSelectorClick}
+                      >
+                        {isIncludedFlag ? (
+                          <img
+                            className={styles.country_flag}
+                            src={previewMarketFlagUrl}
+                            alt=""
+                            width="25%"
+                            height="25%"
+                          />
+                        ) : null}
+                        <span id="display-text" className={styles.main_box_text}>
+                          {previewDisplayText}
+                        </span>
                         <img
-                          className={styles.country_flag}
-                          src={selectedLanguage?.flag}
-                          alt=""
-                          width="25%"
+                          id="mainbox-arrow-icon"
+                          className={styles.mainarrow_icon}
+                          src="/arrow.svg"
+                          alt="Arrow Icon"
+                          width="25px"
                           height="25%"
                         />
-                      )}
-                      <span id="display-text" className={styles.main_box_text}>
-                        {(languageSelector && currencySelector) ||
-                        (!languageSelector && !currencySelector)
-                          ? selectedLanguage?.localeName +
-                            " / " +
-                            selectedCurrency?.localeName
-                          : languageSelector
-                            ? selectedLanguage?.localeName
-                            : selectedCurrency?.localeName}
-                      </span>
-                      <img
-                        id="mainbox-arrow-icon"
-                        className={styles.mainarrow_icon}
-                        src="/arrow.svg"
-                        alt="Arrow Icon"
-                        width="25px"
-                        height="25%"
-                      />
-                    </div>
+                      </div>
+                    ) : null}
+                    {shouldUseSidebarWidget ? (
+                      <div
+                        id="translate-float-btn"
+                        onClick={handleSelectorClick}
+                        style={{
+                          display: "flex",
+                          width: "30px",
+                          minHeight: "112px",
+                          position: "absolute",
+                          alignItems:
+                            selectorPosition === "top_left" ||
+                            selectorPosition === "bottom_left"
+                              ? "flex-end"
+                              : "flex-start",
+                          justifyContent:
+                            selectorPosition === "top_left" ||
+                            selectorPosition === "bottom_left"
+                              ? "flex-end"
+                              : "flex-start",
+                          left:
+                            selectorPosition === "top_left" ||
+                            selectorPosition === "bottom_left"
+                              ? "0"
+                              : "auto",
+                          right:
+                            selectorPosition === "top_right" ||
+                            selectorPosition === "bottom_right"
+                              ? "0"
+                              : "auto",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div
+                          id="translate-float-btn-text"
+                          style={{
+                            display: "block",
+                            padding: "0 18px",
+                            fontSize: "14px",
+                            lineHeight: "30px",
+                            height: "30px",
+                            fontWeight: 700,
+                            overflow: "hidden",
+                            transform: "rotate(90deg)",
+                            transformOrigin: "right top",
+                            position: "absolute",
+                            right: 0,
+                            whiteSpace: "nowrap",
+                            userSelect: "none",
+                            color: fontColor,
+                            background: backgroundColor,
+                            border:
+                              selectorPosition === "top_left" ||
+                              selectorPosition === "bottom_left"
+                                ? `1px solid ${optionBorderColor}`
+                                : `1px solid ${optionBorderColor}`,
+                            borderRadius:
+                              selectorPosition === "top_left" ||
+                              selectorPosition === "bottom_left"
+                                ? "8px 8px 0 0"
+                                : "0 0 8px 8px",
+                          }}
+                        >
+                          <span>Translate</span>
+                        </div>
+                        {isIncludedFlag ? (
+                          <img
+                            id="translate-float-btn-icon"
+                            src={previewMarketFlagUrl}
+                            alt=""
+                            width="28"
+                            height="20"
+                            style={{
+                              borderRadius: "3px",
+                              boxShadow: "0 1px 4px rgba(0, 0, 0, 0.08)",
+                              position: "relative",
+                              top: 36,
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -1388,7 +1528,7 @@ const Index = () => {
         >
           <Text>{t("This feature is available only with the paid plan.")}</Text>
         </Modal>
-      </Space>
+      </div>
     </Page>
   );
 };

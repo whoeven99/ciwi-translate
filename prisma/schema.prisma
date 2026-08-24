@@ -131,6 +131,8 @@ model SwitcherConfiguration {
   languageSelector      Boolean  @default(true)
   currencySelector      Boolean  @default(true)
   ipOpen                Boolean  @default(false)
+  browserLanguageOpen   Boolean  @default(true)
+  marketCurrencyOpen    Boolean  @default(true)
   includedFlag          Boolean  @default(true)
   fontColor             String   @default("#000000")
   backgroundColor       String   @default("#ffffff")

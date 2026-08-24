@@ -15,7 +15,12 @@ import {
   CIWI_TRANSLATION_TTL_MS,
   resolveStorefrontProductId,
 } from "./ciwi-page.js";
-import { useCacheThenRefresh } from "./ciwi-storage.js";
+import {
+  useCacheThenRefresh,
+  getStorageItem,
+  setStorageItem,
+  removeStorageItem,
+} from "./ciwi-storage.js";
 import {
   CIWI_MONEY_SELECTOR,
   isPriceRelatedElement,
@@ -426,10 +431,7 @@ async function refreshSelectedCurrency({ blockId, shop, ciwiBlock }) {
   if (!ciwiBlock || !shop) return;
 
   let currencyData = [];
-  const localStorageCurrencyDataJSON =
-    typeof localStorage !== "undefined"
-      ? localStorage.getItem("ciwi_currency_data")
-      : null;
+  const localStorageCurrencyDataJSON = getCurrencyDataCache(shop);
 
   if (localStorageCurrencyDataJSON) {
     try {
@@ -441,12 +443,16 @@ async function refreshSelectedCurrency({ blockId, shop, ciwiBlock }) {
 
   if (!Array.isArray(currencyData) || !currencyData.length) {
     currencyData = await fetchCurrencies({ blockId, shop });
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("ciwi_currency_data", JSON.stringify(currencyData));
-    }
+    setCurrencyDataCache(shop, currencyData);
   }
 
-  await initializeCurrency({ blockId, currencyData, shop, ciwiBlock });
+  await initializeCurrency({
+    blockId,
+    currencyData,
+    shop,
+    ciwiBlock,
+    marketCurrencyOpen: false,
+  });
 }
 
 function syncCurrencySelectionState({
@@ -456,6 +462,7 @@ function syncCurrencySelectionState({
   persist = true,
 }) {
   const nextCode = String(selectedCurrencyCode || "").trim();
+  const storageScope = getSwitcherStorageScope(ciwiBlock);
   const currencyInput = ciwiBlock?.querySelector('input[name="currency_code"]');
   if (currencySelect && nextCode && currencySelect.value !== nextCode) {
     currencySelect.value = nextCode;
@@ -464,8 +471,8 @@ function syncCurrencySelectionState({
     currencyInput.value = nextCode;
     currencyInput.setAttribute("value", nextCode);
   }
-  if (persist && typeof localStorage !== "undefined" && nextCode) {
-    localStorage.setItem("ciwi_selected_currency", nextCode);
+  if (persist && nextCode) {
+    setSelectedCurrencyCache(storageScope, nextCode);
   }
 
   const languageSelectorContainer = ciwiBlock?.querySelector(
@@ -488,6 +495,7 @@ export async function initializeCurrency({
   currencyData,
   shop,
   ciwiBlock,
+  marketCurrencyOpen = true,
 }) {
   const pageCurrencyCode = ciwiBlock.querySelector(
     'input[name="currency_code"]',
@@ -499,11 +507,11 @@ export async function initializeCurrency({
   if (!ciwiBlock.dataset.ciwiBaseCurrencyCode && baseCurrencyCode) {
     ciwiBlock.dataset.ciwiBaseCurrencyCode = baseCurrencyCode;
   }
-  const persistedCurrencyCode =
-    typeof localStorage !== "undefined"
-      ? localStorage.getItem("ciwi_selected_currency")
-      : "";
-  const selectedCurrencyCode = persistedCurrencyCode || pageCurrencyCode;
+  const persistedCurrencyCode = getSelectedCurrencyCache(shop) || "";
+  const selectedCurrencyCode =
+    marketCurrencyOpen || !persistedCurrencyCode
+      ? pageCurrencyCode
+      : persistedCurrencyCode;
   const moneyFormat = ciwiBlock.querySelector("#queryMoneyFormat").value;
 
   let selectedCurrency = currencyData?.find(
@@ -521,11 +529,10 @@ export async function initializeCurrency({
     !selectedCurrency &&
     persistedCurrencyCode &&
     pageCurrencyCode &&
-    persistedCurrencyCode !== pageCurrencyCode &&
-    typeof localStorage !== "undefined"
+    persistedCurrencyCode !== pageCurrencyCode
   ) {
-    localStorage.setItem("ciwi_selected_currency", pageCurrencyCode);
-    localStorage.removeItem("ciwi_selected_currency_rate");
+    setSelectedCurrencyCache(shop, pageCurrencyCode);
+    clearSelectedCurrencyRateCache(shop);
   }
   // 获取新的选择器元素
   const customSelector = ciwiBlock.querySelector(
@@ -544,6 +551,7 @@ export async function initializeCurrency({
     ciwiBlock,
     currencySelect,
     selectedCurrencyCode: effectiveSelectedCurrencyCode,
+    persist: !marketCurrencyOpen,
   });
 
   if (activePriceObserver) {
@@ -570,9 +578,7 @@ export async function initializeCurrency({
     selectedCurrency?.exchangeRate == null
   ) {
     const localRateJSON =
-      typeof localStorage !== "undefined"
-        ? localStorage.getItem("ciwi_selected_currency_rate")
-        : null;
+      getSelectedCurrencyRateCache(shop);
     const localRate = localRateJSON ? JSON.parse(localRateJSON) : null;
     if (
       localRate &&
@@ -594,22 +600,15 @@ export async function initializeCurrency({
           currencySelect,
           selectedCurrencyCode: baseCurrencyCode,
         });
-        if (typeof localStorage !== "undefined") {
-          localStorage.removeItem("ciwi_selected_currency_rate");
-        }
+        clearSelectedCurrencyRateCache(shop);
         transformPrices({ rate: 1, moneyFormat, selectedCurrency: null });
         return;
       }
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem(
-          "ciwi_selected_currency_rate",
-          JSON.stringify({
-            currencyCode: selectedCurrency.currencyCode,
-            fromCurrencyCode: baseCurrencyCode,
-            exchangeRate: rate,
-          }),
-        );
-      }
+      setSelectedCurrencyRateCache(shop, {
+        currencyCode: selectedCurrency.currencyCode,
+        fromCurrencyCode: baseCurrencyCode,
+        exchangeRate: rate,
+      });
     }
   } else {
     rate = Number(selectedCurrency.exchangeRate);
@@ -619,9 +618,7 @@ export async function initializeCurrency({
         currencySelect,
         selectedCurrencyCode: baseCurrencyCode,
       });
-      if (typeof localStorage !== "undefined") {
-        localStorage.removeItem("ciwi_selected_currency_rate");
-      }
+      clearSelectedCurrencyRateCache(shop);
       transformPrices({ rate: 1, moneyFormat, selectedCurrency: null });
       return;
     }
@@ -751,8 +748,7 @@ export async function CurrencySelectorTakeEffect(
 ) {
   if (!isCurrencySelectorTakeEffect) return;
 
-  const localStorageCurrencyDataJSON =
-    localStorage.getItem("ciwi_currency_data");
+  const localStorageCurrencyDataJSON = getCurrencyDataCache(shop);
   let currencyData = [];
 
   if (localStorageCurrencyDataJSON) {
@@ -764,7 +760,7 @@ export async function CurrencySelectorTakeEffect(
   }
   if (!Array.isArray(currencyData) || !currencyData.length) {
     currencyData = await fetchCurrencies({ blockId, shop });
-    localStorage.setItem("ciwi_currency_data", JSON.stringify(currencyData));
+    setCurrencyDataCache(shop, currencyData);
   }
 
   const currencySelector = ciwiBlock.querySelector(
@@ -783,7 +779,13 @@ export async function CurrencySelectorTakeEffect(
   currencySelectorHeader.style.border = "none";
   currencySelector.style.display = "block";
 
-  initializeCurrency({ blockId, currencyData, shop, ciwiBlock });
+  initializeCurrency({
+    blockId,
+    currencyData,
+    shop,
+    ciwiBlock,
+    marketCurrencyOpen: data?.marketCurrencyOpen !== false,
+  });
 }
 
 /**
@@ -822,21 +824,73 @@ export async function LanguageSelectorTakeEffect(
   if (selectorFlag) {
     selectorFlag.dataset.enabled = data?.includedFlag ? "true" : "false";
   }
-  if (data?.includedFlag) {
-    const languageCode = ciwiBlock.querySelector('input[name="language_code"]')?.value;
-    const flagUrl = window.languageLocaleData?.[languageCode]?.countries?.[0];
-    updateLanguageSelectorFlag(ciwiBlock, flagUrl);
-  } else {
-    updateLanguageSelectorFlag(ciwiBlock, "");
-  }
+  syncMarketFlags(data, ciwiBlock);
 }
 
-// 语言国旗渲染（依赖 24KB 的 languageLocaleData）。
-// 从 LanguageSelectorTakeEffect 拆出，便于按需（空闲/交互）延迟渲染，
-// 把 24KB 数据移出每页关键路径。
-let _languageFlagsRendered = false;
+function normalizeCountryCode(countryCode) {
+  return String(countryCode || "")
+    .trim()
+    .toUpperCase();
+}
 
-export function updateLanguageSelectorFlag(ciwiBlock, flagUrl) {
+function buildFlagEmoji(countryCode) {
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+  if (!/^[A-Z]{2}$/.test(normalizedCountryCode)) {
+    return "🏳";
+  }
+
+  return Array.from(normalizedCountryCode)
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+}
+
+function buildInlineFlagDataUrl(countryCode) {
+  const emoji = buildFlagEmoji(countryCode);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 60 40"><rect width="60" height="40" rx="4" fill="white"/><text x="30" y="26" text-anchor="middle" font-size="22">${emoji}</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function buildCountryFlagUrl(countryCode) {
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+  if (!normalizedCountryCode) return "";
+
+  return `https://img.bogdatech.com/app/${normalizedCountryCode}.webp`;
+}
+
+function getCurrentMarketCountryCode(ciwiBlock) {
+  return normalizeCountryCode(
+    ciwiBlock?.querySelector('input[name="country_code"]')?.value,
+  );
+}
+
+function setFlagImageSource(flagImage, countryCode, onLoad) {
+  if (!(flagImage instanceof HTMLImageElement)) return;
+
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+  if (!normalizedCountryCode) {
+    flagImage.hidden = true;
+    return;
+  }
+
+  const fallbackUrl = buildInlineFlagDataUrl(normalizedCountryCode);
+  const remoteUrl = buildCountryFlagUrl(normalizedCountryCode);
+
+  flagImage.alt = `${normalizedCountryCode} flag`;
+  flagImage.dataset.flagCountry = normalizedCountryCode;
+  flagImage.dataset.flagFallbackApplied = "0";
+  flagImage.onerror = () => {
+    if (flagImage.dataset.flagFallbackApplied === "1") return;
+    flagImage.dataset.flagFallbackApplied = "1";
+    flagImage.src = fallbackUrl;
+  };
+  if (typeof onLoad === "function") {
+    flagImage.addEventListener("load", onLoad, { once: true });
+  }
+  flagImage.src = remoteUrl || fallbackUrl;
+  flagImage.hidden = false;
+}
+
+export function updateLanguageSelectorFlag(ciwiBlock, countryCode) {
   const selectorFlag = ciwiBlock.querySelector("#language-selector-flag");
   const languageSelect = ciwiBlock.querySelector(".language_selector_header");
   if (!selectorFlag || !languageSelect) return;
@@ -847,14 +901,12 @@ export function updateLanguageSelectorFlag(ciwiBlock, flagUrl) {
     return;
   }
 
-  if (flagUrl) {
-    selectorFlag.addEventListener(
-      "load",
+  if (countryCode) {
+    setFlagImageSource(
+      selectorFlag,
+      countryCode,
       () => syncCompactSwitcherLayout(ciwiBlock),
-      { once: true },
     );
-    selectorFlag.src = flagUrl;
-    selectorFlag.hidden = false;
     languageSelect.style.paddingLeft = "40px";
   } else {
     selectorFlag.hidden = true;
@@ -862,76 +914,50 @@ export function updateLanguageSelectorFlag(ciwiBlock, flagUrl) {
   }
 }
 
-export function renderLanguageFlags(data, ciwiBlock) {
-  if (_languageFlagsRendered) return;
-  if (!data?.includedFlag) return;
-  const languageLocaleData = window.languageLocaleData || null;
-  if (!languageLocaleData) return; // 数据尚未加载，稍后重试
-
-  const language = ciwiBlock.querySelector('input[name="language_code"]')?.value;
-  const countryCode = languageLocaleData?.[language]?.countries?.[0];
+export function syncMarketFlags(data, ciwiBlock) {
   const mainLanguageFlag = ciwiBlock.querySelector("#main-language-flag");
   const translateFloatBtnIcon = ciwiBlock.querySelector(
     "#translate-float-btn-icon",
   );
+  const marketCountryCode = data?.includedFlag
+    ? getCurrentMarketCountryCode(ciwiBlock)
+    : "";
 
-  updateLanguageSelectorFlag(ciwiBlock, countryCode);
+  updateLanguageSelectorFlag(ciwiBlock, marketCountryCode);
 
-  if (
-    data?.includedFlag &&
-    mainLanguageFlag &&
-    countryCode &&
-    (data.languageSelector || data.currencySelector)
-  ) {
-    mainLanguageFlag.addEventListener(
-      "load",
-      () => syncCompactSwitcherLayout(ciwiBlock),
-      { once: true },
-    );
-    mainLanguageFlag.src = countryCode;
-    mainLanguageFlag.hidden = false;
+  if (mainLanguageFlag) {
+    if (marketCountryCode && (data.languageSelector || data.currencySelector)) {
+      setFlagImageSource(
+        mainLanguageFlag,
+        marketCountryCode,
+        () => syncCompactSwitcherLayout(ciwiBlock),
+      );
+    } else {
+      mainLanguageFlag.hidden = true;
+    }
   }
-  if (
-    data?.includedFlag &&
-    translateFloatBtnIcon &&
-    countryCode &&
-    !data.languageSelector &&
-    !data.currencySelector
-  ) {
-    translateFloatBtnIcon.src = countryCode;
-    translateFloatBtnIcon.hidden = false;
+  if (translateFloatBtnIcon) {
+    if (marketCountryCode && !data.languageSelector && !data.currencySelector) {
+      setFlagImageSource(translateFloatBtnIcon, marketCountryCode);
+    } else {
+      translateFloatBtnIcon.hidden = true;
+    }
   }
   const mainBoxText = ciwiBlock.querySelector(".main_box_text");
   const mainBox = ciwiBlock.querySelector("#main-box");
   if (mainBox) {
     mainBox.classList.toggle(
       "has-flag",
-      Boolean(mainBoxText && mainLanguageFlag && !mainLanguageFlag.hidden && countryCode),
+      Boolean(
+        mainBoxText &&
+          mainLanguageFlag &&
+          !mainLanguageFlag.hidden &&
+          marketCountryCode,
+      ),
     );
   }
 
   syncCompactSwitcherLayout(ciwiBlock);
-
-  _languageFlagsRendered = true;
-}
-
-// 按需注入 language-locale-data.js（单例 Promise）。URL 由 liquid 的 #ciwiLocaleDataUrl 提供。
-let _localeDataPromise = null;
-
-export function ensureLanguageLocaleData() {
-  if (window.languageLocaleData)
-    return Promise.resolve(window.languageLocaleData);
-  if (_localeDataPromise) return _localeDataPromise;
-  const url = document.querySelector("#ciwiLocaleDataUrl")?.value;
-  if (!url) return Promise.resolve(null);
-  _localeDataPromise = new Promise((resolve) => {
-    const s = document.createElement("script");
-    s.src = url;
-    s.onload = () => resolve(window.languageLocaleData || null);
-    s.onerror = () => resolve(null);
-    document.head.appendChild(s);
-  });
-  return _localeDataPromise;
 }
 
 // 保存所有我们替换过的 img 以及“替换后的最终值”
@@ -2313,6 +2339,7 @@ export class CiwiswitcherForm extends HTMLElement {
   constructor() {
     super();
     this.elements = {}; // 空对象，等 connectedCallback 再赋值
+    this.data = null;
   }
   connectedCallback() {
     const blockId = this.querySelector('input[name="block_id"]')?.value;
@@ -2373,14 +2400,15 @@ export class CiwiswitcherForm extends HTMLElement {
       currencySelect: this.querySelector(".currency_selector_header"),
       closeButton: this.querySelector(".selector_box_close_button"),
     };
+    this.data = ciwiBlock.__ciwiConfigData || this.data;
     // 初始化所有事件监听
     this.initializeEventListeners();
 
+    const storageScope = getSwitcherStorageScope(ciwiBlock);
     const shouldRestoreOpen =
       !this.isDirectSelectorMode() &&
       !this.isSidebarWidgetMode() &&
-      typeof localStorage !== "undefined" &&
-      localStorage.getItem("ciwi_switcher_panel_open") === "1";
+      getSwitcherPanelOpenCache(storageScope) === "1";
 
     if (shouldRestoreOpen) {
       requestAnimationFrame(() => this.openSelectorPanel());
@@ -2461,9 +2489,7 @@ export class CiwiswitcherForm extends HTMLElement {
       requestAnimationFrame(() => box.classList.add("is-open"));
     });
     this.rotateArrow("#mainbox-arrow-icon", 180);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("ciwi_switcher_panel_open", "1");
-    }
+    setSwitcherPanelOpenCache(getSwitcherStorageScope(this.elements.ciwiBlock), "1");
   }
 
   closeSelectorPanel() {
@@ -2476,9 +2502,7 @@ export class CiwiswitcherForm extends HTMLElement {
       this.elements.selectorBackdrop.style.display = "none";
     }
     this.rotateArrow("#mainbox-arrow-icon", 0);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("ciwi_switcher_panel_open", "0");
-    }
+    setSwitcherPanelOpenCache(getSwitcherStorageScope(this.elements.ciwiBlock), "0");
 
     // direct 模式常驻显示，不隐藏
     if (this.isDirectSelectorMode()) {
@@ -2528,7 +2552,6 @@ export class CiwiswitcherForm extends HTMLElement {
     const select = event.currentTarget;
     const value = select?.value;
     const selectorType = select?.dataset.type;
-    const languageLocaleData = window.languageLocaleData || null;
     const shouldClosePanel = !this.isDirectSelectorMode();
     const closePanelAfterSelection = () => {
       if (!shouldClosePanel) return;
@@ -2540,22 +2563,14 @@ export class CiwiswitcherForm extends HTMLElement {
     if (selectorType === "language") {
       if (!value || this.elements.languageInput.value == value) return;
       this.elements.languageInput.value = value;
-      const flag = languageLocaleData?.[value]?.countries?.[0];
-      updateLanguageSelectorFlag(this.elements.ciwiBlock, flag);
-      const mainBoxFlag = this.querySelector("#main-language-flag");
-      const translateFloatBtnIcon = this.querySelector("#translate-float-btn-icon");
-      if (mainBoxFlag && flag) {
-        mainBoxFlag.src = flag;
-        mainBoxFlag.hidden = false;
-      }
-      if (translateFloatBtnIcon && flag) {
-        translateFloatBtnIcon.src = flag;
-        translateFloatBtnIcon.hidden = false;
-      }
+      syncMarketFlags(this.data, this.elements.ciwiBlock);
     } else if (selectorType === "currency") {
       if (!value || this.elements.currencyInput.value == value) return;
       this.elements.currencyInput.value = value;
-      localStorage.setItem("ciwi_selected_currency", value);
+      setSelectedCurrencyCache(
+        getSwitcherStorageScope(this.elements.ciwiBlock),
+        value,
+      );
       closePanelAfterSelection();
       event.preventDefault();
 
@@ -2614,6 +2629,7 @@ export class CiwiswitcherForm extends HTMLElement {
       persistManualLocalizationPreference({
         country: this.elements.countryInput?.value,
         language: this.elements.languageInput?.value,
+        shop: this.elements.ciwiBlock.querySelector("#queryCiwiId")?.value,
       });
       form.submit();
     }
@@ -2684,6 +2700,74 @@ const AUTO_LIQUID_MAX_NODES = 6000;
 const AUTO_LIQUID_SLICE_MS = 8;
 /** 同店同语采集防重入。 */
 const autoLiquidCollectInFlight = new Set();
+
+function getSwitcherStorageScope(shopOrCiwiBlock) {
+  if (typeof shopOrCiwiBlock === "string") return shopOrCiwiBlock;
+  return (
+    shopOrCiwiBlock?.querySelector?.("#queryCiwiId")?.value ||
+    shopOrCiwiBlock?.querySelector?.('input[name="shopName"]')?.value ||
+    ""
+  );
+}
+
+function getCurrencyDataCache(shop) {
+  return getStorageItem("ciwi_currency_data", {
+    scope: shop,
+    legacyKeys: ["ciwi_currency_data"],
+  });
+}
+
+function setCurrencyDataCache(shop, currencyData) {
+  setStorageItem("ciwi_currency_data", JSON.stringify(currencyData), {
+    scope: shop,
+  });
+}
+
+function getSelectedCurrencyCache(shop) {
+  return getStorageItem("ciwi_selected_currency", {
+    scope: shop,
+    legacyKeys: ["ciwi_selected_currency"],
+  });
+}
+
+function setSelectedCurrencyCache(shop, currencyCode) {
+  setStorageItem("ciwi_selected_currency", currencyCode, {
+    scope: shop,
+  });
+}
+
+function getSelectedCurrencyRateCache(shop) {
+  return getStorageItem("ciwi_selected_currency_rate", {
+    scope: shop,
+    legacyKeys: ["ciwi_selected_currency_rate"],
+  });
+}
+
+function setSelectedCurrencyRateCache(shop, payload) {
+  setStorageItem("ciwi_selected_currency_rate", JSON.stringify(payload), {
+    scope: shop,
+  });
+}
+
+function clearSelectedCurrencyRateCache(shop) {
+  removeStorageItem("ciwi_selected_currency_rate", {
+    scope: shop,
+    legacyKeys: ["ciwi_selected_currency_rate"],
+  });
+}
+
+function getSwitcherPanelOpenCache(shop) {
+  return getStorageItem("ciwi_switcher_panel_open", {
+    scope: shop,
+    legacyKeys: ["ciwi_switcher_panel_open"],
+  });
+}
+
+function setSwitcherPanelOpenCache(shop, value) {
+  setStorageItem("ciwi_switcher_panel_open", value, {
+    scope: shop,
+  });
+}
 
 /** 店面采集日志默认开；localStorage.ciwi_debug_auto_liquid=0 可关。 */
 function autoLiquidLog(...args) {

@@ -1,6 +1,11 @@
 // main.js
 import * as API from "./ciwi-api.js";
-import { useCacheThenRefresh, setWithTTL, getWithTTL } from "./ciwi-storage.js";
+import {
+  useCacheThenRefresh,
+  setWithTTL,
+  getWithTTL,
+  setStorageItem,
+} from "./ciwi-storage.js";
 import {
   CiwiswitcherForm,
   updateDisplayText,
@@ -11,8 +16,6 @@ import {
   HomeImageTranslate,
   CustomLiquidTextTranslate,
   CollectUntranslatedText,
-  renderLanguageFlags,
-  ensureLanguageLocaleData,
 } from "./ciwi-ui.js";
 import {
   getManualLocalizationPreference,
@@ -480,19 +483,31 @@ async function ciwiOnload() {
   runStorefrontTranslationTasks();
 
   // 加载配置（缓存 + 后台刷新，保留“最多两次”语义）
-  const configKey = `ciwi_switcher_config`;
+  const configKey = "ciwi_switcher_config";
+  const configStorageOptions = {
+    storageScope: shop.value,
+    legacyKeys: [configKey],
+  };
   // 记录本次是否命中缓存：仅命中缓存时才在末尾后台刷新，
   // 避免首次访问（无缓存）背靠背发两次相同的 config 请求
-  const hadConfigCache = !!getWithTTL(configKey);
+  const hadConfigCache = !!getWithTTL(configKey, {
+    scope: shop.value,
+    legacyKeys: [configKey],
+  });
   const fetchSwitcherConfig = await useCacheThenRefresh(
     configKey,
     async () => API.fetchSwitcherConfig({ shop: shop.value }),
     1000 * 60 * 60,
+    configStorageOptions,
   );
 
   const configData = fetchSwitcherConfig?.success
     ? fetchSwitcherConfig?.response
     : null;
+  ciwiBlock.__ciwiConfigData = configData;
+  document.querySelectorAll("ciwiswitcher-form").forEach((formElement) => {
+    formElement.data = configData;
+  });
 
   // 自动抓取第三方未翻译文本（默认开；非预览）。浏览器空闲时执行，避免抢关键路径。
   const scheduleAutoLiquidCollect = () => {
@@ -557,7 +572,7 @@ async function ciwiOnload() {
     ciwiBlock.querySelectorAll('ul[role="list"] a[data-value]'),
   ).map((link) => link.getAttribute("data-value"));
 
-  const manualLocalizationPreference = getManualLocalizationPreference();
+  const manualLocalizationPreference = getManualLocalizationPreference(shop.value);
   const preferredLanguage = availableLanguages.includes(
     manualLocalizationPreference?.language,
   )
@@ -581,34 +596,48 @@ async function ciwiOnload() {
     );
   }
 
-  //浏览器语言
-  let browserLanguage = navigator.language || navigator.userLanguage;
-
-  // 如果语言包含 'q=xx' 或类似的内容，提取前面的部分
-  browserLanguage = browserLanguage.split(";")[0];
-
-  if (!browserLanguage.includes("zh")) {
-    browserLanguage = browserLanguage.split("-")[0]; // 只保留语言部分
-  }
+  const browserLanguageSignals = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    navigator.language,
+    navigator.userLanguage,
+  ].filter(Boolean);
+  const resolvedBrowserLanguage =
+    browserLanguageSignals
+      .map((locale) => resolveAvailableLanguage(locale, availableLanguages))
+      .find(Boolean) || "";
+  const runtimeLanguage = detectRuntimeLanguage(ciwiBlock, availableLanguages);
 
   let detectedCountry = preferredCountry || countryValue;
-  let detectedLanguage = preferredLanguage || browserLanguage;
-  const shouldRunAutoLocalization =
+  let detectedLanguage =
+    preferredLanguage ||
+    runtimeLanguage ||
+    languageValue;
+  const shouldAutoMatchMarketByIP =
     !isInThemePreview &&
     configData?.ipOpen &&
     !hasUserLocalizationData;
+  const shouldAutoSwitchBrowserLanguage =
+    !isInThemePreview &&
+    configData?.browserLanguageOpen &&
+    !hasUserLocalizationData;
+  const shouldRunAutoLocalization =
+    shouldAutoMatchMarketByIP || shouldAutoSwitchBrowserLanguage;
+
+  if (shouldAutoSwitchBrowserLanguage && resolvedBrowserLanguage) {
+    detectedLanguage = resolvedBrowserLanguage;
+  }
 
   // IP 定位：每次进入都重新请求，不使用 localStorage 缓存
-  if (shouldRunAutoLocalization) {
+  if (shouldAutoMatchMarketByIP) {
     const iptokenValue = ciwiBlock.querySelector(
       'input[name="iptoken"]',
     )?.value;
 
-    if (!iptokenValue) return;
-
-    const IpData = await API.fetchUserCountryInfo(iptokenValue);
-    if (IpData?.countryCode) {
-      detectedCountry = IpData.countryCode;
+    if (iptokenValue) {
+      const IpData = await API.fetchUserCountryInfo(iptokenValue);
+      if (IpData?.countryCode) {
+        detectedCountry = IpData.countryCode;
+      }
     }
   }
 
@@ -661,25 +690,6 @@ async function ciwiOnload() {
     ciwiBlock,
   );
 
-  // 国旗数据（24KB）按需加载：浏览器空闲时加载并渲染国旗；
-  // 若用户在此之前先接触切换器，则立即加载（先于 idle）。两条路径都只渲染一次。
-  if (isLanguageSelectorTakeEffect && configData?.includedFlag && !isInThemePreview) {
-    const loadFlags = () =>
-      ensureLanguageLocaleData().then(() =>
-        renderLanguageFlags(configData, ciwiBlock),
-      );
-    if ("requestIdleCallback" in window) {
-      window.requestIdleCallback(loadFlags, { timeout: 3000 });
-    } else {
-      setTimeout(loadFlags, 1200);
-    }
-    const mainBox = ciwiBlock.querySelector("#main-box");
-    const languageSelect = ciwiBlock.querySelector(".language_selector_header");
-    mainBox?.addEventListener("mouseenter", loadFlags, { once: true });
-    languageSelect?.addEventListener("mouseenter", loadFlags, { once: true });
-    languageSelect?.addEventListener("focus", loadFlags, { once: true });
-  }
-
   if (isInThemePreview) {
     renderPreviewCurrencySelector({
       ciwiBlock,
@@ -703,9 +713,6 @@ async function ciwiOnload() {
     "#translate-float-btn-text",
   );
   const translateFloatBtn = ciwiBlock.querySelector("#translate-float-btn");
-  const translateFloatBtnIcon = ciwiBlock.querySelector(
-    "#translate-float-btn-icon",
-  );
   const selectorBox = ciwiBlock.querySelector("#selector-box");
   const selectorBackdrop = ciwiBlock.querySelector("#selector-backdrop");
   const closeButtonWrapper = ciwiBlock.querySelector(".close_button_wrapper");
@@ -874,7 +881,10 @@ async function ciwiOnload() {
     API.fetchSwitcherConfig({ shop: shop.value })
       .then((fresh) => {
         if (fresh) {
-          setWithTTL("ciwi_switcher_config", fresh);
+          setWithTTL("ciwi_switcher_config", fresh, 1000 * 60 * 60, {
+            scope: shop.value,
+            legacyKeys: [configKey],
+          });
         }
       })
       .catch(() => {});
@@ -884,7 +894,9 @@ async function ciwiOnload() {
     API.fetchCurrencies({ blockId, shop: shop.value })
       .then((fresh) => {
         if (fresh) {
-          localStorage.setItem("ciwi_currency_data", JSON.stringify(fresh));
+          setStorageItem("ciwi_currency_data", JSON.stringify(fresh), {
+            scope: shop.value,
+          });
         }
       })
       .catch(() => {});
