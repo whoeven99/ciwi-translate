@@ -929,7 +929,10 @@ redirect records.
  `AUTO_LIQUID_JUNK_CLEANUP_BATCH_SIZE` / `AUTO_LIQUID_JUNK_CLEANUP_DELAY_MS`）。
 claim PENDING 时也会跳过并
 删除这类行，避免拿去翻译。管理页
- `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
+ `/app/manage_translation/custom_liquid` 按 metafield 风格编辑（顶栏语言筛选，
+ 不展示 status / source / 替换方式）；新建规则默认模糊替换。PageFly 管理入口
+ 已去掉，旧 URL 重定向到 custom_liquid；店面 `userPageFly/readTranslatedText`
+ 仍读 `PageFlyTranslation`，数据暂不迁移。
 
 - **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
  `api.storefront.$.ts` 的 switcher / currency（`getCurrencyByShopName` +
@@ -975,6 +978,9 @@ gets `302` from `authenticate.admin` on `/api/picture/upload`.
 
 - Main page: `app/routes/app.manage_translation/route.tsx`.
 - Resource pages: `app/routes/app.manage_translation_.*/route.tsx`.
+- Custom Liquid（metafield 风格）：`app/routes/app.manage_translation_.custom_liquid/route.tsx`；
+  顶栏语言筛选，不展示 status / source / 替换方式；新建默认模糊替换。
+  `/app/manage_translation/pagefly` 重定向到 custom_liquid（店面 PageFly 接口仍保留）。
 - Server helper: `app/server/manageTranslation/manageTranslationRoute.server.ts`.
 - Manage save paths use TSF/Shopify helpers such as
 `app/server/shopify/translations.server.ts`.

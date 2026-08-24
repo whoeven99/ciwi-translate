@@ -1,152 +1,262 @@
-import { Page } from "@shopify/polaris";
-import { useEffect, useMemo, useState } from "react";
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { authenticate } from "~/shopify.server";
 import {
   Alert,
   Card,
   Checkbox,
+  Divider,
   Flex,
-  Pagination,
-  Select,
-  Skeleton,
+  Layout,
   Space,
+  Spin,
   Table,
-  Typography,
 } from "antd";
 import Button from "~/ui/components/AppButton";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
+import { Page, Pagination, Select } from "@shopify/polaris";
+import { SaveBar } from "@shopify/app-bridge-react";
 import { useTranslation } from "react-i18next";
+import { useSelector } from "react-redux";
+import { SingleTextTranslate } from "~/api/translateV4Client";
+import ManageTranslationFieldRow from "~/components/manageTranslationFieldRow";
+import SingleTranslateAction from "~/components/singleTranslateAction";
+import { useSingleTranslateQuotaGate } from "~/hooks/useSingleTranslateQuotaGate";
+import { globalStore } from "~/globalStore";
+import { getItemOptions } from "../app.manage_translation/route";
+import { manageTranslationLanguageLoader } from "~/server/manageTranslation/manageTranslationRoute.server";
+import {
+  deleteLiquidCompat,
+  insertLiquidCompat,
+  selectLiquidCompat,
+  type LiquidTableRow,
+} from "./liquidClient";
+import UpdateCustomTransModal from "./components/updateCustomTransModal";
 import {
   getTranslateV4ErrorMessage,
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
-import { globalStore } from "~/globalStore";
-import {
-  deleteLiquidCompat,
-  selectLiquidCompat,
-  toggleLiquidReplacementMethodCompat,
-  type LiquidTableRow,
-} from "./liquidClient";
-import UpdateCustomTransModal from "./components/updateCustomTransModal";
-const { Text } = Typography;
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-  const isMobile = request.headers.get("user-agent")?.includes("Mobile");
-  return {
-    mobile: isMobile as boolean,
-  };
+const { Content } = Layout;
+const PAGE_SIZE = 10;
+
+export const loader = manageTranslationLanguageLoader;
+
+type FieldRecord = {
+  key: string;
+  resource: string;
+  default_language: string;
+  translated: string;
+  shopifyKey: string;
+  type: string;
 };
 
 const Index = () => {
-  const { mobile } = useLoaderData<typeof loader>();
-  const migrated = true;
-
   const { t } = useTranslation();
   const navigate = useNavigate();
-
-  //加载状态数组，目前loading表示页面正在加载
-  const [loadingArray, setLoadingArray] = useState<string[]>(["loading"]);
-
-  //移动端判断依据
-  const [isMobile, setIsMobile] = useState<boolean>(mobile);
-
-  //表格数据源
-  const [dataSource, setDataSource] = useState<LiquidTableRow[]>([]);
-
-  //表格多选控制key
-  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
-  const [pageAlert, setPageAlert] = useState<string>("");
-
-  //编辑表单类型及数据控制
-  const [createOrEditModal, setCreateOrEditModal] = useState<{
-    open: boolean;
-    type: "create" | "edit";
-    key: string;
-  }>({
-    open: false,
-    type: "create",
-    key: "",
-  });
-
-  //编辑表单数据源
-  const editData = useMemo(() => {
-    return dataSource.find((item) => item.key == createOrEditModal.key);
-  }, [dataSource, createOrEditModal.key]);
-
-  const hasSelected = useMemo(() => {
-    return selectedRowKeys.length > 0;
-  }, [selectedRowKeys]);
-
-  //页面管理数据
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10; // 每页显示5条，可自定义
-  const pagedData = useMemo(
-    () =>
-      dataSource.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [dataSource, currentPage, pageSize],
+  const { searchTerm } = useLoaderData<typeof loader>();
+  const { handleSingleTranslateFailure, quotaGateModal } =
+    useSingleTranslateQuotaGate();
+  const languageTableData = useSelector(
+    (state: any) => state.languageTableData.rows,
   );
-  const currentPageKeys = useMemo(
-    () => pagedData.map((item: any) => item.key),
-    [pagedData],
-  );
-  const allCurrentPageSelected = useMemo(
-    () => currentPageKeys.every((key: any) => selectedRowKeys.includes(key)),
-    [currentPageKeys, selectedRowKeys],
-  );
-  const someCurrentPageSelected = useMemo(
-    () => currentPageKeys.some((key: any) => selectedRowKeys.includes(key)),
-    [currentPageKeys, selectedRowKeys],
-  );
-
   const fetcher = useFetcher<any>();
+  const loadingItemsRef = useRef<string[]>([]);
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [pageAlert, setPageAlert] = useState("");
+  const [dataSource, setDataSource] = useState<LiquidTableRow[]>([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [loadingItems, setLoadingItems] = useState<string[]>([]);
+  const [successTranslatedKey, setSuccessTranslatedKey] = useState<string[]>(
+    [],
+  );
+  const [translatedValues, setTranslatedValues] = useState<
+    Record<string, string>
+  >({});
+  const [confirmData, setConfirmData] = useState<
+    { id: string; value: string }[]
+  >([]);
+  const [saving, setSaving] = useState(false);
+  const [languageOptions, setLanguageOptions] = useState<
+    { label: string; value: string }[]
+  >([]);
+  const [selectedLanguage, setSelectedLanguage] = useState(searchTerm || "");
+  const [selectedItem, setSelectedItem] = useState("custom_liquid");
+  const itemOptions = getItemOptions(t);
+  const migrated = true;
 
   useEffect(() => {
     fetcher.submit(
-      {
-        log: `${globalStore?.shop} 目前在自定义翻译页面`,
-      },
-      {
-        method: "POST",
-        action: "/log",
-      },
+      { log: `${globalStore?.shop} 目前在自定义翻译页面` },
+      { method: "POST", action: "/log" },
     );
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    //表格数据初始化方法
-    setTimeout(async () => {
-      const selectShopNameLiquidData = await selectLiquidCompat({
+  useEffect(() => {
+    loadingItemsRef.current = loadingItems;
+  }, [loadingItems]);
+
+  useEffect(() => {
+    if (!languageTableData) return;
+    setLanguageOptions(
+      languageTableData
+        .filter((item: any) => !item.primary)
+        .map((item: any) => ({
+          label: item.name,
+          value: item.locale,
+        })),
+    );
+  }, [languageTableData]);
+
+  useEffect(() => {
+    if (!languageOptions.length) return;
+    if (
+      selectedLanguage &&
+      languageOptions.some((item) => item.value === selectedLanguage)
+    ) {
+      return;
+    }
+    const next = languageOptions[0]?.value;
+    if (next) {
+      setSelectedLanguage(next);
+      navigate(`/app/manage_translation/custom_liquid?language=${next}`, {
+        replace: true,
+      });
+    }
+  }, [languageOptions, selectedLanguage, navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      const data = await selectLiquidCompat({
         migrated,
         shop: globalStore?.shop || "",
       });
-
-      if (selectShopNameLiquidData.success) {
-        setDataSource(selectShopNameLiquidData.response ?? []);
-        setLoadingArray((prev) => prev.filter((item) => item !== "loading"));
+      if (cancelled) return;
+      if (data.success) {
+        setDataSource(data.response ?? []);
         setPageAlert("");
       } else {
         setPageAlert(
           getTranslateV4ErrorMessage(
             t,
-            selectShopNameLiquidData.errorMsg,
+            data.errorMsg,
             TRANSLATE_V4_ERROR_KEYS.LIQUID_LIST_FAILED,
           ),
         );
-        setLoadingArray((prev) => prev.filter((item) => item !== "loading"));
       }
-    }, 100);
-
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      setLoading(false);
     };
-    handleResize();
-    window.addEventListener("resize", handleResize);
+    void load();
     return () => {
-      window.removeEventListener("resize", handleResize);
+      cancelled = true;
     };
-  }, [migrated]);
+  }, [t]);
 
-  //表格数据删除方法
+  const languageRows = useMemo(
+    () => dataSource.filter((row) => row.languageCode === selectedLanguage),
+    [dataSource, selectedLanguage],
+  );
+
+  const resourceData = useMemo<FieldRecord[]>(
+    () =>
+      languageRows.map((row) => ({
+        key: row.key,
+        resource: t("value"),
+        default_language: row.sourceText,
+        translated: row.targetText,
+        shopifyKey: "custom_liquid",
+        type: "MULTI_LINE_TEXT_FIELD",
+      })),
+    [languageRows, t],
+  );
+
+  const pagedData = useMemo(
+    () =>
+      resourceData.slice(
+        (currentPage - 1) * PAGE_SIZE,
+        currentPage * PAGE_SIZE,
+      ),
+    [resourceData, currentPage],
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedRowKeys([]);
+    setConfirmData([]);
+    setSuccessTranslatedKey([]);
+    shopify.saveBar.hide("save-bar");
+  }, [selectedLanguage]);
+
+  useEffect(() => {
+    setTranslatedValues((prev) => {
+      const next = { ...prev };
+      for (const row of languageRows) {
+        if (confirmData.some((item) => item.id === row.key)) continue;
+        next[row.key] = row.targetText ?? "";
+      }
+      return next;
+    });
+  }, [languageRows, confirmData]);
+
+  useEffect(() => {
+    if (confirmData.length > 0) {
+      shopify.saveBar.show("save-bar");
+    } else {
+      shopify.saveBar.hide("save-bar");
+    }
+  }, [confirmData]);
+
+  const hasSelected = selectedRowKeys.length > 0;
+  const currentPageKeys = pagedData.map((item) => item.key);
+  const allCurrentPageSelected =
+    currentPageKeys.length > 0 &&
+    currentPageKeys.every((key) => selectedRowKeys.includes(key));
+  const someCurrentPageSelected = currentPageKeys.some((key) =>
+    selectedRowKeys.includes(key),
+  );
+
+  const handleInputChange = (record: FieldRecord, value: string) => {
+    setTranslatedValues((prev) => ({ ...prev, [record.key]: value }));
+    setConfirmData((prev) => {
+      const index = prev.findIndex((item) => item.id === record.key);
+      if (index !== -1) {
+        const next = [...prev];
+        next[index] = { ...next[index], value };
+        return next;
+      }
+      return [...prev, { id: record.key, value }];
+    });
+  };
+
+  const handleLanguageChange = (language: string) => {
+    if (confirmData.length > 0) {
+      shopify.saveBar.leaveConfirmation();
+      return;
+    }
+    shopify.saveBar.hide("save-bar");
+    setSelectedLanguage(language);
+    navigate(`/app/manage_translation/custom_liquid?language=${language}`);
+  };
+
+  const handleItemChange = (item: string) => {
+    if (confirmData.length > 0) {
+      shopify.saveBar.leaveConfirmation();
+      return;
+    }
+    shopify.saveBar.hide("save-bar");
+    setSelectedItem(item);
+    navigate(`/app/manage_translation/${item}?language=${selectedLanguage}`);
+  };
+
   const handleDelete = async () => {
     setPageAlert("");
     const data = await deleteLiquidCompat({
@@ -156,10 +266,10 @@ const Index = () => {
     });
     if (data.success) {
       const deletedIds = (data.response ?? []).map(String);
-      const newData = dataSource.filter(
-        (prev) => !deletedIds.includes(prev.key),
+      setDataSource((prev) =>
+        prev.filter((row) => !deletedIds.includes(row.key)),
       );
-      setDataSource(newData);
+      setSelectedRowKeys([]);
       shopify.toast.show(t("Delete successfully"));
     } else {
       setPageAlert(
@@ -170,362 +280,360 @@ const Index = () => {
         ),
       );
     }
-    setSelectedRowKeys([]);
   };
 
-  //表格列管理
-  const columns = [
-    {
-      title: t("Text"),
-      dataIndex: "sourceText",
-      key: "sourceText",
-      width: "22%",
-    },
-    {
-      title: t("Translation text"),
-      dataIndex: "targetText",
-      key: "targetText",
-      width: "22%",
-    },
-    {
-      title: t("Apply for"),
-      dataIndex: "languageCode",
-      key: "languageCode",
-      width: "12%",
-    },
-    {
-      title: t("Status"),
-      dataIndex: "status",
-      key: "status",
-      width: "10%",
-      render: (status: string) => status || "DONE",
-    },
-    {
-      title: t("Source"),
-      dataIndex: "source",
-      key: "source",
-      width: "10%",
-      render: (source: string) => source || "manual",
-    },
-    {
-      title: t("Replacement method"),
-      dataIndex: "languageCode",
-      key: "replacementMethod",
-      width: "14%",
-      render: (_: any, record: any) => {
-        return (
-          <Select
-            options={[
-              {
-                label: t("Precise replacement"),
-                value: true,
-              },
-              {
-                label: t("Fuzzy Replacement"),
-                value: false,
-              },
-            ]}
-            style={{ width: "100%" }}
-            onChange={() => {
-              handleSwitchReplaceMethod({
-                id: record?.key,
-              });
-            }}
-            value={record.replacementMethod}
-          />
-        );
-      },
-    },
-    {
-      title: t("Action"),
-      dataIndex: "action",
-      key: "action",
-      width: "10%",
-      render: (_: any, record: any) => (
-        <Button
-          onClick={() =>
-            setCreateOrEditModal({
-              open: true,
-              type: "edit",
-              key: record.key,
-            })
-          }
-        >
-          {t("Edit")}
-        </Button>
-      ),
-    },
-  ];
-
-  //表格行管理
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (e: any) => setSelectedRowKeys(e),
-  };
-
-  //编辑替换方式
-  const handleSwitchReplaceMethod = async ({ id }: { id: string }) => {
+  const handleConfirm = async () => {
+    setSaving(true);
     setPageAlert("");
-    const updateLiquidReplacementMethod =
-      await toggleLiquidReplacementMethodCompat({
-        migrated,
-        shop: globalStore?.shop || "",
-        id,
-      });
-    if (updateLiquidReplacementMethod?.success) {
-      const newData = dataSource.map((item) =>
-        item.key === id
-          ? {
-              ...item,
-              replacementMethod: !!updateLiquidReplacementMethod?.response,
-            }
-          : item,
-      );
-      setDataSource(newData);
-    } else {
-      setPageAlert(
-        getTranslateV4ErrorMessage(
-          t,
-          updateLiquidReplacementMethod?.errorMsg,
-          TRANSLATE_V4_ERROR_KEYS.LIQUID_SAVE_FAILED,
-        ),
-      );
+    try {
+      for (const item of confirmData) {
+        const row = dataSource.find((entry) => entry.key === item.id);
+        if (!row) continue;
+        const data = await insertLiquidCompat({
+          migrated,
+          id: item.id,
+          shop: globalStore?.shop || "",
+          sourceText: row.sourceText,
+          targetText: item.value,
+          languageCode: row.languageCode,
+        });
+        if (!data.success) {
+          setPageAlert(
+            getTranslateV4ErrorMessage(
+              t,
+              data.errorMsg,
+              TRANSLATE_V4_ERROR_KEYS.LIQUID_SAVE_FAILED,
+            ),
+          );
+          return;
+        }
+        setDataSource((prev) =>
+          prev.map((entry) =>
+            entry.key === item.id
+              ? { ...entry, targetText: item.value, status: "DONE" }
+              : entry,
+          ),
+        );
+      }
+      setConfirmData([]);
+      setSuccessTranslatedKey([]);
+      shopify.saveBar.hide("save-bar");
+      shopify.toast.show(t("Saved successfully"));
+    } finally {
+      setSaving(false);
     }
   };
 
-  //编辑表单数据更新和提交后更新表格方法
-  const handleUpdateDataSource = ({
-    key,
-    sourceText,
-    targetText,
-    replacementMethod,
-    languageCode,
-  }: LiquidTableRow & { key?: string }) => {
-    setDataSource((prev) => {
-      // 查找是否已有该项
-      const index =
-        key !== undefined ? prev.findIndex((item) => item.key === key) : -1;
-
-      if (index !== -1) {
-        // ✅ 更新已有项
-        const updated = [...prev];
-        updated[index] = {
-          ...updated[index],
-          sourceText,
-          targetText,
-          replacementMethod,
-          languageCode,
-          status: "DONE",
-        };
-        return updated;
-      } else {
-        // ✅ 新增到数组最前面
-        const newItem: LiquidTableRow = {
-          key: key || "",
-          sourceText,
-          targetText,
-          replacementMethod,
-          languageCode,
-          source: "manual",
-          status: "DONE",
-        };
-        return [newItem, ...prev];
-      }
-    });
+  const handleDiscard = () => {
+    shopify.saveBar.hide("save-bar");
+    setConfirmData([]);
+    setSuccessTranslatedKey([]);
+    setTranslatedValues(
+      Object.fromEntries(
+        languageRows.map((row) => [row.key, row.targetText ?? ""]),
+      ),
+    );
   };
+
+  const handleTranslate = async ({
+    record,
+    customPrompt,
+    aiModel,
+  }: {
+    record: FieldRecord;
+    customPrompt?: string;
+    aiModel?: string;
+  }) => {
+    fetcher.submit(
+      {
+        log: `${globalStore?.shop} 从翻译管理-自定义 Liquid 页面点击单行翻译`,
+      },
+      { method: "POST", action: "/log" },
+    );
+    setLoadingItems((prev) => [...prev, record.key]);
+    const data = await SingleTextTranslate({
+      shopName: globalStore?.shop || "",
+      source: globalStore?.source || "",
+      target: selectedLanguage || "",
+      resourceType: "ONLINE_STORE_THEME",
+      context: record.default_language,
+      key: record.shopifyKey,
+      type: record.type,
+      resourceId: null,
+      customPrompt,
+      aiModel,
+    });
+    if (data?.success) {
+      if (loadingItemsRef.current.includes(record.key)) {
+        handleInputChange(record, data.response);
+        setSuccessTranslatedKey((prev) => [...prev, record.key]);
+        shopify.toast.show(t("Translated successfully"));
+      }
+    } else {
+      handleSingleTranslateFailure(data?.errorMsg);
+    }
+    setLoadingItems((prev) => prev.filter((item) => item !== record.key));
+  };
+
+  const renderTranslateAction = (record: FieldRecord) => (
+    <SingleTranslateAction
+      triggerProps={{
+        type: "default",
+        size: "small",
+        style: {
+          height: 22,
+          paddingInline: 6,
+          fontWeight: 500,
+          fontSize: 12,
+          lineHeight: 1,
+          color: "var(--app-accent-primary)",
+          borderColor: "var(--app-accent-primary)",
+          borderRadius: 6,
+          backgroundColor: "var(--p-color-bg-surface)",
+          whiteSpace: "nowrap",
+        },
+      }}
+      loading={loadingItems.includes(record.key)}
+      existingTranslation={translatedValues[record.key] ?? record.translated}
+      sourceText={record.default_language}
+      targetLocale={selectedLanguage}
+      fieldKey={record.shopifyKey}
+      isOutdated={false}
+      onSubmit={({ customPrompt, aiModel }) => {
+        void handleTranslate({ record, customPrompt, aiModel });
+      }}
+    />
+  );
+
+  const renderManageField = (record: FieldRecord, stacked = false) => (
+    <Flex align="flex-start" gap={8}>
+      <Checkbox
+        checked={selectedRowKeys.includes(record.key)}
+        onChange={(e) => {
+          setSelectedRowKeys(
+            e.target.checked
+              ? [...selectedRowKeys, record.key]
+              : selectedRowKeys.filter((key) => key !== record.key),
+          );
+        }}
+        style={{ marginTop: 4 }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <ManageTranslationFieldRow
+          record={record}
+          isSuccess={successTranslatedKey.includes(record.key)}
+          translatedValues={translatedValues}
+          setTranslatedValues={setTranslatedValues}
+          handleInputChange={handleInputChange}
+          isRtl={selectedLanguage === "ar"}
+          stacked={stacked}
+          sourceLabel={t("Default Language")}
+          translatedLabel={t("Translated")}
+          action={renderTranslateAction(record)}
+        />
+      </div>
+    </Flex>
+  );
+
+  const resourceColumns = [
+    {
+      title: t("Resource"),
+      key: "resource",
+      render: (_: unknown, record: FieldRecord) => renderManageField(record),
+    },
+  ];
 
   const onCancel = () => {
-    navigate(`/app/manage_translation`); // 跳转到 /app/manage_translation
+    if (confirmData.length > 0) {
+      shopify.saveBar.leaveConfirmation();
+      return;
+    }
+    shopify.saveBar.hide("save-bar");
+    navigate(`/app/manage_translation?language=${selectedLanguage}`);
   };
+
+  const hasPrevious = currentPage > 1;
+  const hasNext = currentPage * PAGE_SIZE < resourceData.length;
 
   return (
     <Page
       title={t("Custom Liquid")}
-      backAction={{
-        onAction: onCancel,
-      }}
+      fullWidth
+      backAction={{ onAction: onCancel }}
     >
-      <Space
-        direction="vertical"
-        size="middle"
-        style={{ display: "flex", width: "100%" }}
+      <SaveBar id="save-bar">
+        <button variant="primary" onClick={handleConfirm} disabled={saving}>
+          {t("Save")}
+        </button>
+        <button onClick={handleDiscard}>{t("Cancel")}</button>
+      </SaveBar>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          justifyContent: "flex-end",
+          marginBottom: "15px",
+        }}
       >
-        {pageAlert ? (
-          <Alert
-            type="error"
-            showIcon
-            message={pageAlert}
-            closable
-            onClose={() => setPageAlert("")}
+        <div style={{ width: "160px" }}>
+          <Select
+            label=""
+            options={languageOptions}
+            value={selectedLanguage}
+            onChange={handleLanguageChange}
           />
-        ) : null}
-        <Flex
-          align="center"
-          justify="space-between" // 使按钮左右分布
-          style={{ width: "100%" }}
-        >
-          <Flex align="center" gap="middle">
-            {loadingArray.includes("loading") ? (
-              <Skeleton.Button active />
-            ) : (
-              <Button onClick={handleDelete} disabled={!hasSelected}>
-                {t("Delete")}
-              </Button>
-            )}
-            {hasSelected
-              ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
-              : null}
-          </Flex>
-          {loadingArray.includes("loading") ? (
-            <Skeleton.Button active />
-          ) : (
-            <Button
-              type="primary"
-              onClick={() =>
-                setCreateOrEditModal({
-                  open: true,
-                  type: "create",
-                  key: "",
-                })
-              }
-            >
-              {t("Create rule")}
-            </Button>
-          )}
+        </div>
+        <div style={{ width: "160px" }}>
+          <Select
+            label=""
+            options={itemOptions}
+            value={selectedItem}
+            onChange={handleItemChange}
+          />
+        </div>
+      </div>
+      {pageAlert ? (
+        <Alert
+          type="error"
+          showIcon
+          message={pageAlert}
+          closable
+          onClose={() => setPageAlert("")}
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
+      <Flex
+        align="center"
+        justify="space-between"
+        style={{ width: "100%", marginBottom: 12 }}
+      >
+        <Flex align="center" gap="middle">
+          <Button onClick={handleDelete} disabled={!hasSelected || loading}>
+            {t("Delete")}
+          </Button>
+          {hasSelected
+            ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
+            : null}
         </Flex>
-        {isMobile ? (
-          <>
-            <Card
-              title={
-                <Checkbox
-                  checked={
-                    allCurrentPageSelected && !loadingArray.includes("loading")
-                  }
-                  indeterminate={
-                    someCurrentPageSelected && !allCurrentPageSelected
-                  }
-                  onChange={(e) =>
-                    setSelectedRowKeys(
-                      e.target.checked
-                        ? [
-                            ...currentPageKeys,
-                            ...selectedRowKeys.filter(
-                              (key) => !currentPageKeys.includes(key),
-                            ),
-                          ]
-                        : [
-                            ...selectedRowKeys.filter(
-                              (key) => !currentPageKeys.includes(key),
-                            ),
-                          ],
-                    )
-                  }
-                >
-                  {t("Custom Liquid")}
-                </Checkbox>
-              }
-              loading={loadingArray.includes("loading")}
-            >
-              {pagedData.map((item: any) => (
-                <Card.Grid key={item.key} style={{ width: "100%" }}>
-                  <Space
-                    direction="vertical"
-                    size="middle"
-                    style={{ width: "100%" }}
-                  >
-                    <Flex justify="space-between">
-                      <Checkbox
-                        checked={selectedRowKeys.includes(item.key)}
-                        onChange={(e: any) => {
-                          setSelectedRowKeys(
-                            e.target.checked
-                              ? [...selectedRowKeys, item.key]
-                              : selectedRowKeys.filter(
-                                  (key) => key !== item.key,
+        <Button type="primary" onClick={() => setCreateOpen(true)}>
+          {t("Create rule")}
+        </Button>
+      </Flex>
+      <Layout
+        style={{
+          overflow: "auto",
+          backgroundColor: "var(--p-color-bg)",
+          minHeight: "70vh",
+        }}
+      >
+        {loading ? (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              height: "100%",
+            }}
+          >
+            <Spin />
+          </div>
+        ) : (
+          <Content
+            style={{
+              paddingLeft: isMobile ? "16px" : "0",
+              minHeight: "70vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "auto",
+            }}
+          >
+            {isMobile ? (
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Card
+                  title={
+                    <Checkbox
+                      checked={allCurrentPageSelected}
+                      indeterminate={
+                        someCurrentPageSelected && !allCurrentPageSelected
+                      }
+                      onChange={(e) =>
+                        setSelectedRowKeys(
+                          e.target.checked
+                            ? [
+                                ...selectedRowKeys.filter(
+                                  (key) => !currentPageKeys.includes(key),
                                 ),
-                          );
-                        }}
-                      >
-                        {t("Text")}{" "}
-                      </Checkbox>
-                      <Text>{item.sourceText}</Text>
-                    </Flex>
-                    <Flex justify="space-between">
-                      <Text>{t("Translation text")}</Text>
-                      <Text>{item.targetText}</Text>
-                    </Flex>
-                    <Flex justify="space-between">
-                      <Text>{t("Apply for")}</Text>
-                      <Text>{item.languageCode}</Text>
-                    </Flex>
-                    <Flex justify="space-between">
-                      <Text>{t("Apply for")}</Text>
-                      <Text>
-                        {t(
-                          item.replacementMethod
-                            ? "Precise replacement"
-                            : "Fuzzy Replacement",
-                        )}
-                      </Text>
-                    </Flex>
-                    <Button
-                      style={{ width: "100%" }}
-                      onClick={() =>
-                        setCreateOrEditModal({
-                          open: true,
-                          type: "edit",
-                          key: item.key,
-                        })
+                                ...currentPageKeys,
+                              ]
+                            : selectedRowKeys.filter(
+                                (key) => !currentPageKeys.includes(key),
+                              ),
+                        )
                       }
                     >
-                      {t("Edit")}
-                    </Button>
+                      {t("Resource")}
+                    </Checkbox>
+                  }
+                >
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    {pagedData.map((item) => (
+                      <Space
+                        key={item.key}
+                        direction="vertical"
+                        size="small"
+                        style={{ width: "100%" }}
+                      >
+                        {renderManageField(item, true)}
+                        <Divider style={{ margin: "8px 0" }} />
+                      </Space>
+                    ))}
                   </Space>
-                </Card.Grid>
-              ))}
-            </Card>
+                </Card>
+              </Space>
+            ) : (
+              <Table
+                columns={resourceColumns}
+                dataSource={pagedData}
+                pagination={false}
+                rowKey="key"
+              />
+            )}
             <div
               style={{
                 display: "flex",
-                background: "#fff",
-                padding: "12px 0",
-                textAlign: "center",
                 justifyContent: "center",
+                padding: "12px 0",
               }}
             >
-              <Pagination
-                current={currentPage}
-                pageSize={pageSize}
-                total={dataSource.length}
-                onChange={(page) => setCurrentPage(page)}
-              />
+              {(hasPrevious || hasNext) && (
+                <Pagination
+                  hasPrevious={hasPrevious}
+                  onPrevious={() => setCurrentPage((page) => page - 1)}
+                  hasNext={hasNext}
+                  onNext={() => setCurrentPage((page) => page + 1)}
+                />
+              )}
             </div>
-          </>
-        ) : (
-          <Table
-            rowSelection={rowSelection}
-            columns={columns}
-            loading={loadingArray.includes("loading")}
-            dataSource={dataSource}
-          />
+          </Content>
         )}
-      </Space>
+      </Layout>
       <UpdateCustomTransModal
         migrated={migrated}
         dataSource={dataSource}
-        handleUpdateDataSource={handleUpdateDataSource}
-        defaultData={editData}
-        open={createOrEditModal.open}
-        title={t(
-          createOrEditModal.type == "create" ? "Create rule" : "Edit rule",
-        )}
-        setIsModalHide={() =>
-          setCreateOrEditModal({
-            ...createOrEditModal,
-            open: false,
-          })
-        }
-      ></UpdateCustomTransModal>
+        languageCode={selectedLanguage}
+        title={t("Create rule")}
+        open={createOpen}
+        setIsModalHide={() => setCreateOpen(false)}
+        handleUpdateDataSource={(row) => {
+          setDataSource((prev) => [row, ...prev]);
+          setTranslatedValues((prev) => ({
+            ...prev,
+            [row.key]: row.targetText,
+          }));
+        }}
+      />
+      {quotaGateModal}
     </Page>
   );
 };

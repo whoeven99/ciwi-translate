@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Input, Space, Typography, Select, Flex } from "antd";
+import { Alert, Flex, Input, Modal, Space, Typography } from "antd";
 import Button from "~/ui/components/AppButton";
-import { useSelector } from "react-redux";
-import type { LanguagesDataType } from "~/routes/app.language/route";
 import { useTranslation } from "react-i18next";
 import { globalStore } from "~/globalStore";
 import { insertLiquidCompat, type LiquidTableRow } from "../liquidClient";
@@ -13,156 +11,107 @@ import {
 
 const { Text } = Typography;
 
+/** 新建规则统一模糊替换，商户不可选。 */
+const DEFAULT_REPLACEMENT_METHOD = false;
+
 interface UpdateCustomTransModalProps {
   migrated: boolean;
   dataSource: LiquidTableRow[];
-  defaultData?: LiquidTableRow | undefined;
-  handleUpdateDataSource: (row: LiquidTableRow & { key?: string }) => void;
+  languageCode: string;
   title: string;
   open: boolean;
   setIsModalHide: () => void;
+  handleUpdateDataSource: (row: LiquidTableRow) => void;
 }
 
 const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
   migrated,
   dataSource,
-  defaultData,
-  handleUpdateDataSource,
+  languageCode,
   title,
   open,
   setIsModalHide,
+  handleUpdateDataSource,
 }) => {
   const { t } = useTranslation();
-
-  const languageTableData: LanguagesDataType[] = useSelector(
-    (state: any) => state.languageTableData.rows,
-  );
-
-  const options = useMemo(() => {
-    if (languageTableData.length > 0) {
-      return languageTableData.map((item) => ({
-        value: item.locale,
-        label: item.name,
-      }));
-    }
-  }, [languageTableData]);
-
-  const [formData, setFormData] = useState<{
-    sourceText: string;
-    targetText: string;
-    replacementMethod: boolean;
-    languageCode: string;
-  }>({
-    sourceText: "",
-    targetText: "",
-    replacementMethod: true,
-    languageCode: "",
-  });
-
-  const confirmButtonDisable = useMemo<boolean>(
-    () =>
-      !formData.languageCode ||
-      !formData.sourceText ||
-      !formData.targetText ||
-      JSON.stringify(formData) == JSON.stringify(defaultData),
-    [formData, defaultData],
-  );
-
-  const [loadingStatusArray, setLoadingStatusArray] = useState<string[]>([]);
+  const [sourceText, setSourceText] = useState("");
+  const [targetText, setTargetText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [modalAlert, setModalAlert] = useState<{
     type: "warning" | "error";
     message: string;
   } | null>(null);
 
+  const confirmDisabled = useMemo(
+    () => !languageCode || !sourceText || !targetText || submitting,
+    [languageCode, sourceText, targetText, submitting],
+  );
+
   useEffect(() => {
-    if (defaultData) {
-      setFormData(defaultData);
-    } else {
-      setFormData({
-        sourceText: "",
-        targetText: "",
-        replacementMethod: true,
-        languageCode: "",
-      });
+    if (open) {
+      setSourceText("");
+      setTargetText("");
+      setModalAlert(null);
     }
-    setModalAlert(null);
-  }, [defaultData]);
+  }, [open, languageCode]);
 
   const handleCloseModal = () => {
     setModalAlert(null);
     setIsModalHide();
   };
 
-  const handleConfirm = async (id?: string) => {
-    let isSameRuleError = true;
-
-    const source = formData.sourceText + formData.languageCode;
-    for (const item of dataSource) {
-      const string = item.sourceText + item.languageCode;
-      if (title === "Create rule") {
-        if (source == string) {
-          isSameRuleError = false;
-        }
-      } else if (source == string && item.key !== id) {
-        isSameRuleError = false;
-      }
-    }
-
-    if (isSameRuleError) {
-      setModalAlert(null);
-      setLoadingStatusArray((prev) => [...prev, "submitting"]);
-      const data = await insertLiquidCompat({
-        migrated,
-        id: defaultData?.key,
-        shop: globalStore?.shop || "",
-        sourceText: formData.sourceText,
-        targetText: formData.targetText,
-        replacementMethod: formData.replacementMethod,
-        languageCode: formData.languageCode,
-      });
-
-      if (data.success) {
-        const newData: LiquidTableRow = {
-          key: String(data.response?.id ?? defaultData?.key ?? ""),
-          sourceText: String(
-            data.response?.liquidBeforeTranslation ?? formData.sourceText,
-          ),
-          targetText: String(
-            data.response?.liquidAfterTranslation ?? formData.targetText,
-          ),
-          replacementMethod:
-            data.response?.replacementMethod ?? formData.replacementMethod,
-          languageCode: String(
-            data.response?.languageCode ?? formData.languageCode,
-          ),
-        };
-        handleUpdateDataSource(newData);
-        shopify.toast.show(t("Saved successfully"));
-        setFormData({
-          ...formData,
-          sourceText: "",
-          targetText: "",
-        });
-        setIsModalHide();
-      } else {
-        setModalAlert({
-          type: "error",
-          message: getTranslateV4ErrorMessage(
-            t,
-            data.errorMsg,
-            TRANSLATE_V4_ERROR_KEYS.LIQUID_SAVE_FAILED,
-          ),
-        });
-      }
-      setLoadingStatusArray((prev) =>
-        prev.filter((item) => item !== "submitting"),
-      );
-    } else {
+  const handleConfirm = async () => {
+    const duplicate = dataSource.some(
+      (item) =>
+        item.sourceText === sourceText && item.languageCode === languageCode,
+    );
+    if (duplicate) {
       setModalAlert({
         type: "warning",
         message: t("You cannot add two conflicting rules."),
       });
+      return;
     }
+
+    setModalAlert(null);
+    setSubmitting(true);
+    const data = await insertLiquidCompat({
+      migrated,
+      shop: globalStore?.shop || "",
+      sourceText,
+      targetText,
+      replacementMethod: DEFAULT_REPLACEMENT_METHOD,
+      languageCode,
+    });
+
+    if (data.success) {
+      handleUpdateDataSource({
+        key: String(data.response?.id ?? ""),
+        sourceText: String(
+          data.response?.liquidBeforeTranslation ?? sourceText,
+        ),
+        targetText: String(
+          data.response?.liquidAfterTranslation ?? targetText,
+        ),
+        replacementMethod:
+          data.response?.replacementMethod ?? DEFAULT_REPLACEMENT_METHOD,
+        languageCode: String(data.response?.languageCode ?? languageCode),
+        source: "manual",
+        status: "DONE",
+      });
+      shopify.toast.show(t("Saved successfully"));
+      setIsModalHide();
+    } else {
+      setModalAlert({
+        type: "error",
+        message: getTranslateV4ErrorMessage(
+          t,
+          data.errorMsg,
+          TRANSLATE_V4_ERROR_KEYS.LIQUID_SAVE_FAILED,
+        ),
+      });
+    }
+    setSubmitting(false);
   };
 
   return (
@@ -175,10 +124,10 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
         <Space key="updateCustomTransModal_footer">
           <Button onClick={handleCloseModal}>{t("Cancel")}</Button>
           <Button
-            onClick={() => handleConfirm(defaultData?.key)}
+            onClick={handleConfirm}
             type="primary"
-            disabled={confirmButtonDisable}
-            loading={loadingStatusArray.includes("submitting")}
+            disabled={confirmDisabled}
+            loading={submitting}
           >
             {t("Save")}
           </Button>
@@ -200,70 +149,28 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
           gap={8}
           justify="center"
           align="flex-start"
-          style={{
-            width: "100%",
-          }}
+          style={{ width: "100%" }}
         >
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              width: "100%",
-            }}
-          >
-            <Input
-              placeholder={t("Please enter original text")}
-              value={formData.sourceText}
-              onChange={(e) => {
-                setModalAlert(null);
-                setFormData({
-                  ...formData,
-                  sourceText: e.target.value,
-                });
-              }}
-              disabled={loadingStatusArray.includes("submitting")}
-            />
-          </div>
-          <Text style={{ margin: "0 8px", lineHeight: "32px" }}>{t("to")}</Text>
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              width: "100%",
-            }}
-          >
-            <Input
-              placeholder={t("Please enter escaped text")}
-              value={formData.targetText}
-              onChange={(e) => {
-                setModalAlert(null);
-                setFormData({
-                  ...formData,
-                  targetText: e.target.value,
-                });
-              }}
-              disabled={loadingStatusArray.includes("submitting")}
-            />
-          </div>
-        </Flex>
-        <Text strong>{t("Apply for")}</Text>
-        <div style={{ display: "flex", flexDirection: "column", width: 200 }}>
-          <Select
-            options={options}
-            style={{ width: "100%" }}
+          <Input
+            placeholder={t("Please enter original text")}
+            value={sourceText}
             onChange={(e) => {
               setModalAlert(null);
-              setFormData({
-                ...formData,
-                languageCode: e,
-              });
+              setSourceText(e.target.value);
             }}
-            value={formData.languageCode}
-            disabled={loadingStatusArray.includes("submitting")}
+            disabled={submitting}
           />
-        </div>
+          <Text style={{ margin: "0 8px", lineHeight: "32px" }}>{t("to")}</Text>
+          <Input
+            placeholder={t("Please enter escaped text")}
+            value={targetText}
+            onChange={(e) => {
+              setModalAlert(null);
+              setTargetText(e.target.value);
+            }}
+            disabled={submitting}
+          />
+        </Flex>
       </Space>
     </Modal>
   );
