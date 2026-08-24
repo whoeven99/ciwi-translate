@@ -217,6 +217,8 @@ const Index = () => {
   const isManualChangeRef = useRef(true);
   const loadingItemsRef = useRef<string[]>([]);
   const shopNameLiquidDataRef = useRef<any>([]);
+  /** 避免 dataFetcher 菜单就绪后对同一 filename 重复 submit（曾把 contentFetcher 放进 deps 导致每轮 render 重发） */
+  const lastAutoContentFilenameRef = useRef<string>("");
 
   const dataFetcher = useFetcher<any>();
   const contentFetcher = useFetcher<any>();
@@ -358,14 +360,21 @@ const Index = () => {
         setTimeout(() => {
           setIsLoading(false);
         }, 100);
-        contentFetcher.submit(
-          {
-            getContentDataByFilename: JSON.stringify({
-              filename: data[0]?.key,
-            }),
-          },
-          { method: "POST" },
-        );
+        const firstFilename = data[0]?.key;
+        if (
+          firstFilename &&
+          firstFilename !== lastAutoContentFilenameRef.current
+        ) {
+          lastAutoContentFilenameRef.current = firstFilename;
+          contentFetcher.submit(
+            {
+              getContentDataByFilename: JSON.stringify({
+                filename: firstFilename,
+              }),
+            },
+            { method: "POST" },
+          );
+        }
       } else {
         setMenuData([]);
         setSelectedMenuKey("");
@@ -380,49 +389,42 @@ const Index = () => {
         setIsLoading(false);
       }
     }
-  }, [contentFetcher, dataFetcher.data, t]);
+  }, [dataFetcher.data, t]);
 
   useEffect(() => {
-    if (contentFetcher.data) {
-      if (!contentFetcher.data?.success) {
-        setResourceData([]);
-        setPageAlert(
-          getTranslateV4ErrorMessage(
-            t,
-            contentFetcher.data?.errorMsg,
-            TRANSLATE_V4_ERROR_KEYS.PAGEFLY_LIST_FAILED,
-          ),
-        );
-        return;
-      }
-
-      if (
-        shopNameLiquidDataRef.current &&
-        !loadingStatus.shopNameLiquidDataIsPost
-      ) {
-        const pfLiquidData = contentFetcher.data?.response?.content;
-        const pfLiquidTexts = extractTextSegmentsFromLiquid(pfLiquidData);
-        const tableData = pfLiquidTexts.map((item: any, index: number) => {
-          return {
-            id:
-              shopNameLiquidDataRef.current?.find(
-                (shopNameLiquidDataRefItem: any) =>
-                  shopNameLiquidDataRefItem?.sourceText == item,
-              )?.id || null,
-            key: index,
-            resource: "Text",
-            default_language: item,
-            translated:
-              shopNameLiquidDataRef.current?.find(
-                (shopNameLiquidDataRefItem: any) =>
-                  shopNameLiquidDataRefItem?.sourceText == item,
-              )?.targetText || "",
-            type: "SINGLE_LINE_TEXT_FIELD",
-          };
-        });
-        setResourceData(tableData);
-      }
+    if (!contentFetcher.data || loadingStatus.shopNameLiquidDataIsPost) {
+      return;
     }
+
+    if (!contentFetcher.data?.success) {
+      setResourceData([]);
+      setPageAlert(
+        getTranslateV4ErrorMessage(
+          t,
+          contentFetcher.data?.errorMsg,
+          TRANSLATE_V4_ERROR_KEYS.PAGEFLY_LIST_FAILED,
+        ),
+      );
+      return;
+    }
+
+    const pfLiquidData = contentFetcher.data?.response?.content;
+    const pfLiquidTexts = extractTextSegmentsFromLiquid(pfLiquidData);
+    const translatedRows = shopNameLiquidDataRef.current ?? [];
+    const tableData = pfLiquidTexts.map((item: any, index: number) => {
+      const matched = translatedRows.find(
+        (row: any) => row?.sourceText == item,
+      );
+      return {
+        id: matched?.id || null,
+        key: index,
+        resource: "Text",
+        default_language: item,
+        translated: matched?.targetText || "",
+        type: "SINGLE_LINE_TEXT_FIELD",
+      };
+    });
+    setResourceData(tableData);
   }, [contentFetcher.data, loadingStatus.shopNameLiquidDataIsPost, t]);
 
   const resourceColumns = [
@@ -632,6 +634,7 @@ const Index = () => {
     } else {
       shopify.saveBar.hide("save-bar");
       setIsLoading(true);
+      lastAutoContentFilenameRef.current = "";
       dataFetcher.submit(
         { GetMenuData: JSON.stringify({}) },
         {
@@ -668,6 +671,7 @@ const Index = () => {
       setLoadingItems([]);
       setSelectedMenuKey(key);
       setPageAlert("");
+      lastAutoContentFilenameRef.current = key;
       axiosForTranslatedData();
       contentFetcher.submit(
         { getContentDataByFilename: JSON.stringify({ filename: key }) },
