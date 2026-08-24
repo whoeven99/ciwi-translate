@@ -102,7 +102,7 @@ export async function createLiquidDo(
       beforeTranslation: input.sourceText,
       afterTranslation: input.targetText,
       languageCode: input.languageCode,
-      replacementMethod: input.replacementMethod ?? true,
+      replacementMethod: input.replacementMethod ?? false,
       source: "manual",
       status: "DONE",
       sourceDigest: liquidSourceDigest(input.sourceText),

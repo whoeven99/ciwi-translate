@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./styles.css";
 import { json } from "@remix-run/node";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { queryAppByHandle } from "~/api/admin";
 import type { LanguagesDataType, ShopLocalesType } from "../app.language/route";
 import { useFetcher, useLoaderData } from "@remix-run/react";
 import { useSelector } from "react-redux";
@@ -145,37 +144,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
-  const appInstalls = safeParseFormJson(formData.get("appInstalls"));
   const translateImage = safeParseFormJson(formData.get("translateImage"));
   const replaceTranslateImage = safeParseFormJson(
     formData.get("replaceTranslateImage"),
   );
   switch (true) {
-    case !!appInstalls:
-      try {
-        const appByHandle = await queryAppByHandle({
-          shop,
-          accessToken: accessToken as string,
-        });
-        return {
-          success: true,
-          errorCode: 0,
-          errorMsg: "",
-          response: appByHandle,
-        };
-      } catch (error) {
-        logManageTranslationGraphQLErrorDetail(
-          "Error manage_translation appInstalls",
-          error,
-        );
-        return {
-          success: false,
-          errorCode: 10001,
-          errorMsg: "SERVER_ERROR",
-          response: null,
-        };
-      }
-
     case !!translateImage:
       try {
         const { sourceLanguage, targetLanguage, imageUrl } = translateImage;
@@ -276,13 +249,7 @@ const Index = () => {
 
   const [currentLocale, setCurrentLocale] = useState<string>("");
   const [localeSummary, setLocaleSummary] = useState<LocaleSummary | null>(null);
-  const [appInstallList, setAppInstallList] = useState<{
-    pagefly: boolean;
-  }>({
-    pagefly: false,
-  });
 
-  const appFetcher = useFetcher<any>();
   const summaryFetcher = useFetcher<any>();
 
   const refreshStatsTraceRef = useRef<ClientLogTrace | null>(null);
@@ -470,17 +437,10 @@ const Index = () => {
     [localeSummary, currentLocale, isSummaryLoading, t],
   );
 
-  const liquidAndThirdPartyAppsDataSource = useMemo(() => {
-    const list: TableDataType[] = [
-      manageRow("custom_liquid", t("Custom Liquid"), "custom_liquid"),
-    ];
-
-    if (appInstallList.pagefly) {
-      list.push(manageRow("pagefly", t("PageFly"), "pagefly"));
-    }
-
-    return list;
-  }, [appInstallList, t]);
+  const liquidAndThirdPartyAppsDataSource = useMemo(
+    () => [manageRow("custom_liquid", t("Custom Liquid"), "custom_liquid")],
+    [t],
+  );
 
 
   useEffect(() => {
@@ -497,14 +457,6 @@ const Index = () => {
         },
       },
       { beacon: true },
-    );
-    appFetcher.submit(
-      {
-        appInstalls: JSON.stringify({}),
-      },
-      {
-        method: "POST",
-      },
     );
   }, []);
 
@@ -524,25 +476,6 @@ const Index = () => {
       }
     }
   }, [languageTableData, searchTerm]);
-
-  useEffect(() => {
-    if (appFetcher.data) {
-      if (appFetcher.data?.success) {
-        let newData: {
-          pagefly: boolean;
-        } = {
-          pagefly: false,
-        };
-        if ("pagefly" in appFetcher.data?.response) {
-          newData = {
-            ...newData,
-            pagefly: true,
-          };
-        }
-        setAppInstallList(newData);
-      }
-    }
-  }, [appFetcher.data]);
 
   useEffect(() => {
     if (!currentLocale) return;
@@ -731,6 +664,7 @@ export const getItemOptions = (t: (key: string) => string) => [
   { label: t("Settings Data Sections"), value: "settings_data_sections" },
   { label: t("Shop"), value: "shop" },
   { label: t("Metafield"), value: "metafield" },
+  { label: t("Custom Liquid"), value: "custom_liquid" },
   { label: t("Articles"), value: "article" },
   { label: t("Blog titles"), value: "blog" },
   { label: t("Pages"), value: "page" },
