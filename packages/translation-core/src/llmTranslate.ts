@@ -76,6 +76,7 @@ import {
   refreshGateFromBudget,
   setShopQuotaCap,
 } from "./quotaGate.js";
+import { logLlmOutput } from "./llmOutputLog.js";
 
 /** Google source chars → merchant credits (default 1.6, same ballpark as create-task estimate). */
 export function googleCharsToCredits(chars: number): number {
@@ -1833,6 +1834,7 @@ async function callLLMOnce(
       tokens: number,
       requestId?: string,
     ) => {
+      logLlmOutput({ shopName, model, raw, tokens, requestId });
       if (!logSingleTranslate) return;
       console.log("[single-llm] return", {
         shopName,
