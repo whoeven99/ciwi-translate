@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, createHmac } from "node:crypto";
 import { deflateSync } from "node:zlib";
 
@@ -5,8 +6,6 @@ const LOG_PREFIX = "[llm-out]";
 const API_VERSION = "0.6.0";
 const MAX_OUTPUT_CHARS = 64_000;
 const SLS_TIMEOUT_MS = 10_000;
-/** Default per-call sample rate when `TRANSLATE_LLM_OUTPUT_LOG=true`. */
-const DEFAULT_SAMPLE = 0.3;
 
 export type LlmOutputLogRecord = {
   shopName?: string;
@@ -27,36 +26,33 @@ export type SlsConfig = {
 type LlmOutputPayload = {
   shop: string;
   model: string;
+  module: string;
   requestId: string;
   tokens: number;
   output: string;
   truncated: boolean;
-  sample: string;
 };
 
 let slsConfigWarned = false;
+
+const llmOutputLogAls = new AsyncLocalStorage<{ module?: string }>();
+
+/** v4 主题模块：`ONLINE_STORE_THEME` 及 `ONLINE_STORE_THEME_*`。 */
+export function isThemeLlmOutputModule(module?: string): boolean {
+  return (module ?? "").startsWith("ONLINE_STORE_THEME");
+}
+
+export function runWithLlmOutputLogModule<T>(
+  module: string | undefined,
+  fn: () => T,
+): T {
+  return llmOutputLogAls.run({ module }, fn);
+}
 
 export function isLlmOutputLogEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return env.TRANSLATE_LLM_OUTPUT_LOG?.trim() === "true";
-}
-
-export function readLlmOutputLogSample(
-  env: NodeJS.ProcessEnv = process.env,
-): number {
-  const raw = env.TRANSLATE_LLM_OUTPUT_LOG_SAMPLE?.trim();
-  if (!raw) return DEFAULT_SAMPLE;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return DEFAULT_SAMPLE;
-  return Math.min(1, Math.max(0, n));
-}
-
-export function shouldSampleLlmOutput(
-  env: NodeJS.ProcessEnv = process.env,
-  random: () => number = Math.random,
-): boolean {
-  return random() < readLlmOutputLogSample(env);
 }
 
 export function resolveSlsEndpointHost(endpoint: string, region: string): string {
@@ -213,11 +209,11 @@ async function putSlsLog(cfg: SlsConfig, payload: LlmOutputPayload): Promise<voi
     contents: {
       shop: payload.shop,
       model: payload.model,
+      module: payload.module,
       requestId: payload.requestId,
       tokens: String(payload.tokens),
       output: payload.output,
       truncated: payload.truncated ? "1" : "0",
-      sample: payload.sample,
     },
     topic: "llm-out",
     source: process.env.RENDER_SERVICE_NAME?.trim() || "ciwi",
@@ -244,21 +240,20 @@ export function llmOutputLogDest(
 export function logLlmOutput(
   record: LlmOutputLogRecord,
   env: NodeJS.ProcessEnv = process.env,
-  random: () => number = Math.random,
 ): void {
   const dest = llmOutputLogDest(env);
   if (dest === "off") return;
-  if (!shouldSampleLlmOutput(env, random)) return;
-  const sample = readLlmOutputLogSample(env);
+  const module = llmOutputLogAls.getStore()?.module;
+  if (!isThemeLlmOutputModule(module)) return;
   const { output, truncated } = truncateLlmOutput(record.raw);
   const payload: LlmOutputPayload = {
     shop: record.shopName ?? "",
     model: record.model,
+    module: module ?? "",
     requestId: record.requestId ?? "",
     tokens: record.tokens,
     output,
     truncated,
-    sample: String(sample),
   };
   if (dest === "stdout") {
     if (!slsConfigWarned) {

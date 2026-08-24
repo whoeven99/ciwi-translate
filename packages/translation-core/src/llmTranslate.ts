@@ -76,7 +76,7 @@ import {
   refreshGateFromBudget,
   setShopQuotaCap,
 } from "./quotaGate.js";
-import { logLlmOutput } from "./llmOutputLog.js";
+import { logLlmOutput, runWithLlmOutputLogModule } from "./llmOutputLog.js";
 
 /** Google source chars → merchant credits (default 1.6, same ballpark as create-task estimate). */
 export function googleCharsToCredits(chars: number): number {
@@ -2540,6 +2540,37 @@ export async function translateResources(
     /** LLM raw API tokens (worker applies model multiplier). */
     tokensDelta: number,
     /** Google merchant credits already final (chars×GOOGLE_CREDITS_PER_CHAR). */
+    googleCreditsDelta?: number,
+  ) => Promise<void>,
+  onResourceDone?: (resource: TranslatedResourceOutput) => Promise<void>,
+  shouldAbort?: () => boolean | Promise<boolean>,
+  options?: TranslateResourcesOptions,
+): Promise<TranslateChunkResult> {
+  const chunkModule = resources.find((r) => r.module)?.module;
+  return runWithLlmOutputLogModule(chunkModule, () =>
+    translateResourcesBody(
+      resources,
+      source,
+      target,
+      aiModel,
+      shopName,
+      onProgress,
+      onResourceDone,
+      shouldAbort,
+      options,
+    ),
+  );
+}
+
+async function translateResourcesBody(
+  resources: ResourceInput[],
+  source: string,
+  target: string,
+  aiModel: string,
+  shopName: string,
+  onProgress?: (
+    doneUnitsDelta: number,
+    tokensDelta: number,
     googleCreditsDelta?: number,
   ) => Promise<void>,
   onResourceDone?: (resource: TranslatedResourceOutput) => Promise<void>,

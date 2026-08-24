@@ -6,13 +6,66 @@ import {
   buildSlsSignatureMessage,
   encodeSlsLogGroup,
   isLlmOutputLogEnabled,
+  isThemeLlmOutputModule,
   llmOutputLogDest,
-  readLlmOutputLogSample,
+  logLlmOutput,
   readSlsConfig,
-  shouldSampleLlmOutput,
   resolveSlsEndpointHost,
+  runWithLlmOutputLogModule,
   truncateLlmOutput,
 } from "./llmOutputLog.js";
+
+describe("isThemeLlmOutputModule", () => {
+  it("matches v4 ONLINE_STORE_THEME* modules only", () => {
+    assert.equal(isThemeLlmOutputModule("ONLINE_STORE_THEME"), true);
+    assert.equal(isThemeLlmOutputModule("ONLINE_STORE_THEME_JSON_TEMPLATE"), true);
+    assert.equal(isThemeLlmOutputModule("ONLINE_STORE_THEME_LOCALE_CONTENT"), true);
+    assert.equal(isThemeLlmOutputModule("PRODUCT"), false);
+    assert.equal(isThemeLlmOutputModule("CUSTOM_LIQUID"), false);
+    assert.equal(isThemeLlmOutputModule(undefined), false);
+  });
+});
+
+describe("logLlmOutput module gate", () => {
+  const env = { TRANSLATE_LLM_OUTPUT_LOG: "true" };
+  const record = { model: "deepseek-v4-flash", raw: "{\"ok\":true}", tokens: 1 };
+
+  it("does not print non-theme modules", () => {
+    const lines: string[] = [];
+    const origLog = console.log;
+    const origWarn = console.warn;
+    console.log = (...args: unknown[]) => {
+      lines.push(String(args[0]));
+    };
+    console.warn = () => {};
+    try {
+      runWithLlmOutputLogModule("PRODUCT", () => logLlmOutput(record, env));
+      assert.equal(lines.length, 0);
+    } finally {
+      console.log = origLog;
+      console.warn = origWarn;
+    }
+  });
+
+  it("prints theme modules to stdout when SLS env is missing", () => {
+    const lines: string[] = [];
+    const origLog = console.log;
+    const origWarn = console.warn;
+    console.log = (...args: unknown[]) => {
+      lines.push(String(args[0]));
+    };
+    console.warn = () => {};
+    try {
+      runWithLlmOutputLogModule("ONLINE_STORE_THEME_JSON_TEMPLATE", () =>
+        logLlmOutput(record, env),
+      );
+      assert.equal(lines.some((line) => line.startsWith("[llm-out]")), true);
+    } finally {
+      console.log = origLog;
+      console.warn = origWarn;
+    }
+  });
+});
 
 describe("isLlmOutputLogEnabled", () => {
   it("is off unless TRANSLATE_LLM_OUTPUT_LOG is exactly true", () => {
@@ -20,27 +73,6 @@ describe("isLlmOutputLogEnabled", () => {
     assert.equal(isLlmOutputLogEnabled({ TRANSLATE_LLM_OUTPUT_LOG: "1" }), false);
     assert.equal(isLlmOutputLogEnabled({ TRANSLATE_LLM_OUTPUT_LOG: "TRUE" }), false);
     assert.equal(isLlmOutputLogEnabled({ TRANSLATE_LLM_OUTPUT_LOG: "true" }), true);
-  });
-});
-
-describe("readLlmOutputLogSample", () => {
-  it("defaults to 0.3 and clamps 0..1", () => {
-    assert.equal(readLlmOutputLogSample({}), 0.3);
-    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "1" }), 1);
-    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "0" }), 0);
-    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "0.3" }), 0.3);
-    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "2" }), 1);
-    assert.equal(readLlmOutputLogSample({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "nope" }), 0.3);
-  });
-});
-
-describe("shouldSampleLlmOutput", () => {
-  it("uses per-call random against the sample rate", () => {
-    const env = { TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "0.3" };
-    assert.equal(shouldSampleLlmOutput(env, () => 0.299), true);
-    assert.equal(shouldSampleLlmOutput(env, () => 0.3), false);
-    assert.equal(shouldSampleLlmOutput({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "0" }, () => 0), false);
-    assert.equal(shouldSampleLlmOutput({ TRANSLATE_LLM_OUTPUT_LOG_SAMPLE: "1" }, () => 0.999), true);
   });
 });
 
