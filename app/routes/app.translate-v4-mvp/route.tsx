@@ -67,6 +67,7 @@ import {
   buildCreateTaskCreditsPurchaseContext,
   buildTranslateV4TaskCreditsPurchaseContext,
 } from "~/utils/creditsPurchaseTaskContext";
+import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
 
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -533,6 +534,8 @@ export default function TranslateV4MvpRoute() {
       setJobsLoading(false);
     }
   }, [applyJobsUpdate, shop]);
+
+  useV4BillingTaskResumeRefresh(refreshTasks);
 
   const refreshCoverage = useCallback(
     async (forceRefresh = false) => {

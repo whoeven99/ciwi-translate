@@ -66,6 +66,7 @@ import {
   buildCreateTaskCreditsPurchaseContext,
   buildTranslateV4TaskCreditsPurchaseContext,
 } from "~/utils/creditsPurchaseTaskContext";
+import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
 import {
   clearCreateTaskDraft,
   loadCreateTaskDraft,
@@ -368,6 +369,8 @@ export default function AppTranslateV4() {
       setJobsLoading(false);
     }
   }, [shop, applyJobsUpdate]);
+
+  useV4BillingTaskResumeRefresh(refreshList);
 
   const refreshQuota = useCallback(async () => {
     const perfStart = markPerfStart("translate-v4.quota.refresh");

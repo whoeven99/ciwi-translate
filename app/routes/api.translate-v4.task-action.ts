@@ -103,24 +103,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
     }
 
+    let staleRedisCleared = false;
     try {
       const redis = getTranslateV4RedisClient();
       const [pausePending, controlRaw] = await Promise.all([
         redis.hget(v4ProgressKey(taskId), "pausePending"),
         redis.get(v4ControlKey(taskId)),
       ]);
-      if (
+      const blocked =
         pausePending === "1" ||
         controlRaw === "pause" ||
-        controlRaw === "cancel"
-      ) {
-        return json(
-          { ok: false, error: "v4.error.taskStillStopping" },
-          { status: 409 },
+        controlRaw === "cancel";
+      if (blocked) {
+        // Cosmos 已 PAUSED/FAILED：worker 应收尾完毕，残留控制键视为脏数据并清除。
+        await clearV4Control(taskId);
+        await clearV4PausePending(taskId);
+        staleRedisCleared = true;
+        console.log(
+          `[task-action] resume cleared stale redis job=${taskId} shop=${shopName} pausePending=${pausePending ?? ""} control=${controlRaw ?? ""}`,
         );
       }
-    } catch {
-      // non-fatal — Cosmos 状态已是 PAUSED 时通常可继续
+    } catch (e) {
+      console.warn(
+        `[task-action] resume redis check failed job=${taskId} shop=${shopName}`,
+        e instanceof Error ? e.message : e,
+      );
     }
 
     const resumeStatus = resolveResumeV4JobStatus(
@@ -129,6 +136,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       job.metrics,
     );
     if (!resumeStatus) {
+      console.warn(
+        `[task-action] resume rejected job=${taskId} shop=${shopName} cosmosStatus=${job.status} errorStage=${job.errorStage ?? ""} metrics=${JSON.stringify(job.metrics ?? {})}`,
+      );
       return json(
         { ok: false, error: `cannot resume from status ${job.status}` },
         { status: 400 },
@@ -137,6 +147,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     const quotaGuard = await evaluateCreateTaskQuotaGuard(shopName);
     if (!quotaGuard.ok) {
+      console.warn(
+        `[task-action] resume quota guard job=${taskId} shop=${shopName} error=${quotaGuard.error}`,
+      );
       return json({ ok: false, error: quotaGuard.error }, { status: quotaGuard.status });
     }
 
@@ -146,6 +159,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       errorMessage: null,
       errorStage: null,
     });
+    console.log(
+      `[task-action] resume ok job=${taskId} shop=${shopName} ${job.status} -> ${resumeStatus} staleRedisCleared=${staleRedisCleared}`,
+    );
     await clearV4Control(taskId); // 清除暂停/取消键，避免 resume 后立即再次中断
     await clearV4PausePending(taskId); // 清掉「额度不足/暂停待落盘」标记，避免续跑后仍显示旧提示
 

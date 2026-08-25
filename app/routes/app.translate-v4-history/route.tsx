@@ -24,6 +24,7 @@ import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 import type { ShopQuota } from "~/lib/translationQuota";
 import { normalizeShopQuota } from "~/lib/translationQuota";
 import { buildTranslateV4TaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
+import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
 
 async function readJsonResponse<T = any>(res: Response): Promise<T> {
   const text = await res.text();
@@ -70,6 +71,8 @@ export default function AppTranslateV4History() {
       setJobs(data.jobs as TranslationJobProgressSummary[]);
     }
   }, [shop]);
+
+  useV4BillingTaskResumeRefresh(refreshList);
 
   const refreshQuota = useCallback(async () => {
     const res = await fetch(

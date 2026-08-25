@@ -929,6 +929,8 @@
   "v4.coverage.viewAll": "查看全部 {{count}} 种",
   "v4.create.createdBelow": "你可以在下方任务列表查看进度。",
   "v4.create.draftRestored": "已恢复你之前的翻译选项，确认后即可创建任务。",
+  "v4.billing.taskResumedAfterPurchase": "积分已到账，翻译任务正在自动继续。",
+  "v4.billing.taskResumeAfterPurchaseFailed": "积分已到账，但任务未能自动继续，请在任务卡片上点击「继续」。",
   "v4.create.failed": "创建失败",
   "v4.create.missingJobId": "缺少 jobId",
   "v4.create.networkError": "网络错误",

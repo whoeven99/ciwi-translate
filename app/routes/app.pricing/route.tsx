@@ -318,20 +318,33 @@ const Index = () => {
   );
 
   const { reportClick, report } = useReport();
-  const currentBillingReturnPath = useMemo(() => {
+  const billingReturnBasePath = useMemo(() => {
     const requestedReturnPath = new URLSearchParams(location.search).get(
       "returnPath",
     );
     if (requestedReturnPath) {
       return sanitizeBillingReturnPath(requestedReturnPath);
     }
-    const currentPath = `${location.pathname}${location.search}${location.hash}`;
-    return buildBillingReturnPath(currentPath, {
-      kind: "credits",
-      previousTotalChars:
-        typeof totalChars === "number" ? totalChars : undefined,
-    });
-  }, [location.hash, location.pathname, location.search, totalChars]);
+    return `${location.pathname}${location.search}${location.hash}`;
+  }, [location.hash, location.pathname, location.search]);
+  const creditsBillingReturnPath = useMemo(
+    () =>
+      buildBillingReturnPath(billingReturnBasePath, {
+        kind: "credits",
+        previousTotalChars:
+          typeof totalChars === "number" ? totalChars : undefined,
+      }),
+    [billingReturnBasePath, totalChars],
+  );
+  const planBillingReturnPath = useMemo(
+    () =>
+      buildBillingReturnPath(billingReturnBasePath, {
+        kind: "plan",
+        previousTotalChars:
+          typeof totalChars === "number" ? totalChars : undefined,
+      }),
+    [billingReturnBasePath, totalChars],
+  );
 
   //价格选项数组
   const creditOptions: OptionType[] = useMemo(
@@ -1092,7 +1105,7 @@ const Index = () => {
     };
     const formData = new FormData();
     formData.append("payInfo", JSON.stringify(payInfo));
-    formData.append("returnPath", currentBillingReturnPath);
+    formData.append("returnPath", creditsBillingReturnPath);
     payFetcher.submit(formData, {
       method: "POST",
     });
@@ -1124,7 +1137,7 @@ const Index = () => {
     payForPlanFetcher.submit(
       {
         payForPlan: JSON.stringify({ ...plan, yearly, trialDays }),
-        returnPath: currentBillingReturnPath,
+        returnPath: planBillingReturnPath,
       },
       { method: "POST" },
     );
