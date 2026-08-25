@@ -18,6 +18,7 @@ import { buildPaymentOptions, type OptionType } from "./paymentModal.shared";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
 import type { CreditsPurchaseModalContext } from "~/utils/creditsPurchaseModal";
 import { redirectToBillingConfirmation } from "~/utils/billingConfirmation.client";
+import { saveResumeTaskDraft } from "~/utils/resumeTaskDraft";
 import { message } from "~/ui/message";
 
 interface PaymentModalProps {
@@ -42,7 +43,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     response?: { confirmationUrl?: string };
   }>();
   const { reportClick } = useReport();
-  const { plan, totalChars } = useSelector((state: any) => state.userConfig);
+  const { plan, totalChars, shop } = useSelector((state: any) => state.userConfig);
   void variant;
 
   const options: OptionType[] = useMemo(() => buildPaymentOptions(plan), [plan]);
@@ -110,9 +111,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     setSelectedKey(recommendedOption.key);
   }, [visible, recommendedOption]);
 
+  const taskContext =
+    purchaseContext?.kind === "translate_v4_task" ? purchaseContext : null;
+  const createTaskContext =
+    purchaseContext?.kind === "create_task" ? purchaseContext : null;
+  const singleTranslateContext =
+    purchaseContext?.kind === "single_translate" ? purchaseContext : null;
+
   const onClick = () => {
     setBuyButtonLoading(true);
     paySubmittingRef.current = true;
+    if (taskContext?.taskId && typeof shop === "string" && shop.trim()) {
+      saveResumeTaskDraft(shop, taskContext.taskId);
+    }
     const payInfo = {
       name: selectedOption?.name,
       price: {
@@ -145,12 +156,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     // if (recommendOption) setSelectedOption(recommendOption);
   };
 
-  const taskContext =
-    purchaseContext?.kind === "translate_v4_task" ? purchaseContext : null;
-  const createTaskContext =
-    purchaseContext?.kind === "create_task" ? purchaseContext : null;
-  const singleTranslateContext =
-    purchaseContext?.kind === "single_translate" ? purchaseContext : null;
   const ctaLabel = taskContext
     ? t("Pay and continue translation")
     : singleTranslateContext

@@ -929,6 +929,8 @@
   "v4.coverage.viewAll": "View all {{count}} languages",
   "v4.create.createdBelow": "You can track progress in the task list below.",
   "v4.create.draftRestored": "Your previous translation selections were restored. Review and start when ready.",
+  "v4.billing.taskResumedAfterPurchase": "Credits added. Your translation task is resuming.",
+  "v4.billing.taskResumeAfterPurchaseFailed": "Credits were added, but the task could not resume automatically. Tap Resume on the task card.",
   "v4.create.failed": "Failed to create",
   "v4.create.missingJobId": "Missing job ID",
   "v4.create.networkError": "Network error",

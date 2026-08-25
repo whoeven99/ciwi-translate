@@ -33,7 +33,7 @@ import {
 } from "~/server/translateV4/shopLocales.server";
 import { ensureShopV4Settings } from "~/server/translateV4/migration.server";
 import { syncShopTargetLocalesFromShopify } from "~/server/translateV4/targetLocale.server";
-import { Profiler, Suspense, lazy, useEffect, useState } from "react";
+import { Profiler, Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useIdleReady } from "~/hooks/useIdleReady";
 
@@ -67,10 +67,12 @@ import {
   type CreditsPurchaseModalContext,
 } from "~/utils/creditsPurchaseModal";
 import { refreshBillingBootstrap } from "~/utils/billingBootstrap";
+import { resumePausedTaskAfterBilling } from "~/utils/resumeTaskAfterBilling";
 import {
   parseBillingReturn,
   stripBillingReturnParams,
 } from "~/utils/billingReturn";
+import { message } from "~/ui/message";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -525,6 +527,7 @@ export default function App() {
   const dispatch = useDispatch();
   const location = useLocation();
   const totalChars = useSelector((state: any) => state.userConfig.totalChars);
+  const billingReturnHandledRef = useRef(false);
 
   useEffect(() => {
     if (isPerfDebugEnabled()) {
@@ -612,6 +615,8 @@ export default function App() {
 
     const billingReturn = parseBillingReturn(location.search);
     if (!billingReturn) return;
+    if (billingReturnHandledRef.current) return;
+    billingReturnHandledRef.current = true;
 
     const cleanedPath = stripBillingReturnParams(
       `${location.pathname}${location.search}${location.hash}`,
@@ -622,17 +627,27 @@ export default function App() {
       return;
     }
 
-    void refreshBillingBootstrap(
-      dispatch,
-      billingReturn.previousTotalChars ?? totalChars,
-    );
+    void (async () => {
+      await refreshBillingBootstrap(
+        dispatch,
+        billingReturn.previousTotalChars ?? totalChars,
+      );
+      const resumeResult = await resumePausedTaskAfterBilling(shop);
+      if (resumeResult === "resumed") {
+        message.success(t("v4.billing.taskResumedAfterPurchase"));
+      } else if (resumeResult === "failed") {
+        message.warning(t("v4.billing.taskResumeAfterPurchaseFailed"));
+      }
+    })();
   }, [
     dispatch,
     isClient,
     location.hash,
     location.pathname,
     location.search,
+    shop,
     totalChars,
+    t,
   ]);
 
   return (
