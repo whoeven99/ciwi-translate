@@ -44,6 +44,17 @@ export function resolveResumeV4JobStatus(
 ): TranslationV4Status | null {
   if (currentStatus !== "PAUSED" && currentStatus !== "FAILED") return null;
 
+  const initTotal = metrics.initTotal ?? 0;
+  const translateTotal = metrics.translateTotal ?? 0;
+  const translateDone = metrics.translateDone ?? 0;
+  // 从未初始化（或 metrics 丢失）：应回到 INIT，而不是 TRANSLATE（无 init blob 会空跑）。
+  if (initTotal <= 0 && translateTotal <= 0 && translateDone <= 0) {
+    if (errorStage === "WRITEBACK" && writebackNeedsRetry(metrics)) {
+      return "WRITEBACK_QUEUED";
+    }
+    return "INIT_QUEUED";
+  }
+
   // 翻译还没覆盖全部资源（如额度中途暂停）→ 优先回到翻译，补译剩余资源。
   // 必须在 writebackNeedsRetry 之前：否则会卡在写回循环（未翻译的资源永远写不出去）。
   if (translateIncomplete(metrics)) {

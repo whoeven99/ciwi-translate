@@ -1,5 +1,6 @@
 import { isV4QuotaInsufficientMessage } from "~/shared/translateV4MessageTokens";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
+import { reportClientLog } from "~/utils/clientLog";
 import {
   clearResumeTaskDraft,
   loadResumeTaskDraft,
@@ -13,6 +14,20 @@ export type ResumeTaskAfterBillingResult =
   | "failed";
 
 const RETRY_DELAYS_MS = [0, 800, 1600, 2500, 4000, 6000, 8000, 12_000];
+const LOG_EVENT = "v4_billing_resume";
+
+function logResumeStep(
+  step: string,
+  context: Record<string, unknown>,
+): void {
+  console.log(`[${LOG_EVENT}]`, step, context);
+  void reportClientLog({
+    event: LOG_EVENT,
+    kind: "action",
+    status: "success",
+    context: { step, ...context },
+  });
+}
 
 function isRetryableResumeError(error: unknown): boolean {
   if (typeof error !== "string" || !error.trim()) return false;
@@ -33,7 +48,7 @@ function isPermanentResumeError(error: unknown): boolean {
 async function requestTaskResume(
   shop: string,
   taskId: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; status?: number }> {
   const res = await fetch("/api/translate-v4/task-action", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -47,7 +62,11 @@ async function requestTaskResume(
     ok?: boolean;
     error?: string;
   };
-  return { ok: Boolean(data.ok), error: data.error };
+  return {
+    ok: Boolean(data.ok),
+    error: data.error,
+    status: res.status,
+  };
 }
 
 function notifyTaskListRefresh(): void {
@@ -74,12 +93,41 @@ async function discoverQuotaPausedTaskIds(shop: string): Promise<string[]> {
       ok?: boolean;
       jobs?: TranslationJobProgressSummary[];
     };
-    if (!data.ok || !Array.isArray(data.jobs)) return [];
+    if (!data.ok || !Array.isArray(data.jobs)) {
+      logResumeStep("discover_failed", {
+        shop,
+        ok: data.ok,
+        jobsType: typeof data.jobs,
+      });
+      return [];
+    }
+
+    const candidates = data.jobs
+      .filter((job) => job.status === "PAUSED")
+      .map((job) => ({
+        taskId: job.taskId,
+        target: job.target,
+        canResume: job.canResume,
+        errorMessage: job.errorMessage,
+        isStopping: job.isStopping,
+        quotaMatch: isV4QuotaInsufficientMessage(job.errorMessage),
+      }));
+
+    logResumeStep("discover_list", {
+      shop,
+      pausedCount: candidates.length,
+      candidates,
+    });
+
     return data.jobs
       .filter(isQuotaPausedResumableJob)
       .map((job) => job.taskId)
       .filter(Boolean);
-  } catch {
+  } catch (e) {
+    logResumeStep("discover_error", {
+      shop,
+      message: e instanceof Error ? e.message : String(e),
+    });
     return [];
   }
 }
@@ -96,6 +144,18 @@ async function resumeTaskWithRetries(
 
     try {
       const result = await requestTaskResume(shop, taskId);
+      logResumeStep("resume_attempt", {
+        shop,
+        taskId,
+        attempt: i + 1,
+        delayMs,
+        ok: result.ok,
+        httpStatus: result.status,
+        error: result.error ?? null,
+        retryable: result.error ? isRetryableResumeError(result.error) : false,
+        permanent: result.error ? isPermanentResumeError(result.error) : false,
+      });
+
       if (result.ok) return true;
 
       if (isPermanentResumeError(result.error)) {
@@ -105,8 +165,13 @@ async function resumeTaskWithRetries(
       if (!isRetryableResumeError(result.error)) {
         return false;
       }
-    } catch {
-      // network blip — retry
+    } catch (e) {
+      logResumeStep("resume_attempt_error", {
+        shop,
+        taskId,
+        attempt: i + 1,
+        message: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -122,17 +187,49 @@ export async function resumePausedTaskAfterBilling(
 ): Promise<ResumeTaskAfterBillingResult> {
   const draft = loadResumeTaskDraft(shop);
   const draftTaskIds = draft?.taskIds ?? [];
+  logResumeStep("start", {
+    shop,
+    draftTaskIds,
+    draftSavedAt: draft?.savedAt ?? null,
+  });
+
   const discoveredTaskIds = await discoverQuotaPausedTaskIds(shop);
   const taskIds = [...new Set([...draftTaskIds, ...discoveredTaskIds])];
-  if (taskIds.length === 0) return "skipped";
+
+  logResumeStep("task_ids_merged", {
+    shop,
+    draftTaskIds,
+    discoveredTaskIds,
+    taskIds,
+  });
+
+  if (taskIds.length === 0) {
+    logResumeStep("skipped_no_tasks", { shop });
+    return "skipped";
+  }
 
   let resumedCount = 0;
+  const results: Array<{ taskId: string; ok: boolean }> = [];
   for (const taskId of taskIds) {
     const ok = await resumeTaskWithRetries(shop, taskId);
+    results.push({ taskId, ok });
     if (ok) resumedCount += 1;
   }
 
   clearResumeTaskDraft(shop);
+
+  logResumeStep("finished", {
+    shop,
+    resumedCount,
+    total: taskIds.length,
+    results,
+    outcome:
+      resumedCount > 0
+        ? "resumed"
+        : taskIds.length > 0
+          ? "failed"
+          : "skipped",
+  });
 
   if (resumedCount > 0) {
     notifyTaskListRefresh();
