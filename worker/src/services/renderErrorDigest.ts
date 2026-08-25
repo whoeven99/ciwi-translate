@@ -51,6 +51,8 @@ const IGNORE_MESSAGE_PATTERNS: RegExp[] = [
   /No route matches URL\s+"\/assets\//i,
   /data:\s*'Error: No route matches URL\s+"\/assets\//i,
   /error: Error: No route matches URL\s+"\/assets\//i,
+  // auto-liquid 并发竞态：另一请求已写入同键；采集路径现按幂等处理，历史日志仍过滤
+  /UNIQUE constraint failed: LiquidRule\.shop, LiquidRule\.languageCode, LiquidRule\.beforeTranslation/i,
 ];
 
 /**

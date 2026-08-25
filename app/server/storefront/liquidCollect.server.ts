@@ -182,6 +182,47 @@ function debugLog(step: string, extra?: Record<string, unknown>): void {
   console.log(`[auto-liquid] ${step}`, JSON.stringify(extra ?? {}));
 }
 
+/** 并发采集竞态：另一请求已插入同 (shop, locale, 原文) 行。 */
+function isLiquidRuleUniqueConstraint(err: unknown): boolean {
+  let cur: unknown = err;
+  for (let depth = 0; depth < 4 && cur != null; depth++) {
+    const msg = cur instanceof Error ? cur.message : String(cur);
+    if (
+      /UNIQUE constraint failed.*LiquidRule/i.test(msg) ||
+      (/SQLITE_CONSTRAINT/i.test(msg) &&
+        /LiquidRule\.(shop|languageCode|beforeTranslation)/i.test(msg))
+    ) {
+      return true;
+    }
+    cur =
+      cur && typeof cur === "object" && "cause" in cur
+        ? (cur as { cause?: unknown }).cause
+        : undefined;
+  }
+  return false;
+}
+
+async function mirrorPendingDigestsToRedis(
+  redis: ReturnType<typeof getTranslateV4RedisClient> | null,
+  shop: string,
+  target: string,
+  texts: string[],
+  insertedCount: number,
+): Promise<void> {
+  if (!redis || !texts.length) return;
+  try {
+    const digests = texts.map((t) => liquidSourceDigest(t));
+    await redis.sadd(knownDigestKey(shop, target), ...digests);
+    await redis.expire(knownDigestKey(shop, target), KNOWN_TTL_SEC);
+    if (insertedCount > 0) {
+      await redis.incrby(totalCountKey(shop), insertedCount);
+      await redis.expire(totalCountKey(shop), TOTAL_CACHE_TTL_SEC);
+    }
+  } catch {
+    // ignore（缓存尽力而为，权威在 Turso）
+  }
+}
+
 function todayKey(shop: string): string {
   const ymd = utcYmd();
   return `tsf:auto_liquid:count:${shop}:${ymd}`;
@@ -435,23 +476,22 @@ export async function collectAutoLiquidStrings(args: {
         jobId: null,
       })),
     });
-    // 维护缓存：新 PENDING 指纹入已知集；总量计数自增（Worker 转 DONE 时 SREM）。
-    if (redis && result.count > 0) {
-      try {
-        const freshDigests = toInsert.map((t) => liquidSourceDigest(t));
-        await redis.sadd(knownDigestKey(shop, target), ...freshDigests);
-        await redis.expire(knownDigestKey(shop, target), KNOWN_TTL_SEC);
-        await redis.incrby(totalCountKey(shop), result.count);
-        await redis.expire(totalCountKey(shop), TOTAL_CACHE_TTL_SEC);
-      } catch {
-        // ignore（缓存尽力而为，权威在 Turso）
-      }
-    }
+    await mirrorPendingDigestsToRedis(redis, shop, target, toInsert, result.count);
     console.log(
       `[auto-liquid] inserted shop=${shop} target=${target} scheduled=${result.count} inCount=${inCount}`,
     );
     return { scheduled: result.count, skipped: false };
   } catch (err) {
+    if (isLiquidRuleUniqueConstraint(err)) {
+      await mirrorPendingDigestsToRedis(redis, shop, target, toInsert, 0);
+      debugLog("skip", {
+        shop,
+        target,
+        reason: "duplicate_race",
+        want: toInsert.length,
+      });
+      return { scheduled: 0, skipped: false, reason: "all_known" };
+    }
     console.error("[auto-liquid] createMany PENDING failed:", err);
     return { scheduled: 0, skipped: true, reason: "write_failed" };
   }
