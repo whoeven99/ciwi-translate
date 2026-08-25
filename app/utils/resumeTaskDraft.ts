@@ -1,10 +1,10 @@
 /**
- * Persist a paused translate-v4 task id across Shopify billing redirects.
- * Used to auto-resume after credits purchase ("Pay and continue translation").
+ * Persist paused translate-v4 task ids across Shopify billing redirects.
+ * Used to auto-resume after credits purchase or subscription billing return.
  */
 
 export type ResumeTaskDraft = {
-  taskId: string;
+  taskIds: string[];
   savedAt: number;
 };
 
@@ -24,13 +24,21 @@ function canUseSessionStorage(): boolean {
   }
 }
 
+function normalizeTaskIds(taskIds: string[]): string[] {
+  return [...new Set(taskIds.map((id) => id.trim()).filter(Boolean))];
+}
+
 export function saveResumeTaskDraft(shop: string, taskId: string): void {
   const normalizedShop = shop.trim();
   const normalizedTaskId = taskId.trim();
   if (!normalizedShop || !normalizedTaskId || !canUseSessionStorage()) return;
 
+  const existing = loadResumeTaskDraft(normalizedShop);
   const payload: ResumeTaskDraft = {
-    taskId: normalizedTaskId,
+    taskIds: normalizeTaskIds([
+      ...(existing?.taskIds ?? []),
+      normalizedTaskId,
+    ]),
     savedAt: Date.now(),
   };
   try {
@@ -47,7 +55,9 @@ export function loadResumeTaskDraft(shop: string): ResumeTaskDraft | null {
   try {
     const raw = sessionStorage.getItem(storageKey(normalizedShop));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ResumeTaskDraft>;
+    const parsed = JSON.parse(raw) as Partial<
+      ResumeTaskDraft & { taskId?: string }
+    >;
     if (!parsed || typeof parsed !== "object") return null;
     if (
       typeof parsed.savedAt !== "number" ||
@@ -57,11 +67,15 @@ export function loadResumeTaskDraft(shop: string): ResumeTaskDraft | null {
       clearResumeTaskDraft(normalizedShop);
       return null;
     }
-    if (typeof parsed.taskId !== "string" || !parsed.taskId.trim()) {
-      return null;
-    }
+
+    const taskIds = normalizeTaskIds([
+      ...(Array.isArray(parsed.taskIds) ? parsed.taskIds.map(String) : []),
+      ...(typeof parsed.taskId === "string" ? [parsed.taskId] : []),
+    ]);
+    if (taskIds.length === 0) return null;
+
     return {
-      taskId: parsed.taskId.trim(),
+      taskIds,
       savedAt: parsed.savedAt,
     };
   } catch {

@@ -623,7 +623,7 @@ export default function App() {
     );
     window.history.replaceState({}, "", cleanedPath);
 
-    if (billingReturn.kind !== "credits") {
+    if (billingReturn.kind !== "credits" && billingReturn.kind !== "plan") {
       return;
     }
 

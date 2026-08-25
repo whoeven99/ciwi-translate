@@ -161,32 +161,29 @@ async function main() {
   const expectedTotal = Number(countRes.rows[0]?.n || 0);
   console.log(`count=${expectedTotal}`);
 
-  const pageSize = 400;
+  const shopRes = await executeWithRetry(db, {
+    sql: `SELECT DISTINCT shop FROM LiquidRule WHERE ${where.join(" AND ")} ORDER BY shop`,
+    args: params,
+  });
+  const shops = shopRes.rows.map((r) => r.shop).filter(Boolean);
+  console.log(`shops=${shops.length}`);
+
   const maxRows = args.limit > 0 ? args.limit : expectedTotal;
   const rawRows = [];
-  let cursorUpdatedAt = null;
-  let cursorId = null;
-
-  while (rawRows.length < maxRows) {
-    const take = Math.min(pageSize, maxRows - rawRows.length);
-    const pageWhere = [...where];
-    const pageParams = [...params];
-    if (cursorUpdatedAt != null && cursorId != null) {
-      pageWhere.push("(updatedAt < ? OR (updatedAt = ? AND id < ?))");
-      pageParams.push(cursorUpdatedAt, cursorUpdatedAt, cursorId);
-    }
+  for (const shop of shops) {
+    if (rawRows.length >= maxRows) break;
+    const shopWhere = [...where, "shop = ?"];
+    const shopParams = [...params, shop];
+    const take = maxRows - rawRows.length;
     const sql = `SELECT id, shop, beforeTranslation, afterTranslation, languageCode,
       replacementMethod, source, status, sourceDigest, jobId, createdAt, updatedAt
-      FROM LiquidRule WHERE ${pageWhere.join(" AND ")}
-      ORDER BY updatedAt DESC, id DESC LIMIT ?`;
-    const result = await executeWithRetry(db, { sql, args: [...pageParams, take] });
-    if (!result.rows.length) break;
+      FROM LiquidRule WHERE ${shopWhere.join(" AND ")}
+      ORDER BY updatedAt DESC LIMIT ?`;
+    const result = await executeWithRetry(db, { sql, args: [...shopParams, take] });
     rawRows.push(...result.rows);
-    const last = result.rows[result.rows.length - 1];
-    cursorUpdatedAt = last.updatedAt;
-    cursorId = last.id;
-    if (result.rows.length < take) break;
-    if (rawRows.length % 2000 < pageSize) console.log(`fetched ${rawRows.length}/${maxRows}`);
+    if (rawRows.length % 3000 < 500) {
+      console.log(`fetched ${rawRows.length}/${maxRows} (shop ${shop})`);
+    }
   }
 
   const rows = rawRows.map((r) => ({
