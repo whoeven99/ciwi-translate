@@ -79,7 +79,7 @@ const EMPTY_COVERAGE: CoverageSummary = {
 
 const QUOTA_POLL_MIN_INTERVAL_MS = 60_000;
 
-const SUMMARY_VIDEO_URL = "https://www.youtube.com/watch?v=AJ0RZkCQMd0&t=9s";
+const SUMMARY_VIDEO_URL = "https://youtu.be/rAFB3AuXuH0";
 
 type RecommendationTone = "success" | "attention" | "info";
 
