@@ -2589,6 +2589,13 @@ export class CiwiswitcherForm extends HTMLElement {
         getSwitcherStorageScope(this.elements.ciwiBlock),
         value,
       );
+      // 手动选货币也算「用户已本地化」，否则 ipOpen 会在下次加载按 IP 改市场，
+      // 把货币回落成市场默认值（如 EUR），覆盖用户手动选的 CNY。
+      persistManualLocalizationPreference({
+        country: this.elements.countryInput?.value,
+        language: this.elements.languageInput?.value,
+        shop: this.elements.ciwiBlock.querySelector("#queryCiwiId")?.value,
+      });
       closePanelAfterSelection();
       event.preventDefault();
 
