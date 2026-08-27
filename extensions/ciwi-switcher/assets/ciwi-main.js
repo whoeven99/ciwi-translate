@@ -612,10 +612,19 @@ async function ciwiOnload() {
     preferredLanguage ||
     runtimeLanguage ||
     languageValue;
+  // IP 自动定位每个会话只做一次：首次定位后不再覆盖用户后续的任何手动切换
+  // （无论走 ciwi 选择器还是 Shopify 原生选择器），避免「跳转另一页货币被改回市场默认值」。
+  const ipLocalizedSessionKey = `ciwi_ip_localized:${shop?.value || ""}`;
+  let ipAlreadyLocalizedThisSession = false;
+  try {
+    ipAlreadyLocalizedThisSession =
+      sessionStorage.getItem(ipLocalizedSessionKey) === "1";
+  } catch {}
   const shouldAutoMatchMarketByIP =
     !isInThemePreview &&
     configData?.ipOpen &&
-    !hasUserLocalizationData;
+    !hasUserLocalizationData &&
+    !ipAlreadyLocalizedThisSession;
   const shouldAutoSwitchBrowserLanguage =
     !isInThemePreview &&
     configData?.browserLanguageOpen &&
@@ -627,8 +636,12 @@ async function ciwiOnload() {
     detectedLanguage = resolvedBrowserLanguage;
   }
 
-  // IP 定位：每次进入都重新请求，不使用 localStorage 缓存
+  // IP 定位：本会话首次进入才请求；请求后标记，之后本会话不再覆盖用户手动选择
   if (shouldAutoMatchMarketByIP) {
+    try {
+      sessionStorage.setItem(ipLocalizedSessionKey, "1");
+    } catch {}
+
     const iptokenValue = ciwiBlock.querySelector(
       'input[name="iptoken"]',
     )?.value;
