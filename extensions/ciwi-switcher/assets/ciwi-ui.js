@@ -508,10 +508,28 @@ export async function initializeCurrency({
     ciwiBlock.dataset.ciwiBaseCurrencyCode = baseCurrencyCode;
   }
   const persistedCurrencyCode = getSelectedCurrencyCache(shop) || "";
-  const selectedCurrencyCode =
-    marketCurrencyOpen || !persistedCurrencyCode
-      ? pageCurrencyCode
-      : persistedCurrencyCode;
+
+  // 检测 Shopify 市场货币是否变化：商户/用户通过主题原生选择器切换市场时，
+  // pageCurrencyCode（{{ localization.country.currency.iso_code }}）会变。
+  // 此时放弃旧的手动选择、跟随新市场；否则一直沿用旧手动值导致「切市场货币不跟随」。
+  const lastMarketCurrencyCode = getMarketCurrencyCache(shop) || "";
+  const marketChanged =
+    Boolean(pageCurrencyCode) &&
+    Boolean(lastMarketCurrencyCode) &&
+    lastMarketCurrencyCode !== pageCurrencyCode;
+  if (pageCurrencyCode) {
+    setMarketCurrencyCache(shop, pageCurrencyCode);
+  }
+  if (marketChanged) {
+    clearSelectedCurrencyCache(shop);
+    clearSelectedCurrencyRateCache(shop);
+  }
+
+  // 手动选择优先：只要存在未随市场切换而失效的手动选择，就尊重手动值；
+  // 否则跟随当前市场货币。marketCurrencyOpen 不再强制覆盖用户手动选择，
+  // 避免「手动切 USD 一秒后被改回市场货币」。
+  const effectivePersistedCurrencyCode = marketChanged ? "" : persistedCurrencyCode;
+  const selectedCurrencyCode = effectivePersistedCurrencyCode || pageCurrencyCode;
   const moneyFormat = ciwiBlock.querySelector("#queryMoneyFormat").value;
 
   let selectedCurrency = currencyData?.find(
@@ -2732,6 +2750,26 @@ function getSelectedCurrencyCache(shop) {
 
 function setSelectedCurrencyCache(shop, currencyCode) {
   setStorageItem("ciwi_selected_currency", currencyCode, {
+    scope: shop,
+  });
+}
+
+function clearSelectedCurrencyCache(shop) {
+  removeStorageItem("ciwi_selected_currency", {
+    scope: shop,
+    legacyKeys: ["ciwi_selected_currency"],
+  });
+}
+
+function getMarketCurrencyCache(shop) {
+  return getStorageItem("ciwi_market_currency", {
+    scope: shop,
+    legacyKeys: ["ciwi_market_currency"],
+  });
+}
+
+function setMarketCurrencyCache(shop, currencyCode) {
+  setStorageItem("ciwi_market_currency", currencyCode, {
     scope: shop,
   });
 }
