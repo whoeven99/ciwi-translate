@@ -22,6 +22,7 @@ import {
   removeStorageItem,
 } from "./ciwi-storage.js";
 import {
+  buildLocalizationReturnTo,
   CIWI_MONEY_SELECTOR,
   isPriceRelatedElement,
   persistManualLocalizationPreference,
@@ -150,7 +151,6 @@ const normalizePageFlyTranslationEntries = (response) => {
 
 // 文本是否被一对外层引号包裹
 const hasOuterQuote = (text) => /^["“”]/.test(text) && /["“”]$/.test(text);
-const CIWI_MANUAL_LOCALIZATION_QUERY_KEY = "ciwi_manual_localization";
 
 const clampNumber = (value, min, max) => Math.min(Math.max(value, min), max);
 let activePriceObserver = null;
@@ -2640,8 +2640,6 @@ export class CiwiswitcherForm extends HTMLElement {
     const form = this.querySelector("form");
 
     if (form) {
-      const returnToUrl = new URL(window.location.href);
-      returnToUrl.searchParams.set(CIWI_MANUAL_LOCALIZATION_QUERY_KEY, "1");
       let returnToInput = form.querySelector('input[name="return_to"]');
       if (!returnToInput) {
         returnToInput = document.createElement("input");
@@ -2649,8 +2647,11 @@ export class CiwiswitcherForm extends HTMLElement {
         returnToInput.name = "return_to";
         form.appendChild(returnToInput);
       }
-      returnToInput.value =
-        `${returnToUrl.pathname}${returnToUrl.search}${returnToUrl.hash}`;
+      returnToInput.value = buildLocalizationReturnTo({
+        currentLanguage: this.elements.languageInput?.defaultValue,
+        language: this.elements.languageInput?.value,
+        markManual: true,
+      });
       persistManualLocalizationPreference({
         country: this.elements.countryInput?.value,
         language: this.elements.languageInput?.value,
