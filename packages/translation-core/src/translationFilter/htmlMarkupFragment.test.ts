@@ -37,6 +37,18 @@ describe("looksLikeHtmlMarkupFragment", () => {
     assert.equal(looksLikeHtmlMarkupFragment("Size = Large"), false);
   });
 
+  it("does not reject full HTML bodies that contain media attributes", () => {
+    const html = `
+      <style>.article-card img { object-fit: cover; }</style>
+      <div class="article-card">
+        <img src="hero.jpg" loading="lazy" width="1536" height="2048" />
+        <p>WR Women's Chess Tour 2026 lands in Saint-Tropez.</p>
+      </div>
+    `;
+    assert.equal(looksLikeHtmlMarkupFragment(html), false);
+    assert.equal(translationRuleJudgment("body_html", html), true);
+  });
+
   it("is wired into translationRuleJudgment for liquid collect", () => {
     assert.equal(
       translationRuleJudgment(
