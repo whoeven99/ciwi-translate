@@ -3,6 +3,7 @@
  * Example: `}" loading="lazy" width="1536" height="2048" />`
  */
 
+const HTML_TAG_RE = /<\/?[a-z][^>]*>/i;
 const MEDIA_ATTR_RE =
   /\b(loading|srcset|decoding|fetchpriority)\s*=\s*["']/i;
 const ATTR_PAIR_RE = /\b[\w:-]+\s*=\s*(["'])(?:(?!\1).)*\1/g;
@@ -13,6 +14,9 @@ const ANY_ATTR_RE = /\b[\w:-]+\s*=\s*["']/;
 export function looksLikeHtmlMarkupFragment(value: string): boolean {
   const t = String(value || "").trim();
   if (!t) return false;
+  // Full HTML bodies may legitimately contain img/media attributes; this guard
+  // only targets attribute tails leaked by storefront/Liquid extraction.
+  if (HTML_TAG_RE.test(t)) return false;
   if (MEDIA_ATTR_RE.test(t)) return true;
   const pairs = t.match(ATTR_PAIR_RE);
   if (pairs && pairs.length >= 2) return true;
