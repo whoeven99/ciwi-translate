@@ -38,7 +38,7 @@ export function translationRuleJudgment(key: string, value: string): boolean {
     return false;
   }
 
-  if (looksLikeHtmlMarkupFragment(value)) {
+  if (key === "liquid" && looksLikeHtmlMarkupFragment(value)) {
     return false;
   }
 

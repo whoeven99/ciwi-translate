@@ -37,14 +37,11 @@ describe("looksLikeHtmlMarkupFragment", () => {
     assert.equal(looksLikeHtmlMarkupFragment("Size = Large"), false);
   });
 
-  it("is wired into translationRuleJudgment for liquid collect", () => {
-    assert.equal(
-      translationRuleJudgment(
-        "liquid",
-        '}" loading="lazy" width="1536" height="2048" />',
-      ),
-      false,
-    );
+  it("is wired into translationRuleJudgment for liquid collect only", () => {
+    const fragment = '}" loading="lazy" width="1536" height="2048" />';
+    assert.equal(translationRuleJudgment("liquid", fragment), false);
     assert.equal(translationRuleJudgment("liquid", "Showcase"), true);
+    assert.equal(translationRuleJudgment("title", fragment), true);
+    assert.equal(translationRuleJudgment("body_html", fragment), true);
   });
 });
