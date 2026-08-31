@@ -914,8 +914,10 @@ redirect records.
  Turso `DONE`（**不** `registerTranslations`）。代码：
  `worker/src/services/customLiquid.ts`、`initWorker` / `writebackWorker`。
  4. **店面替换**：`parseLiquidTranslations` **只返回 `status=DONE` 且译文非空**；
- `CustomLiquidTextTranslate` + App Proxy `liquid/parse` 不变。空结果返回
- `ok({})` 供浏览器负缓存。
+ map 按原文长度降序（同长度 `createdAt` 新→旧）；`CustomLiquidTextTranslate`
+ 对 fuzzy 再按长度降序替换（文本/属性/HTML 共用）。首次全页替换后，增量补译
+ 仅对 `[class*="countdown-timer"]` 容器（含 `characterData`，跟数字格刷新）。
+ 空结果返回 `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
  慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 auto+PENDING junk：
