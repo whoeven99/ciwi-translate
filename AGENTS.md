@@ -883,10 +883,10 @@ redirect records.
  Proxy `POST liquid/collect` → `liquidCollect.server.ts` 只写入
  `LiquidRule(status=PENDING, source=auto, afterTranslation="")`，**不在 Web
  进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
- `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
- 过滤，含 `looksLikeHtmlMarkupFragment`（HTML 属性碎片）与
- `looksLikeAutoLiquidJunk`（评价组件/价格/SKU/年款/产品型号等；经
- `translationRuleJudgment("liquid", …)` 入库）。店面采集另跳过
+ `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用通用值
+ 启发式；`looksLikeHtmlMarkupFragment`（HTML 属性碎片）与
+ `looksLikeAutoLiquidJunk`（评价组件/价格/SKU/年款/产品型号等）仅
+ `key === "liquid"` 时拦截，不拦手动/自动 Shopify 字段）。店面采集另跳过
  `isPriceRelatedElement` 与评价 App 常见容器 class。其它门控：全局
  `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
  名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
