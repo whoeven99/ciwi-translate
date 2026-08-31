@@ -2160,6 +2160,20 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
   applyReplacementsToRoots();
 
   if (typeof window !== "undefined") {
+    // 第三方 bundle（如 Tably/bx-offer）常在首次替换后才插入 DOM；短窗口内补跑几次全页替换。
+    const delayedTimeoutsKey = "__ciwi_liquid_translate_delayed_timeouts__";
+    const previousDelayed = window[delayedTimeoutsKey];
+    if (Array.isArray(previousDelayed)) {
+      previousDelayed.forEach((id) => clearTimeout(id));
+    }
+    window[delayedTimeoutsKey] = [300, 1000, 2500].map((delayMs) =>
+      setTimeout(() => {
+        if (!document.body?.isConnected) return;
+        applyReplacementsToRoots();
+        debugLog("delayedReapply", { delayMs });
+      }, delayMs),
+    );
+
     const observerKey = "__ciwi_liquid_translate_observer__";
     const countdownObserversKey = "__ciwi_countdown_timer_observers__";
     const countdownObserveOptions = {
