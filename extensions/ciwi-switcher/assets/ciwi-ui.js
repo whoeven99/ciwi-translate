@@ -2035,29 +2035,6 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
     return false;
   };
 
-  const collectMutationRoots = (mutations) => {
-    const roots = [];
-    for (const mutation of mutations) {
-      if (mutation.type === "attributes") {
-        const target = mutation.target;
-        if (target?.nodeType === Node.ELEMENT_NODE && !shouldSkipTranslationRoot(target)) {
-          roots.push(target);
-        }
-        continue;
-      }
-      if (mutation.type !== "childList") continue;
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          if (!shouldSkipTranslationRoot(node)) roots.push(node);
-        } else if (node.nodeType === Node.TEXT_NODE) {
-          const parent = node.parentElement;
-          if (parent && !shouldSkipTranslationRoot(parent)) roots.push(parent);
-        }
-      }
-    }
-    return roots;
-  };
-
   const pruneNestedRoots = (roots) => {
     return roots.filter(
       (root, index) =>
@@ -2066,6 +2043,67 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
             otherIndex !== index && other !== root && other.contains(root),
         ),
     );
+  };
+
+  // 增量补译只打 class 包含 countdown-timer 的容器（如 bx-countdown-timer）。
+  const COUNTDOWN_TIMER_SELECTOR = '[class*="countdown-timer"]';
+
+  const isCountdownTimerElement = (node) => {
+    if (!(node instanceof Element) || typeof node.matches !== "function") return false;
+    try {
+      return node.matches(COUNTDOWN_TIMER_SELECTOR);
+    } catch {
+      return false;
+    }
+  };
+
+  const closestCountdownTimerRoot = (node) => {
+    const start = node instanceof Element ? node : node?.parentElement;
+    if (!start || typeof start.closest !== "function") return null;
+    try {
+      return start.closest(COUNTDOWN_TIMER_SELECTOR);
+    } catch {
+      return null;
+    }
+  };
+
+  const collectCountdownTimerRootsIn = (scope) => {
+    if (!(scope instanceof Element)) return [];
+    const roots = [];
+    if (isCountdownTimerElement(scope) && !shouldSkipTranslationRoot(scope)) {
+      roots.push(scope);
+    }
+    try {
+      scope.querySelectorAll(COUNTDOWN_TIMER_SELECTOR).forEach((el) => {
+        if (!shouldSkipTranslationRoot(el)) roots.push(el);
+      });
+    } catch {}
+    return pruneNestedRoots(roots);
+  };
+
+  const collectMutationRoots = (mutations) => {
+    const roots = [];
+    const pushFromNode = (node) => {
+      const closest = closestCountdownTimerRoot(node);
+      if (closest && !shouldSkipTranslationRoot(closest)) {
+        roots.push(closest);
+        return;
+      }
+      if (node instanceof Element) {
+        collectCountdownTimerRootsIn(node).forEach((nested) => roots.push(nested));
+      }
+    };
+    for (const mutation of mutations) {
+      if (mutation.type === "attributes") {
+        pushFromNode(mutation.target);
+        continue;
+      }
+      if (mutation.type !== "childList") continue;
+      for (const node of mutation.addedNodes) {
+        pushFromNode(node);
+      }
+    }
+    return pruneNestedRoots(roots);
   };
 
   const applyReplacementsToRoots = (roots = [document.body]) => {
@@ -2123,41 +2161,86 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
 
   if (typeof window !== "undefined") {
     const observerKey = "__ciwi_liquid_translate_observer__";
-    if (!window[observerKey]) {
-      const pendingRoots = new Set();
-      let scheduled = false;
-      let lastRunAt = 0;
+    const countdownObserversKey = "__ciwi_countdown_timer_observers__";
+    const pendingRoots = new Set();
+    let scheduled = false;
+    let lastRunAt = 0;
 
-      const scheduleIncrementalRun = () => {
-        if (scheduled) return;
-        scheduled = true;
+    const scheduleIncrementalRun = () => {
+      if (scheduled) return;
+      scheduled = true;
 
-        const now = Date.now();
-        const delay = now - lastRunAt < 200 ? 200 : 0;
+      const now = Date.now();
+      const delay = now - lastRunAt < 200 ? 200 : 0;
 
-        setTimeout(() => {
-          requestAnimationFrame(() => {
-            try {
-              const roots = pruneNestedRoots([...pendingRoots]);
-              pendingRoots.clear();
-              if (roots.length > 0) {
-                applyReplacementsToRoots(roots);
-              }
-            } finally {
-              lastRunAt = Date.now();
-              scheduled = false;
-              if (pendingRoots.size > 0) scheduleIncrementalRun();
+      setTimeout(() => {
+        requestAnimationFrame(() => {
+          try {
+            const roots = pruneNestedRoots([...pendingRoots]);
+            pendingRoots.clear();
+            if (roots.length > 0) {
+              applyReplacementsToRoots(roots);
             }
-          });
-        }, delay);
-      };
+          } finally {
+            lastRunAt = Date.now();
+            scheduled = false;
+            if (pendingRoots.size > 0) scheduleIncrementalRun();
+          }
+        });
+      }, delay);
+    };
 
-      const observer = new MutationObserver((mutations) => {
-        for (const root of collectMutationRoots(mutations)) {
-          pendingRoots.add(root);
-        }
-        if (pendingRoots.size === 0) return;
+    const previousCountdownObservers = window[countdownObserversKey];
+    if (Array.isArray(previousCountdownObservers)) {
+      previousCountdownObservers.forEach((observer) => {
+        try {
+          observer.disconnect();
+        } catch {}
+      });
+    }
+    window[countdownObserversKey] = [];
+    const observedCountdownTimerRoots = new WeakSet();
+
+    const observeCountdownTimerRoot = (root) => {
+      if (!(root instanceof Element) || shouldSkipTranslationRoot(root)) return;
+      if (!isCountdownTimerElement(root)) return;
+      if (observedCountdownTimerRoots.has(root)) return;
+      observedCountdownTimerRoots.add(root);
+
+      const observer = new MutationObserver(() => {
+        if (!root.isConnected) return;
+        pendingRoots.add(root);
         scheduleIncrementalRun();
+      });
+      observer.observe(root, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      window[countdownObserversKey].push(observer);
+    };
+
+    const onCountdownTimerRoot = (root) => {
+      if (!root) return;
+      pendingRoots.add(root);
+      observeCountdownTimerRoot(root);
+      scheduleIncrementalRun();
+    };
+    window.__ciwi_countdown_timer_on_root__ = onCountdownTimerRoot;
+
+    const countdownTimerRoots = collectCountdownTimerRootsIn(document.body);
+    debugLog("countdownTimerObservers", { count: countdownTimerRoots.length });
+    countdownTimerRoots.forEach((root) => {
+      observeCountdownTimerRoot(root);
+    });
+
+    if (!window[observerKey]) {
+      const observer = new MutationObserver((mutations) => {
+        const onRoot = window.__ciwi_countdown_timer_on_root__;
+        if (typeof onRoot !== "function") return;
+        for (const root of collectMutationRoots(mutations)) {
+          onRoot(root);
+        }
       });
 
       observer.observe(document.body, {
