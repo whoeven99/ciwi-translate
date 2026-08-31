@@ -2162,32 +2162,10 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
   if (typeof window !== "undefined") {
     const observerKey = "__ciwi_liquid_translate_observer__";
     const countdownObserversKey = "__ciwi_countdown_timer_observers__";
-    const pendingRoots = new Set();
-    let scheduled = false;
-    let lastRunAt = 0;
-
-    const scheduleIncrementalRun = () => {
-      if (scheduled) return;
-      scheduled = true;
-
-      const now = Date.now();
-      const delay = now - lastRunAt < 200 ? 200 : 0;
-
-      setTimeout(() => {
-        requestAnimationFrame(() => {
-          try {
-            const roots = pruneNestedRoots([...pendingRoots]);
-            pendingRoots.clear();
-            if (roots.length > 0) {
-              applyReplacementsToRoots(roots);
-            }
-          } finally {
-            lastRunAt = Date.now();
-            scheduled = false;
-            if (pendingRoots.size > 0) scheduleIncrementalRun();
-          }
-        });
-      }, delay);
+    const countdownObserveOptions = {
+      childList: true,
+      subtree: true,
+      characterData: true,
     };
 
     const previousCountdownObservers = window[countdownObserversKey];
@@ -2200,31 +2178,72 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
     }
     window[countdownObserversKey] = [];
     const observedCountdownTimerRoots = new WeakSet();
+    const countdownObserverByRoot = new WeakMap();
+
+    // 同步写回：MutationObserver 在绘制前触发。若再 setTimeout/rAF，英文会被先画出来造成闪烁。
+    const applyCountdownTimerRootNow = (root, observer) => {
+      if (!(root instanceof Element) || !root.isConnected) return;
+      try {
+        observer?.disconnect();
+      } catch {}
+      try {
+        applyReplacementsToRoots([root]);
+      } finally {
+        if (observer && root.isConnected) {
+          try {
+            observer.observe(root, countdownObserveOptions);
+          } catch {}
+        }
+      }
+    };
 
     const observeCountdownTimerRoot = (root) => {
-      if (!(root instanceof Element) || shouldSkipTranslationRoot(root)) return;
-      if (!isCountdownTimerElement(root)) return;
-      if (observedCountdownTimerRoots.has(root)) return;
+      if (!(root instanceof Element) || shouldSkipTranslationRoot(root)) return null;
+      if (!isCountdownTimerElement(root)) return null;
+      const existing = countdownObserverByRoot.get(root);
+      if (existing) return existing;
+      if (observedCountdownTimerRoots.has(root)) return null;
       observedCountdownTimerRoots.add(root);
 
-      const observer = new MutationObserver(() => {
+      const isTimerDigitText = (value) => /^\d{1,2}$/.test(String(value || "").trim());
+
+      const mutationTouchesNonDigitText = (mutation) => {
+        if (mutation.type === "characterData") {
+          return !isTimerDigitText(mutation.target?.nodeValue);
+        }
+        if (mutation.type !== "childList") return true;
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            if (!isTimerDigitText(node.nodeValue)) return true;
+            continue;
+          }
+          if (node.nodeType === Node.ELEMENT_NODE) return true;
+        }
+        for (const node of mutation.removedNodes) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            if (!isTimerDigitText(node.nodeValue)) return true;
+            continue;
+          }
+          if (node.nodeType === Node.ELEMENT_NODE) return true;
+        }
+        return false;
+      };
+
+      const observer = new MutationObserver((mutations) => {
         if (!root.isConnected) return;
-        pendingRoots.add(root);
-        scheduleIncrementalRun();
+        if (!mutations.some(mutationTouchesNonDigitText)) return;
+        applyCountdownTimerRootNow(root, observer);
       });
-      observer.observe(root, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-      });
+      observer.observe(root, countdownObserveOptions);
+      countdownObserverByRoot.set(root, observer);
       window[countdownObserversKey].push(observer);
+      return observer;
     };
 
     const onCountdownTimerRoot = (root) => {
       if (!root) return;
-      pendingRoots.add(root);
-      observeCountdownTimerRoot(root);
-      scheduleIncrementalRun();
+      const observer = observeCountdownTimerRoot(root);
+      applyCountdownTimerRootNow(root, observer);
     };
     window.__ciwi_countdown_timer_on_root__ = onCountdownTimerRoot;
 
