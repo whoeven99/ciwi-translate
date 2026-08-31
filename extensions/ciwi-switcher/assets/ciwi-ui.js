@@ -1412,7 +1412,11 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
   );
 
   const exactEntries = entries.filter((e) => e.isExact);
-  const fuzzyEntries = entries.filter((e) => !e.isExact);
+  // 长句先换，避免 Cable / Parking Monitoring 等短规则截断整句。
+  // 稳定排序：同长度保留服务端 createdAt 降序（含旧缓存的插入序）。
+  const fuzzyEntries = entries
+    .filter((e) => !e.isExact)
+    .sort((a, b) => String(b.before).length - String(a.before).length);
 
   const looksLikeHtml = (text) => /<\/?[a-z][\s\S]*>/i.test(text || "");
 
