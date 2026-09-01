@@ -917,7 +917,9 @@ redirect records.
  `worker/src/services/customLiquid.ts`、`initWorker` / `writebackWorker`。
  4. **店面替换**：`parseLiquidTranslations` **只返回 `status=DONE` 且译文非空**；
  map 按原文长度降序（同长度 `createdAt` 新→旧）；`CustomLiquidTextTranslate`
- 对 fuzzy 再按长度降序替换（文本/属性/HTML 共用）。首次全页替换后**立刻不扫**
+ 对 fuzzy 再按长度降序替换（文本/属性/HTML 共用）。首次全页替换按 **8ms idle 分片**
+ （`requestIdleCallback`；小页一片内走完不 yield）；countdown 单根增量仍整段同步。
+ 全页泵结束后再挂 countdown：首次全页替换后**立刻不扫**
  countdown；500ms / 1.5s 再 `querySelectorAll('[class*="countdown-timer"]')`，
  补译并挂容器 Observer。15s `document.body` MutationObserver 发现中间插入的
  countdown → `observeCountdownTimerRoot`（数字刷新继续忽略）。已观察根不再被
@@ -1277,6 +1279,10 @@ artifacts and should be cleaned up. No runtime code depends on them.
 - UI/render: `assets/ciwi-ui.js`, `ciwi-main.js`, `ciwi-page.js`.
 - Storage: `assets/ciwi-storage.js`.
 - Styling: `assets/switcher.css`.
+- Boot（`ciwi-main.js` `ciwiOnload`）：DCL 后**不** `await` 配置/IP。
+  A 立刻：Custom Liquid 替换、有汇率缓存则换价、IP/浏览器语言请求发出（跳转不挡 UI）。
+  B 主题首屏后（双 `rAF`）：Switcher 控件；主题预览仍立刻画。
+  C idle：图片翻译、采集、配置/货币后台刷新。语言同步靠 `lang` / `pageshow` / `popstate`，不轮询。
 
 Check deploy configs when changing extensions:
 
@@ -1403,6 +1409,9 @@ field audit (competitor research). Paginates `/products.json` (or
 `scripts/tmp/storefront-audit/{shopHost}/{runId}/` (`init/PRODUCT/chunk-*.json`,
 `scrape/{locale}/PRODUCT/resources/{base64url}.json`, `diff/summary.json`,
 `report.md`), and computes obviously-untranslated ratios vs primary.
+- `scripts/switcher-perf-measure.mjs`: 店面 Switcher 性能采集 / 对比（Chrome CDP）。
+  `--label before|after --runs 5` 落盘 `scripts/tmp/switcher-perf/`；`--compare`
+  出 p50/p90。测非主语言页才能看到 Liquid 替换 / 采集；默认关 liquid debug。
 - `scripts/eventReport.ts`: imported by app routes/components; this is runtime
 client reporting code, not a throwaway script.
 
