@@ -915,8 +915,9 @@ redirect records.
  `worker/src/services/customLiquid.ts`、`initWorker` / `writebackWorker`。
  4. **店面替换**：`parseLiquidTranslations` **只返回 `status=DONE` 且译文非空**；
  map 按原文长度降序（同长度 `createdAt` 新→旧）；`CustomLiquidTextTranslate`
- 对 fuzzy 再按长度降序替换（文本/属性/HTML 共用）。首次全页替换后，增量补译
- 仅对 `[class*="countdown-timer"]` 容器（含 `characterData`，跟数字格刷新）。
+ 对 fuzzy 再按长度降序替换（文本/属性/HTML 共用）。首次全页替换后，500ms /
+ 1.5s 各补扫一次 `[class*="countdown-timer"]` 容器（不延迟全页）；持续增量仅
+ 对该 selector（含 `characterData`，跟数字格刷新）。
  空结果返回 `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）

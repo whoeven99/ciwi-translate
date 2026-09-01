@@ -2160,18 +2160,28 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
   applyReplacementsToRoots();
 
   if (typeof window !== "undefined") {
-    // 第三方 bundle（如 Tably/bx-offer）常在首次替换后才插入 DOM；短窗口内补跑几次全页替换。
+    // 第三方 bundle（如 bx-offer）的 countdown 容器可能晚于首屏插入；延迟仅补扫 countdown-timer。
     const delayedTimeoutsKey = "__ciwi_liquid_translate_delayed_timeouts__";
     const previousDelayed = window[delayedTimeoutsKey];
     if (Array.isArray(previousDelayed)) {
       previousDelayed.forEach((id) => clearTimeout(id));
     }
-    window[delayedTimeoutsKey] = [300, 1000, 2500].map((delayMs) =>
-      setTimeout(() => {
-        if (!document.body?.isConnected) return;
-        applyReplacementsToRoots();
-        debugLog("delayedReapply", { delayMs });
-      }, delayMs),
+    const runDelayedCountdownReapply = (delayMs) => {
+      if (!document.body?.isConnected) return;
+      const roots = collectCountdownTimerRootsIn(document.body);
+      if (roots.length === 0) {
+        debugLog("delayedReapply", {
+          delayMs,
+          skipped: true,
+          reason: "no_countdown_timer_roots",
+        });
+        return;
+      }
+      applyReplacementsToRoots(roots);
+      debugLog("delayedReapply", { delayMs, rootsCount: roots.length });
+    };
+    window[delayedTimeoutsKey] = [500, 1500].map((delayMs) =>
+      setTimeout(() => runDelayedCountdownReapply(delayMs), delayMs),
     );
 
     const observerKey = "__ciwi_liquid_translate_observer__";
