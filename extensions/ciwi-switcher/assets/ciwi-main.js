@@ -543,13 +543,23 @@ async function ciwiOnload() {
       CollectUntranslatedText(shop, ciwiBlock, { primaryLanguage });
     const schedule = () => {
       if ("requestIdleCallback" in window) {
-        window.requestIdleCallback(run, { timeout: 4000 });
+        window.requestIdleCallback(run, { timeout: 9000 });
       } else {
         setTimeout(run, 2000);
       }
     };
-    // 先等已有 Liquid 替换完成，再 idle 采集（替换失败也继续采集）。
-    Promise.resolve(customLiquidReplacePromise).finally(schedule);
+    // 等全页 Liquid 替换 + 第一次 countdown 补扫（500ms）都过完，再 idle 采集。
+    // 无规则提前 return 时没有 500ms 门禁，替换完成后直接 schedule。timeout 9s，不 4s 硬抢。
+    Promise.resolve(customLiquidReplacePromise)
+      .finally(() => {
+        const countdownGate =
+          typeof window !== "undefined" &&
+          window.__ciwi_countdown_first_rescan_promise__
+            ? window.__ciwi_countdown_first_rescan_promise__
+            : Promise.resolve();
+        return Promise.resolve(countdownGate).catch(() => {});
+      })
+      .finally(schedule);
   };
 
   //获取当前语言和地区

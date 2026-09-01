@@ -1420,6 +1420,30 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
 
   const looksLikeHtml = (text) => /<\/?[a-z][\s\S]*>/i.test(text || "");
 
+  const sourceNeedles = [];
+  const addSourceNeedle = (value) => {
+    const trimmed = String(value ?? "").trim();
+    if (!trimmed) return;
+    sourceNeedles.push(trimmed);
+    const collapsed = normalizeCollapsedText(trimmed);
+    if (collapsed && collapsed !== trimmed) sourceNeedles.push(collapsed);
+    if (looksLikeHtml(trimmed)) {
+      const stripped = normalizeCollapsedText(trimmed.replace(/<[^>]+>/g, " "));
+      if (stripped) sourceNeedles.push(stripped);
+    }
+  };
+  entries.forEach((entry) => addSourceNeedle(entry.before));
+
+  const rootHasPendingSourceText = (root) => {
+    if (!(root instanceof Node) || sourceNeedles.length === 0) return false;
+    const raw = String(root.textContent || "");
+    if (!raw) return false;
+    const collapsed = normalizeCollapsedText(raw);
+    return sourceNeedles.some(
+      (needle) => raw.includes(needle) || collapsed.includes(needle),
+    );
+  };
+
   // 默认开；localStorage.ciwi_debug_liquid_translate=0 或 ?ciwiDebugLiquid=0 可关。
   const debugLiquidTranslate = (() => {
     try {
@@ -1749,11 +1773,11 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
 
-    if (debugLiquidTranslate && entryList.length <= 50) {
+    if (debugLiquidTranslate && entryList.length <= 50 && root === document.body) {
       debugLog("textFuzzyFast", {
         entries: preparedEntries.length,
         nodes: nodes.length,
-        root: root === document.body ? "body" : root.nodeName,
+        root: "body",
       });
     }
 
@@ -2160,29 +2184,19 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
   applyReplacementsToRoots();
 
   if (typeof window !== "undefined") {
-    // 第三方 bundle（如 bx-offer）的 countdown 容器可能晚于首屏插入；延迟仅补扫 countdown-timer。
     const delayedTimeoutsKey = "__ciwi_liquid_translate_delayed_timeouts__";
+    const firstRescanPromiseKey = "__ciwi_countdown_first_rescan_promise__";
+    const firstRescanResolveKey = "__ciwi_countdown_first_rescan_resolve__";
     const previousDelayed = window[delayedTimeoutsKey];
     if (Array.isArray(previousDelayed)) {
       previousDelayed.forEach((id) => clearTimeout(id));
     }
-    const runDelayedCountdownReapply = (delayMs) => {
-      if (!document.body?.isConnected) return;
-      const roots = collectCountdownTimerRootsIn(document.body);
-      if (roots.length === 0) {
-        debugLog("delayedReapply", {
-          delayMs,
-          skipped: true,
-          reason: "no_countdown_timer_roots",
-        });
-        return;
-      }
-      applyReplacementsToRoots(roots);
-      debugLog("delayedReapply", { delayMs, rootsCount: roots.length });
-    };
-    window[delayedTimeoutsKey] = [500, 1500].map((delayMs) =>
-      setTimeout(() => runDelayedCountdownReapply(delayMs), delayMs),
-    );
+    const previousFirstRescanResolve = window[firstRescanResolveKey];
+    if (typeof previousFirstRescanResolve === "function") {
+      try {
+        previousFirstRescanResolve();
+      } catch {}
+    }
 
     const observerKey = "__ciwi_liquid_translate_observer__";
     const countdownObserversKey = "__ciwi_countdown_timer_observers__";
@@ -2203,16 +2217,34 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
     window[countdownObserversKey] = [];
     const observedCountdownTimerRoots = new WeakSet();
     const countdownObserverByRoot = new WeakMap();
+    const applyingCountdownRoots = new WeakSet();
+    const lastCountdownLabelKey = new WeakMap();
+
+    const countdownLabelKey = (node) =>
+      normalizeCollapsedText(
+        String(node?.textContent || "").replace(/\d+/g, ""),
+      );
 
     // 同步写回：MutationObserver 在绘制前触发。若再 setTimeout/rAF，英文会被先画出来造成闪烁。
     const applyCountdownTimerRootNow = (root, observer) => {
       if (!(root instanceof Element) || !root.isConnected) return;
+      if (applyingCountdownRoots.has(root)) return;
+      const labelKey = countdownLabelKey(root);
+      const lastLabelKey = lastCountdownLabelKey.get(root);
+      if (lastLabelKey !== undefined && lastLabelKey === labelKey) return;
+      if (!rootHasPendingSourceText(root)) {
+        lastCountdownLabelKey.set(root, labelKey);
+        return;
+      }
+      applyingCountdownRoots.add(root);
       try {
         observer?.disconnect();
       } catch {}
       try {
         applyReplacementsToRoots([root]);
+        lastCountdownLabelKey.set(root, countdownLabelKey(root));
       } finally {
+        applyingCountdownRoots.delete(root);
         if (observer && root.isConnected) {
           try {
             observer.observe(root, countdownObserveOptions);
@@ -2231,32 +2263,39 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
 
       const isTimerDigitText = (value) => /^\d{1,2}$/.test(String(value || "").trim());
 
+      const isTimerDigitOnlyNode = (node) => {
+        if (!node) return true;
+        if (node.nodeType === Node.TEXT_NODE) return isTimerDigitText(node.nodeValue);
+        if (node.nodeType !== Node.ELEMENT_NODE) return true;
+        const text = String(node.textContent || "").trim();
+        if (!text) return true;
+        return /^\d{1,2}(?:\s+\d{1,2})*$/.test(text);
+      };
+
       const mutationTouchesNonDigitText = (mutation) => {
         if (mutation.type === "characterData") {
           return !isTimerDigitText(mutation.target?.nodeValue);
         }
         if (mutation.type !== "childList") return true;
         for (const node of mutation.addedNodes) {
-          if (node.nodeType === Node.TEXT_NODE) {
-            if (!isTimerDigitText(node.nodeValue)) return true;
-            continue;
-          }
-          if (node.nodeType === Node.ELEMENT_NODE) return true;
+          if (!isTimerDigitOnlyNode(node)) return true;
         }
         for (const node of mutation.removedNodes) {
-          if (node.nodeType === Node.TEXT_NODE) {
-            if (!isTimerDigitText(node.nodeValue)) return true;
-            continue;
-          }
-          if (node.nodeType === Node.ELEMENT_NODE) return true;
+          if (!isTimerDigitOnlyNode(node)) return true;
         }
         return false;
       };
 
+      let applyQueued = false;
       const observer = new MutationObserver((mutations) => {
-        if (!root.isConnected) return;
+        if (!root.isConnected || applyQueued) return;
         if (!mutations.some(mutationTouchesNonDigitText)) return;
-        applyCountdownTimerRootNow(root, observer);
+        applyQueued = true;
+        try {
+          applyCountdownTimerRootNow(root, observer);
+        } finally {
+          applyQueued = false;
+        }
       });
       observer.observe(root, countdownObserveOptions);
       countdownObserverByRoot.set(root, observer);
@@ -2266,16 +2305,56 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
 
     const onCountdownTimerRoot = (root) => {
       if (!root) return;
+      if (
+        countdownObserverByRoot.get(root) ||
+        observedCountdownTimerRoots.has(root)
+      ) {
+        return;
+      }
       const observer = observeCountdownTimerRoot(root);
       applyCountdownTimerRootNow(root, observer);
     };
     window.__ciwi_countdown_timer_on_root__ = onCountdownTimerRoot;
 
-    const countdownTimerRoots = collectCountdownTimerRootsIn(document.body);
-    debugLog("countdownTimerObservers", { count: countdownTimerRoots.length });
-    countdownTimerRoots.forEach((root) => {
-      observeCountdownTimerRoot(root);
+    let resolveFirstRescan = null;
+    window[firstRescanPromiseKey] = new Promise((resolve) => {
+      resolveFirstRescan = resolve;
     });
+    window[firstRescanResolveKey] = () => {
+      try {
+        resolveFirstRescan?.();
+      } catch {}
+      resolveFirstRescan = null;
+      window[firstRescanResolveKey] = null;
+    };
+
+    // 第三方 bundle（如 bx-offer）可能晚于首屏插入；首次全页替换后不立刻扫 countdown。
+    // 500ms / 1.5s 再 querySelectorAll('[class*="countdown-timer"]')，只给新根补译并挂 Observer。
+    const runDelayedCountdownRescan = (delayMs, { isFirstGate = false } = {}) => {
+      try {
+        if (document.body?.isConnected) {
+          const onRoot = window.__ciwi_countdown_timer_on_root__;
+          const roots = collectCountdownTimerRootsIn(document.body);
+          if (typeof onRoot === "function") {
+            roots.forEach((root) => onRoot(root));
+          }
+          debugLog("delayedReapply", {
+            delayMs,
+            rootsCount: roots.length,
+            skipped: roots.length === 0,
+            reason: roots.length === 0 ? "no_countdown_timer_roots" : undefined,
+          });
+        }
+      } finally {
+        if (isFirstGate && typeof window[firstRescanResolveKey] === "function") {
+          window[firstRescanResolveKey]();
+        }
+      }
+    };
+    window[delayedTimeoutsKey] = [
+      setTimeout(() => runDelayedCountdownRescan(500, { isFirstGate: true }), 500),
+      setTimeout(() => runDelayedCountdownRescan(1500), 1500),
+    ];
 
     if (!window[observerKey]) {
       const observer = new MutationObserver((mutations) => {

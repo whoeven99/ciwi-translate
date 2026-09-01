@@ -901,12 +901,14 @@ redirect records.
  时间预算整页放弃；扫描根 = `body` + **open shadowRoot** + **同源 iframe**
  （含嵌套同源；跨域 iframe / closed shadow 不可访问则跳过）；触 `max_nodes`
  仍上报已扫候选；候选条数不设客户端上限，POST 按 100/片
- （`AUTO_LIQUID_POST_CHUNK` / 服务端 `MAX_PER_REQUEST`）。语言门：只采「像
- `primaryLanguage`（Switcher 配置接口附带，Shopify 主 locale，非商户手填）
- 且不像当前目标语」；无 primary 则本轮不采。店面 Switcher **全店采集上报**；
- 采集只写 PENDING，**不查额度**；真正扣费在后续 v4「自定义 Liquid」翻译阶段。
- `SwitcherConfiguration.autoLiquidCollect` 列保留且默认 `true`，保存时强制
- `true`，Switcher UI 开关已移除。
+ （`AUTO_LIQUID_POST_CHUNK` / 服务端 `MAX_PER_REQUEST`）。采集启动门禁：
+ `customLiquidReplacePromise` + 第一次 countdown 补扫（500ms）都过完后
+ `requestIdleCallback`（timeout 9s，无 4s 硬抢）；无 Liquid 规则提前 return
+ 则无 500ms 门禁。语言门：只采「像 `primaryLanguage`（Switcher 配置接口附带，
+ Shopify 主 locale，非商户手填）且不像当前目标语」；无 primary 则本轮不采。
+ 店面 Switcher **全店采集上报**；采集只写 PENDING，**不查额度**；真正扣费在
+ 后续 v4「自定义 Liquid」翻译阶段。`SwitcherConfiguration.autoLiquidCollect`
+ 列保留且默认 `true`，保存时强制 `true`，Switcher UI 开关已移除。
  2. **建任务**：勾选「自定义 Liquid」→ `job.includeLiquid=true`（不进 Shopify
  module 枚举）。
  3. **Worker**：init 读 PENDING → 虚拟 module `CUSTOM_LIQUID` init blob（行
@@ -915,9 +917,13 @@ redirect records.
  `worker/src/services/customLiquid.ts`、`initWorker` / `writebackWorker`。
  4. **店面替换**：`parseLiquidTranslations` **只返回 `status=DONE` 且译文非空**；
  map 按原文长度降序（同长度 `createdAt` 新→旧）；`CustomLiquidTextTranslate`
- 对 fuzzy 再按长度降序替换（文本/属性/HTML 共用）。首次全页替换后，500ms /
- 1.5s 各补扫一次 `[class*="countdown-timer"]` 容器（不延迟全页）；持续增量仅
- 对该 selector（含 `characterData`，跟数字格刷新）。
+ 对 fuzzy 再按长度降序替换（文本/属性/HTML 共用）。首次全页替换后**立刻不扫**
+ countdown；500ms / 1.5s 再 `querySelectorAll('[class*="countdown-timer"]')`，
+ 补译并挂容器 Observer。15s `document.body` MutationObserver 发现中间插入的
+ countdown → `observeCountdownTimerRoot`（数字刷新继续忽略）。已观察根不再被
+ body / 1.5s 补扫二次 apply；容器 mutation 无原文、或去掉数字后文案指纹未变
+ （只改秒数）则跳过整管线。countdown 增量不打 `textFuzzyFast`。持续增量仅对该
+ selector（含 `characterData`，跟数字格刷新）。
  空结果返回 `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
