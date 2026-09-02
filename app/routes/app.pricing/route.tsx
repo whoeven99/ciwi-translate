@@ -1175,6 +1175,9 @@ const Index = () => {
               translation_balance={totalChars - chars || 0}
               trialCredits={typeof trialCredits === "number" ? trialCredits : 0}
               onBuyCredits={handleOpenAddCreditsModal}
+              onMigrateSuccess={() => {
+                void refreshBillingBootstrap(dispatch);
+              }}
             />
 
             {isQuotaExceeded && (

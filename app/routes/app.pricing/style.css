@@ -143,6 +143,13 @@
   flex-wrap: wrap;
 }
 
+.pricing-usage-card__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .pricing-usage-card__metric .ant-statistic {
   margin: 0;
 }

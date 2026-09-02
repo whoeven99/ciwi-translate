@@ -59,6 +59,7 @@ export {
   type AccountQuota,
 } from "./quota/getAccountQuota.server";
 export { deductCredits } from "./quota/deductCredits.server";
+export { migrateCreditsToSpark } from "./migrateCreditsToSpark.server";
 export {
   getShopCreditQuota,
   deductShopCredits,
