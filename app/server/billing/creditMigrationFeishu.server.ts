@@ -25,7 +25,7 @@ export function buildCreditMigrationFeishuMessage(
     params.ok ? "积分迁移到 Spark · 成功" : "积分迁移到 Spark · 失败",
     "",
     `店铺: ${params.shop}`,
-    `数量: ${formatNumber(params.amount)}（1:1）`,
+    `数量: ${formatNumber(params.amount)}（1:1，仅购买积分：总额−订阅−试用−已用）`,
     `结果: ${params.ok ? "成功" : "失败"}`,
   ];
   if (!params.ok && params.errorCode) {

@@ -17,6 +17,10 @@ interface UserConfigState {
   totalChars: number | undefined;
   /** 试用 / Launch Credits 池（Account.trialCredits）。 */
   trialCredits: number | undefined;
+  /** 订阅周期额度（Account.subscriptionCredits）。 */
+  subscriptionCredits: number | undefined;
+  /** 可迁移购买积分（总额度 − 订阅 − 试用 − 已用）。 */
+  migratablePurchasedCredits: number | undefined;
   userConfigIsLoading: boolean;
   isNew: boolean | null;
 }
@@ -37,6 +41,8 @@ const initialState: UserConfigState = {
   chars: 0,
   totalChars: 0,
   trialCredits: 0,
+  subscriptionCredits: 0,
+  migratablePurchasedCredits: 0,
   userConfigIsLoading: true,
   isNew: null,
 };
@@ -90,6 +96,18 @@ const userConfigSlice = createSlice({
     ) => {
       state.trialCredits = action.payload.trialCredits;
     },
+    setSubscriptionCredits: (
+      state,
+      action: PayloadAction<{ subscriptionCredits: number | undefined }>,
+    ) => {
+      state.subscriptionCredits = action.payload.subscriptionCredits;
+    },
+    setMigratablePurchasedCredits: (
+      state,
+      action: PayloadAction<{ migratablePurchasedCredits: number | undefined }>,
+    ) => {
+      state.migratablePurchasedCredits = action.payload.migratablePurchasedCredits;
+    },
     setUserConfigIsLoading: (
       state,
       action: PayloadAction<{ isLoading: boolean }>,
@@ -110,6 +128,8 @@ export const {
   setChars,
   setTotalChars,
   setTrialCredits,
+  setSubscriptionCredits,
+  setMigratablePurchasedCredits,
   setUserConfigIsLoading,
   setIsNew,
 } = userConfigSlice.actions;

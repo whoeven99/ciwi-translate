@@ -41,13 +41,10 @@ import { ConfigProvider } from "antd";
 import { useDispatch, useSelector } from "react-redux";
 import type { Dispatch } from "@reduxjs/toolkit";
 import {
-  setChars,
   setIsNew,
   setPlan,
   setSource,
   setShop,
-  setTotalChars,
-  setTrialCredits,
   setUpdateTime,
   setUserConfigIsLoading,
 } from "~/store/modules/userConfig";
@@ -66,7 +63,10 @@ import {
   OPEN_CREDITS_PURCHASE_MODAL_EVENT,
   type CreditsPurchaseModalContext,
 } from "~/utils/creditsPurchaseModal";
-import { refreshBillingBootstrap } from "~/utils/billingBootstrap";
+import {
+  applyAppBootstrapCredits,
+  refreshBillingBootstrap,
+} from "~/utils/billingBootstrap";
 import { resumePausedTaskAfterBilling } from "~/utils/resumeTaskAfterBilling";
 import {
   parseBillingReturn,
@@ -232,9 +232,7 @@ function applyBootstrapToStore(
   if (bootstrap.updateTime) {
     dispatch(setUpdateTime({ updateTime: bootstrap.updateTime }));
   }
-  dispatch(setChars({ chars: bootstrap.chars }));
-  dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
-  dispatch(setTrialCredits({ trialCredits: bootstrap.trialCredits ?? 0 }));
+  applyAppBootstrapCredits(dispatch, bootstrap);
   if (bootstrap.isNew !== null) {
     dispatch(setIsNew({ isNew: bootstrap.isNew }));
   }

@@ -11,6 +11,10 @@ interface AcountInfoCardProps {
   translation_balance: number;
   /** 试用 / Launch Credits 池；>0 时展示说明。 */
   trialCredits?: number;
+  subscriptionCredits?: number;
+  usedCredits?: number;
+  totalCredits?: number;
+  migratablePurchasedCredits?: number;
   onBuyCredits: () => void;
   onMigrateSuccess?: () => void;
 }
@@ -22,10 +26,18 @@ function newTransferId(): string {
   return `mig_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function formatCredits(value: number): string {
+  return Math.max(0, Math.floor(value)).toLocaleString();
+}
+
 const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   loading,
   translation_balance,
   trialCredits = 0,
+  subscriptionCredits = 0,
+  usedCredits = 0,
+  totalCredits = 0,
+  migratablePurchasedCredits = 0,
   onBuyCredits,
   onMigrateSuccess,
 }) => {
@@ -36,17 +48,18 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   const [migrating, setMigrating] = useState(false);
   const transferIdRef = useRef<string>("");
 
-  const remaining = Math.max(0, Math.floor(translation_balance));
+  const migratable = Math.max(0, Math.floor(migratablePurchasedCredits));
+  const canMigrate = migratable >= 1;
 
   const openMigrate = () => {
     transferIdRef.current = newTransferId();
-    setMigrateAmount(remaining > 0 ? remaining : null);
-    setMigrateAll(remaining > 0);
+    setMigrateAmount(canMigrate ? migratable : null);
+    setMigrateAll(canMigrate);
     setMigrateOpen(true);
   };
 
   const handleAll = () => {
-    setMigrateAmount(remaining);
+    setMigrateAmount(migratable);
     setMigrateAll(true);
   };
 
@@ -56,7 +69,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   };
 
   const submitMigrate = async () => {
-    if (remaining < 1) {
+    if (!canMigrate) {
       message.error(t("pricing.migrate.error.INSUFFICIENT"));
       return;
     }
@@ -88,9 +101,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
       const key = `pricing.migrate.error.${code}`;
       const translated = t(key);
       message.error(translated === key ? t("pricing.migrate.error.generic") : translated);
-      if (
-        code !== "GRANT_FAILED"
-      ) {
+      if (code !== "GRANT_FAILED") {
         transferIdRef.current = newTransferId();
       }
     } catch {
@@ -146,28 +157,50 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
         okText={t("pricing.migrate.confirm")}
         cancelText={t("pricing.migrate.cancel")}
         confirmLoading={migrating}
-        okButtonProps={{ disabled: remaining < 1 }}
+        okButtonProps={{ disabled: !canMigrate }}
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Text type="secondary">{t("pricing.migrate.help")}</Text>
-          <Text>
-            {t("pricing.migrate.available", {
-              credits: remaining.toLocaleString(),
-            })}
-          </Text>
-          <Space wrap>
-            <InputNumber
-              min={1}
-              max={remaining || 1}
-              value={migrateAmount ?? undefined}
-              onChange={(value) => {
-                setMigrateAll(false);
-                setMigrateAmount(typeof value === "number" ? value : null);
-              }}
-              style={{ width: 200 }}
-            />
-            <Button onClick={handleAll}>{t("pricing.migrate.all")}</Button>
-          </Space>
+          <Text type="secondary">{t("pricing.migrate.formula")}</Text>
+          <div className="pricing-migrate-breakdown">
+            <div className="pricing-migrate-breakdown__row">
+              <span>{t("pricing.migrate.row.total")}</span>
+              <span>{formatCredits(totalCredits)}</span>
+            </div>
+            <div className="pricing-migrate-breakdown__row">
+              <span>{t("pricing.migrate.row.subscription")}</span>
+              <span>− {formatCredits(subscriptionCredits)}</span>
+            </div>
+            <div className="pricing-migrate-breakdown__row">
+              <span>{t("pricing.migrate.row.trial")}</span>
+              <span>− {formatCredits(trialCredits)}</span>
+            </div>
+            <div className="pricing-migrate-breakdown__row">
+              <span>{t("pricing.migrate.row.used")}</span>
+              <span>− {formatCredits(usedCredits)}</span>
+            </div>
+            <div className="pricing-migrate-breakdown__row pricing-migrate-breakdown__row--result">
+              <span>{t("pricing.migrate.row.migratable")}</span>
+              <span>{formatCredits(migratable)}</span>
+            </div>
+          </div>
+          {canMigrate ? (
+            <Space wrap>
+              <InputNumber
+                min={1}
+                max={migratable}
+                value={migrateAmount ?? undefined}
+                onChange={(value) => {
+                  setMigrateAll(false);
+                  setMigrateAmount(typeof value === "number" ? value : null);
+                }}
+                style={{ width: 200 }}
+              />
+              <Button onClick={handleAll}>{t("pricing.migrate.all")}</Button>
+            </Space>
+          ) : (
+            <Text type="secondary">{t("pricing.migrate.empty")}</Text>
+          )}
         </Space>
       </Modal>
     </div>

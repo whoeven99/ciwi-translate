@@ -160,18 +160,19 @@ export async function migrateCreditsToSpark(
     };
   }
 
+  const migratable = quota.migratablePurchasedCredits;
   const resolved = resolveMigrateAmount({
-    remaining: remainingBefore,
+    remaining: migratable,
     all: input.all === true,
     amount: input.amount,
   });
   if (!resolved.ok) {
     const attempted =
       input.all === true
-        ? remainingBefore
+        ? migratable
         : typeof input.amount === "number" && Number.isFinite(input.amount)
           ? Math.max(0, Math.trunc(input.amount))
-          : remainingBefore;
+          : migratable;
     return fail(resolved.errorCode, { amount: attempted });
   }
   const amount = resolved.amount;
@@ -222,6 +223,10 @@ export async function migrateCreditsToSpark(
         source: "tsf_migration",
         status: "ok",
         amount,
+        migratableBefore: migratable,
+        subscriptionCredits: quota.subscriptionCredits,
+        trialCredits: quota.trialCredits,
+        purchasedCredits: quota.purchasedCredits,
         sparkPurchasedBefore: grant.purchasedBefore,
         sparkPurchasedAfter: grant.purchasedAfter,
       },

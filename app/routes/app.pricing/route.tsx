@@ -27,17 +27,8 @@ import {
   mutationAppPurchaseOneTimeCreate,
   mutationAppSubscriptionCreate,
 } from "~/api/admin";
-import type { Dispatch } from "@reduxjs/toolkit";
 import { useDispatch, useSelector } from "react-redux";
-import {
-  setChars,
-  setIsNew,
-  setPlan,
-  setTotalChars,
-  setTrialCredits,
-  setUpdateTime,
-} from "~/store/modules/userConfig";
-import type { AppBootstrapData } from "~/server/appBootstrap.server";
+import { refreshBillingBootstrap } from "~/utils/billingBootstrap";
 import useReport from "scripts/eventReport";
 import { globalStore } from "~/globalStore";
 import AcountInfoCard from "./components/acountInfoCard";
@@ -55,51 +46,6 @@ import {
 } from "~/utils/billingReturn";
 import { redirectToBillingConfirmation } from "~/utils/billingConfirmation.client";
 import { buildShopifyEmbeddedAppReturnUrl } from "~/lib/shopifyAppHandle.server";
-
-async function refreshBillingBootstrap(
-  dispatch: Dispatch,
-  previousTotalChars?: number,
-): Promise<void> {
-  const retryDelaysMs = [0, 600, 1200, 2000, 3000];
-
-  for (const delayMs of retryDelaysMs) {
-    if (delayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-
-    try {
-      const res = await fetch("/api/app-bootstrap");
-      const data = (await res.json()) as {
-        ok?: boolean;
-        bootstrap?: AppBootstrapData;
-      };
-      if (!data.ok || !data.bootstrap) continue;
-
-      const bootstrap = data.bootstrap;
-      dispatch(setPlan({ plan: bootstrap.plan }));
-      dispatch(setChars({ chars: bootstrap.chars }));
-      dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
-      dispatch(setTrialCredits({ trialCredits: bootstrap.trialCredits ?? 0 }));
-      if (bootstrap.updateTime) {
-        dispatch(setUpdateTime({ updateTime: bootstrap.updateTime }));
-      } else {
-        dispatch(setUpdateTime({ updateTime: "" }));
-      }
-      if (bootstrap.isNew !== null && bootstrap.isNew !== undefined) {
-        dispatch(setIsNew({ isNew: bootstrap.isNew }));
-      }
-
-      if (
-        previousTotalChars === undefined ||
-        bootstrap.totalChars !== previousTotalChars
-      ) {
-        return;
-      }
-    } catch {
-      // webhook 入账可能略滞后，继续重试
-    }
-  }
-}
 
 const { Title, Text, Link } = Typography;
 
@@ -313,9 +259,16 @@ const Index = () => {
     }
   };
 
-  const { plan, updateTime, chars, totalChars, trialCredits, isNew } = useSelector(
-    (state: any) => state.userConfig,
-  );
+  const {
+    plan,
+    updateTime,
+    chars,
+    totalChars,
+    trialCredits,
+    subscriptionCredits,
+    migratablePurchasedCredits,
+    isNew,
+  } = useSelector((state: any) => state.userConfig);
 
   const { reportClick, report } = useReport();
   const billingReturnBasePath = useMemo(() => {
@@ -1174,6 +1127,16 @@ const Index = () => {
               loading={isLoading || creditsRefreshing}
               translation_balance={totalChars - chars || 0}
               trialCredits={typeof trialCredits === "number" ? trialCredits : 0}
+              subscriptionCredits={
+                typeof subscriptionCredits === "number" ? subscriptionCredits : 0
+              }
+              usedCredits={typeof chars === "number" ? chars : 0}
+              totalCredits={typeof totalChars === "number" ? totalChars : 0}
+              migratablePurchasedCredits={
+                typeof migratablePurchasedCredits === "number"
+                  ? migratablePurchasedCredits
+                  : 0
+              }
               onBuyCredits={handleOpenAddCreditsModal}
               onMigrateSuccess={() => {
                 void refreshBillingBootstrap(dispatch);

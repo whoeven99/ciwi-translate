@@ -30,6 +30,24 @@ export function getRemainingCredits(account: AccountBalanceFields): number {
   return Math.max(0, getTotalCredits(account) - account.usedCredits);
 }
 
+/**
+ * 可迁移到 Spark 的购买积分：总额度 − 订阅 − 试用 − 已用。
+ * 等价于 max(0, purchasedCredits − usedCredits)。订阅 / 试用不可迁。
+ */
+export function getMigratablePurchasedCredits(
+  account: AccountBalanceFields,
+): number {
+  return Math.max(
+    0,
+    Math.floor(
+      getTotalCredits(account) -
+        Math.max(0, account.subscriptionCredits) -
+        Math.max(0, account.trialCredits) -
+        Math.max(0, account.usedCredits),
+    ),
+  );
+}
+
 /** 是否还有额度（gate 用）。 */
 export function hasCreditQuota(account: AccountBalanceFields): boolean {
   return account.usedCredits < getTotalCredits(account);
