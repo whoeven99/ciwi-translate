@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import { Button } from "@shopify/polaris";
+import { Button, Modal } from "@shopify/polaris";
 import { useFetcher, useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { v4Colors } from "../v4Styles";
@@ -81,24 +81,8 @@ export function CreateTaskConfirmModal({
   useEffect(() => {
     if (!open) {
       resetDetailed();
-      return;
     }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !creating && !detailedRunning) {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open, creating, onClose, resetDetailed, detailedRunning]);
+  }, [open, resetDetailed]);
 
   useEffect(() => {
     if (!open) return;
@@ -340,44 +324,42 @@ export function CreateTaskConfirmModal({
   if (!open) return null;
 
   return (
-    <div
-      aria-modal="true"
-      role="dialog"
-      style={overlayStyle}
-      onClick={() => {
-        if (!creating && !detailedRunning) onClose();
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="large"
+      title={scenarioMeta.title}
+      primaryAction={{
+        content: primaryActionLabel,
+        onAction: handlePrimaryAction,
+        loading: creating || planFetcher.state === "submitting",
       }}
+      secondaryActions={
+        secondaryActionLabel
+          ? [
+              {
+                content: secondaryActionLabel,
+                onAction: handleSecondaryAction,
+                disabled: creating,
+              },
+            ]
+          : []
+      }
     >
-      <div style={panelStyle} onClick={(event) => event.stopPropagation()}>
-        <div style={headerStyle}>
-          <div style={headerCopyStyle}>
-            <div style={titleStyle}>{scenarioMeta.title}</div>
-            {shortfallCredits > 0 ? (
-              <div
-                style={{
-                  ...headlineStyle,
-                  color: scenarioMeta.accent,
-                  background: scenarioMeta.headlineBg,
-                }}
-              >
-                {t("v4.createTask.confirmShortfallHeadline", {
-                  credits: shortfallCreditsLabel,
-                })}
-              </div>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            aria-label={t("Close")}
-            onClick={onClose}
-            disabled={creating || detailedRunning}
-            style={closeButtonStyle}
-          >
-            ×
-          </button>
+      {shortfallCredits > 0 ? (
+        <div
+          style={{
+            ...headlineStyle,
+            color: scenarioMeta.accent,
+            background: scenarioMeta.headlineBg,
+            marginBottom: 16,
+          }}
+        >
+          {t("v4.createTask.confirmShortfallHeadline", {
+            credits: shortfallCreditsLabel,
+          })}
         </div>
-
-        <div style={bodyStyle}>
+      ) : null}
           <section style={estimateSectionStyle}>
             <div style={estimateSectionTitleStyle}>
               {t("v4.createTask.confirmEstimatePanelTitle")}
@@ -467,36 +449,7 @@ export function CreateTaskConfirmModal({
               </div>
             </InfoCard>
           ) : null}
-        </div>
-
-        <div style={footerStyle}>
-          <div style={primaryButtonStyle}>
-            <Button
-              fullWidth
-              size="large"
-              variant="primary"
-              onClick={handlePrimaryAction}
-              loading={creating || planFetcher.state === "submitting"}
-            >
-              {primaryActionLabel}
-            </Button>
-          </div>
-          {secondaryActionLabel ? (
-            <div style={secondaryButtonStyle}>
-              <Button
-                fullWidth
-                size="large"
-                variant="secondary"
-                onClick={handleSecondaryAction}
-                disabled={creating}
-              >
-                {secondaryActionLabel}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -630,70 +583,6 @@ function summarizeCompactLine(items: string[], t: TranslateFn): string {
   });
 }
 
-const overlayStyle = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 2147483100,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 28,
-  background: "rgba(15, 23, 42, 0.36)",
-  backdropFilter: "blur(8px)",
-} as const;
-
-const panelStyle = {
-  width: "min(520px, calc(100vw - 32px))",
-  maxHeight: "min(820px, calc(100vh - 32px))",
-  overflow: "hidden",
-  borderRadius: 28,
-  border: `1px solid ${v4Colors.cardBorder}`,
-  background: v4Colors.cardBg,
-  boxShadow: "0 24px 80px rgba(15, 23, 42, 0.18)",
-  display: "flex",
-  flexDirection: "column",
-} as const;
-
-const headerStyle = {
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: 16,
-  padding: "28px 28px 10px",
-} as const;
-
-const headerCopyStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 10,
-  minWidth: 0,
-} as const;
-
-const bodyStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 16,
-  padding: "0 28px",
-  overflowY: "auto",
-} as const;
-
-const footerStyle = {
-  display: "flex",
-  justifyContent: "center",
-  gap: 0,
-  padding: "22px 28px 28px",
-  background: v4Colors.cardBg,
-  flexWrap: "wrap",
-} as const;
-
-const titleStyle = {
-  margin: 0,
-  fontSize: 28,
-  fontWeight: 700,
-  lineHeight: 1.15,
-  color: v4Colors.text,
-} as const;
-
 const headlineStyle = {
   display: "inline-flex",
   alignItems: "center",
@@ -706,23 +595,6 @@ const headlineStyle = {
   fontSize: 13,
   fontWeight: 700,
   lineHeight: "22px",
-} as const;
-
-const closeButtonStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 36,
-  height: 36,
-  padding: 0,
-  border: "none",
-  borderRadius: 999,
-  background: "rgba(15, 23, 42, 0.04)",
-  color: v4Colors.textMuted,
-  fontSize: 22,
-  lineHeight: 1,
-  cursor: "pointer",
-  flexShrink: 0,
 } as const;
 
 const cardStyle = {
@@ -890,16 +762,4 @@ const offerFeatureItemStyle = {
   fontWeight: 600,
   lineHeight: "24px",
   whiteSpace: "pre-line",
-} as const;
-
-const primaryButtonStyle = {
-  minWidth: 184,
-  minHeight: 48,
-  paddingInline: 18,
-} as const;
-
-const secondaryButtonStyle = {
-  minWidth: 184,
-  minHeight: 48,
-  paddingInline: 18,
 } as const;

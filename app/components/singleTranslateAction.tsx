@@ -317,19 +317,21 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
         {actionLabel}
       </Button>
       {open ? (
-        <V4ModalShell open onClose={closeModal} width={560}>
-          <div style={{ padding: "24px 24px 20px" }}>
-            <div
-              style={{
-                paddingBottom: 20,
-                marginBottom: 20,
-                borderBottom: `1px solid ${v4Colors.divider}`,
-              }}
-            >
-              <Text strong style={{ display: "block", fontSize: 24, lineHeight: 1.3 }}>
-                {modalTitle}
-              </Text>
-            </div>
+        <V4ModalShell
+          open
+          onClose={closeModal}
+          size="small"
+          title={modalTitle}
+          primaryAction={{
+            content: primaryLabel,
+            onAction: handleSubmit,
+            loading,
+            disabled: quotaPrecheckPending,
+          }}
+          secondaryActions={[
+            { content: t("Cancel"), onAction: closeModal, disabled: loading },
+          ]}
+        >
 
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               <div
@@ -401,28 +403,6 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                 />
               </div>
             </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 12,
-                marginTop: 24,
-              }}
-            >
-              <Button type="default" onClick={closeModal} disabled={loading}>
-                {t("Cancel")}
-              </Button>
-              <Button
-                type="primary"
-                onClick={handleSubmit}
-                loading={loading}
-                disabled={quotaPrecheckPending}
-              >
-                {primaryLabel}
-              </Button>
-            </div>
-          </div>
         </V4ModalShell>
       ) : null}
     </>

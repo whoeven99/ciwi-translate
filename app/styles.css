@@ -19,11 +19,11 @@
   --app-color-text-tertiary: var(--p-color-text-tertiary);
   --app-color-brand: var(--app-accent-primary);
   --app-color-brand-on-fill: #ffffff;
-  --app-accent-primary: #5467ff;
+  --app-accent-primary: #4a57e8;
   --app-accent-primary-hover: #4254e8;
   --app-accent-primary-deep: #2d3572;
-  --app-accent-primary-soft: rgba(84, 103, 255, 0.12);
-  --app-accent-primary-muted: rgba(84, 103, 255, 0.08);
+  --app-accent-primary-soft: rgba(74, 87, 232, 0.12);
+  --app-accent-primary-muted: rgba(74, 87, 232, 0.08);
   --app-accent-growth: #1d9a7f;
   --app-accent-growth-soft: rgba(29, 154, 127, 0.12);
   --app-accent-utility: #c88b24;
@@ -32,7 +32,7 @@
   --app-accent-critical-soft: rgba(208, 77, 95, 0.12);
   --app-surface-brand-soft: linear-gradient(
       180deg,
-      rgba(84, 103, 255, 0.08) 0%,
+      rgba(74, 87, 232, 0.08) 0%,
       rgba(255, 255, 255, 0.96) 100%
     ),
     var(--app-color-surface);
@@ -81,8 +81,8 @@ body {
   color: var(--app-color-text);
   font-size: var(--app-font-size-body);
   line-height: 1.5;
-  /* 覆盖 Polaris 原生品牌色，统一为紫色 */
-  --p-color-bg-fill-brand: #5467ff;
+  /* 主按钮统一通过 Polaris brand token 驱动为品牌紫，白字对比度 ≥ 4.5:1 */
+  --p-color-bg-fill-brand: #4a57e8;
   --p-color-text-brand-on-bg-fill: #ffffff;
 }
 

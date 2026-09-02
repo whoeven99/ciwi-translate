@@ -1,5 +1,4 @@
 import {
-  Button as PolarisButton,
   InlineStack,
   Link as PolarisLink,
   Select as PolarisSelect,
@@ -159,43 +158,41 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       ? t("Pay and translate")
       : t("Buy now");
 
+  const modalTitle = taskContext
+    ? t("Buy credits to continue task")
+    : singleTranslateContext
+      ? t("Buy credits to translate this field")
+    : createTaskContext
+      ? t("Buy credits to create task")
+      : t("Buy credits");
+
+  const modalSubtitle = taskContext
+    ? t("Review the remaining credits for this task and choose a pack.")
+    : singleTranslateContext
+      ? t("Review the estimated credits for this field and choose a pack.")
+    : createTaskContext
+      ? t("Review the estimated credits for this task and choose a pack.")
+      : t("Choose a pack for this task.");
+
   return (
-    <V4ModalShell open={visible} onClose={onCancel} width={560}>
-      <div style={{ padding: "24px 24px 20px" }}>
-        <div
-          style={{
-            paddingBottom: 20,
-            marginBottom: 20,
-            borderBottom: `1px solid ${v4Colors.divider}`,
-          }}
-        >
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <PolarisText as="h2" variant="headingLg" fontWeight="bold">
-              {taskContext
-                ? t("Buy credits to continue task")
-                : singleTranslateContext
-                  ? t("Buy credits to translate this field")
-                : createTaskContext
-                  ? t("Buy credits to create task")
-                  : t("Buy credits")}
-            </PolarisText>
-            <div
-              style={{
-                marginTop: 10,
-              }}
-            >
-              <PolarisText as="p" variant="bodyMd" tone="subdued">
-                {taskContext
-                  ? t("Review the remaining credits for this task and choose a pack.")
-                  : singleTranslateContext
-                    ? t("Review the estimated credits for this field and choose a pack.")
-                  : createTaskContext
-                    ? t("Review the estimated credits for this task and choose a pack.")
-                  : t("Choose a pack for this task.")}
-              </PolarisText>
-            </div>
-          </div>
-        </div>
+    <V4ModalShell
+      open={visible}
+      onClose={onCancel}
+      size="small"
+      title={modalTitle}
+      primaryAction={{
+        content: ctaLabel,
+        onAction: onClick,
+        loading: buyButtonLoading,
+        disabled: buyButtonLoading || !selectedKey,
+      }}
+      secondaryActions={[
+        { content: t("v4.quotaGate.maybeLater"), onAction: onCancel },
+      ]}
+    >
+      <PolarisText as="p" variant="bodyMd" tone="subdued">
+        {modalSubtitle}
+      </PolarisText>
 
         {taskContext ? (
           <div
@@ -435,49 +432,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <InlineStack gap="100" align="center">
-            <PolarisText as="span" variant="bodyMd" tone="subdued">
-              {t("Need help?")}
-            </PolarisText>
-            <PolarisLink onClick={handleContactSupport}>{t("Contact us")}</PolarisLink>
-          </InlineStack>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ minWidth: 124 }}>
-              <PolarisButton fullWidth size="large" variant="secondary" onClick={onCancel}>
-                {t("v4.quotaGate.maybeLater")}
-              </PolarisButton>
-            </div>
-            <div style={{ minWidth: 180 }}>
-              <PolarisButton
-                fullWidth
-                size="large"
-                variant="primary"
-                onClick={onClick}
-                disabled={buyButtonLoading || !selectedKey}
-                loading={buyButtonLoading}
-              >
-                {ctaLabel}
-              </PolarisButton>
-            </div>
-          </div>
-        </div>
-      </div>
+        <InlineStack gap="100" align="center">
+          <PolarisText as="span" variant="bodyMd" tone="subdued">
+            {t("Need help?")}
+          </PolarisText>
+          <PolarisLink onClick={handleContactSupport}>{t("Contact us")}</PolarisLink>
+        </InlineStack>
     </V4ModalShell>
   );
 };

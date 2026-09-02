@@ -35,6 +35,7 @@ import {
 import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import { v4ContentStyle, V4_OVERVIEW_CARD_MIN_HEIGHT } from "./v4Styles";
 import { PageHeaderBar, SummaryDonutCard } from "./components/SummaryAndHeader";
+import { ThemeEmbedStatusBanner } from "~/components/ThemeEmbedStatusBanner";
 import { CreateTaskCard } from "./components/CreateTaskCard";
 import { CreateTaskConfirmModal } from "./components/CreateTaskConfirmModal";
 import { TaskQueueSection } from "./components/TaskQueueSection";
@@ -877,6 +878,7 @@ export default function AppTranslateV4() {
         }}
       >
         <div className="v4-page" style={v4ContentStyle}>
+          <ThemeEmbedStatusBanner />
           <div className="v4-enter">
             <PageHeaderBar credits={remainingCredits} planType={planType} />
           </div>

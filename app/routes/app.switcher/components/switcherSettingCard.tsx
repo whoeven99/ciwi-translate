@@ -85,9 +85,9 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
               }}
             >
               {step1Visible ? (
-                <AppStatusBadge tone="critical">
-                  {t("Uncompleted")}
-                </AppStatusBadge>
+                  <AppStatusBadge tone="caution">
+                    {t("Uncompleted")}
+                  </AppStatusBadge>
               ) : (
                 <AppStatusBadge tone="success">{t("Completed")}</AppStatusBadge>
               )}
@@ -159,9 +159,9 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
           <Space direction="vertical" size="small" style={{ display: "flex" }}>
             <div className="card-header">
               {step2Visible ? (
-                <AppStatusBadge tone="critical">
-                  {t("Uncompleted")}
-                </AppStatusBadge>
+                  <AppStatusBadge tone="caution">
+                    {t("Uncompleted")}
+                  </AppStatusBadge>
               ) : (
                 <AppStatusBadge tone="success">{t("Completed")}</AppStatusBadge>
               )}
