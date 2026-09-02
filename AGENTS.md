@@ -308,7 +308,8 @@ coverage untranslated ratio; `includeLiquid` 时再加上 `sumPendingLiquidChars
 `useDetailedCreateTaskEstimate` → `/api/translate-v4/estimate-detailed`，
 按语言×v4 module 分片拉字段、拆叶子、`tmMGetByValue` 去命中后按 miss 字符×k。
 - Pause/resume/cancel/delete: `app/routes/api.translate-v4.task-action.ts`.
-- Progress summaries: `app/server/translateV4/progress.server.ts`.
+- Progress summaries: `app/server/translateV4/progress.server.ts`
+（`listV4JobSummaryDocs` 带 `includeLiquid`；摘要 `modules` 经 `jobModulesWithLiquid` 拼虚拟 `CUSTOM_LIQUID`，不写回 Cosmos）。
 - Init activity UI (module `x/N` bar + i18n activity log): Redis fields
 `initModulesTotal` / `initModulesDone` / `initActiveModules` /
 `initCompletedModules` / `initPhase` written by `initWorker.ts`; rendered in

@@ -8,6 +8,7 @@ import type {
 } from "~/server/translateV4/progress.server";
 import type { StageName } from "~/server/translateV4/types";
 import { capTranslateUnitsByResources } from "~/server/translateV4/metricsUtils";
+import { CUSTOM_LIQUID_MODULE } from "~/lib/jobModulesWithLiquid";
 import { MODULE_LABELS, QUOTA_TOKEN_MULTIPLIER } from "../constants";
 import { v4Colors } from "../v4Styles";
 import {
@@ -518,9 +519,12 @@ function InitActivityLog({ job }: { job: TranslationJobProgressSummary }) {
     // (activity used to appear only after JSONL download). Prefer that copy over
     // "waiting for slot", which reads like the task is idle in our queue.
     if (active.length === 0 && completed.length === 0) {
+      const onlyLiquid = waiting.every((mod) => mod === CUSTOM_LIQUID_MODULE);
       lines.push({
         verbKey: "v4.initLog.verb.querying",
-        detail: t("v4.initLog.fetchingShopifyBulk", { modules: modulesText }),
+        detail: onlyLiquid
+          ? t("v4.initLog.waitingForSlot", { modules: modulesText })
+          : t("v4.initLog.fetchingShopifyBulk", { modules: modulesText }),
         kind: "active",
       });
     } else {
