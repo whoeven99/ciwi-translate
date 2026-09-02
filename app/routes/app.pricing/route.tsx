@@ -265,7 +265,7 @@ const Index = () => {
     chars,
     totalChars,
     trialCredits,
-    subscriptionCredits,
+    purchasedCredits,
     migratablePurchasedCredits,
     isNew,
   } = useSelector((state: any) => state.userConfig);
@@ -1127,11 +1127,9 @@ const Index = () => {
               loading={isLoading || creditsRefreshing}
               translation_balance={totalChars - chars || 0}
               trialCredits={typeof trialCredits === "number" ? trialCredits : 0}
-              subscriptionCredits={
-                typeof subscriptionCredits === "number" ? subscriptionCredits : 0
+              purchasedCredits={
+                typeof purchasedCredits === "number" ? purchasedCredits : 0
               }
-              usedCredits={typeof chars === "number" ? chars : 0}
-              totalCredits={typeof totalChars === "number" ? totalChars : 0}
               migratablePurchasedCredits={
                 typeof migratablePurchasedCredits === "number"
                   ? migratablePurchasedCredits

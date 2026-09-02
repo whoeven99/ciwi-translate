@@ -1,6 +1,7 @@
 import prisma from "../../../db.server";
 import {
   getMigratablePurchasedCredits,
+  getPurchasedCreditsConsumedByUsage,
   getRemainingCredits,
   getTotalCredits,
 } from "../accountBalance.server";
@@ -12,6 +13,7 @@ export type AccountQuota = {
   subscriptionCredits: number;
   purchasedCredits: number;
   trialCredits: number;
+  purchasedConsumedByUsage: number;
   migratablePurchasedCredits: number;
 };
 
@@ -29,6 +31,7 @@ export async function getAccountQuota(
     subscriptionCredits: account.subscriptionCredits,
     purchasedCredits: account.purchasedCredits,
     trialCredits: account.trialCredits,
+    purchasedConsumedByUsage: getPurchasedCreditsConsumedByUsage(account),
     migratablePurchasedCredits: getMigratablePurchasedCredits(account),
   };
 }

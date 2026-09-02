@@ -718,8 +718,9 @@ Models:
 - `TranslateV4JobUsage`: per v4 job usage snapshot (Worker writes on terminal status).
 - `CreditUsage`: per-deduction credit audit (`single` / `image` / `v4_job`);
   units are billable credits (not cash). `BillingLog` remains income-only.
-  定价页可将购买积分剩余迁入 Spark（可迁移 = 总额度 − 订阅 − 试用 − 已用，
-  即 `max(0, purchasedCredits − usedCredits)`）：`usedCredits += amount`，Spark
+  定价页仅可将未被用量占用的购买积分 1:1 迁入 Spark：可迁 =
+  `purchasedCredits − max(0, usedCredits − subscriptionCredits − trialCredits)`，
+  成功后 `purchasedCredits -= amount`（不改 `usedCredits`），Spark
   `purchasedTokens += amount`；流水 `CREDITS_MIGRATED_OUT` /
   `CREDITS_MIGRATION_FAILED`（`app/server/billing/migrateCreditsToSpark.server.ts`）。
 

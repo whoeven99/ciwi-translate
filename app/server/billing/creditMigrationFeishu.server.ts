@@ -9,6 +9,8 @@ export type CreditMigrationFeishuParams = {
   rolledBack?: boolean;
   tsfUsedBefore?: number;
   tsfUsedAfter?: number;
+  tsfPurchasedBefore?: number;
+  tsfPurchasedAfter?: number;
   sparkPurchasedBefore?: number;
   sparkPurchasedAfter?: number;
 };
@@ -25,7 +27,7 @@ export function buildCreditMigrationFeishuMessage(
     params.ok ? "积分迁移到 Spark · 成功" : "积分迁移到 Spark · 失败",
     "",
     `店铺: ${params.shop}`,
-    `数量: ${formatNumber(params.amount)}（1:1，仅购买积分：总额−订阅−试用−已用）`,
+    `数量: ${formatNumber(params.amount)}（1:1，仅购买积分）`,
     `结果: ${params.ok ? "成功" : "失败"}`,
   ];
   if (!params.ok && params.errorCode) {
@@ -33,6 +35,11 @@ export function buildCreditMigrationFeishuMessage(
   }
   if (params.rolledBack) {
     lines.push("Spark 已回滚");
+  }
+  if (params.ok || params.tsfPurchasedBefore != null) {
+    lines.push(
+      `翻译加量: ${formatNumber(params.tsfPurchasedBefore)} → ${formatNumber(params.tsfPurchasedAfter)}`,
+    );
   }
   if (params.ok || params.tsfUsedBefore != null) {
     lines.push(

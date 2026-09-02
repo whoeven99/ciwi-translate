@@ -1,9 +1,38 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { getMigratablePurchasedCredits } from "./accountBalance.server";
+import {
+  getMigratablePurchasedCredits,
+  getPurchasedCreditsConsumedByUsage,
+} from "./accountBalance.server";
+
+describe("getPurchasedCreditsConsumedByUsage", () => {
+  it("is 0 while used is covered by subscription + trial", () => {
+    assert.equal(
+      getPurchasedCreditsConsumedByUsage({
+        subscriptionCredits: 4000,
+        purchasedCredits: 5000,
+        trialCredits: 1000,
+        usedCredits: 2000,
+      }),
+      0,
+    );
+  });
+
+  it("is used − subscription − trial when usage overflows into purchased", () => {
+    assert.equal(
+      getPurchasedCreditsConsumedByUsage({
+        subscriptionCredits: 100,
+        purchasedCredits: 500,
+        trialCredits: 0,
+        usedCredits: 200,
+      }),
+      100,
+    );
+  });
+});
 
 describe("getMigratablePurchasedCredits", () => {
-  it("is total − subscription − trial − used", () => {
+  it("is all purchased when used has not reached the purchased pool", () => {
     assert.equal(
       getMigratablePurchasedCredits({
         subscriptionCredits: 4000,
@@ -11,26 +40,29 @@ describe("getMigratablePurchasedCredits", () => {
         trialCredits: 1000,
         usedCredits: 2000,
       }),
-      3000,
+      5000,
     );
   });
 
-  it("is zero when used is at least purchased", () => {
+  it("subtracts only the overflow into purchased", () => {
     assert.equal(
       getMigratablePurchasedCredits({
-        subscriptionCredits: 4000,
+        subscriptionCredits: 100,
         purchasedCredits: 500,
-        trialCredits: 1000,
-        usedCredits: 500,
+        trialCredits: 0,
+        usedCredits: 200,
       }),
-      0,
+      400,
     );
+  });
+
+  it("is zero when usage has consumed the whole purchased pool", () => {
     assert.equal(
       getMigratablePurchasedCredits({
         subscriptionCredits: 4000,
         purchasedCredits: 500,
         trialCredits: 1000,
-        usedCredits: 800,
+        usedCredits: 5500,
       }),
       0,
     );

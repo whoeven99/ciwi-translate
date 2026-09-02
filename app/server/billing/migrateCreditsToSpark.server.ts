@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import prisma from "../../db.server";
 import { appendBillingLog } from "./billingLog.server";
 import { scheduleCreditMigrationFeishuNotify } from "./creditMigrationFeishu.server";
-import { deductCredits } from "./quota/deductCredits.server";
 import { getAccountQuota } from "./quota/getAccountQuota.server";
 import {
   grantCreditsOnSpark,
@@ -29,6 +28,8 @@ export type MigrateCreditsToSparkResult = {
   usedCreditsAfter?: number;
   sparkPurchasedBefore?: number;
   sparkPurchasedAfter?: number;
+  tsfPurchasedBefore?: number;
+  tsfPurchasedAfter?: number;
   rolledBack?: boolean;
   alreadyApplied?: boolean;
 };
@@ -103,6 +104,7 @@ export async function migrateCreditsToSpark(
   const quota = await getAccountQuota(shop);
   const remainingBefore = quota?.remainingCredits ?? 0;
   const usedBefore = quota?.usedCredits ?? 0;
+  const purchasedBefore = quota?.purchasedCredits ?? 0;
 
   const fail = async (
     errorCode: string,
@@ -126,6 +128,8 @@ export async function migrateCreditsToSpark(
       rolledBack: extra?.rolledBack,
       tsfUsedBefore: usedBefore,
       tsfUsedAfter: usedBefore,
+      tsfPurchasedBefore: purchasedBefore,
+      tsfPurchasedAfter: extra?.tsfPurchasedAfter ?? purchasedBefore,
       sparkPurchasedBefore: extra?.sparkPurchasedBefore,
       sparkPurchasedAfter: extra?.sparkPurchasedAfter,
     });
@@ -209,8 +213,13 @@ export async function migrateCreditsToSpark(
   }
 
   try {
-    const after = await deductCredits(shop, amount);
-    const usedAfter = after?.usedCredits ?? usedBefore + amount;
+    await prisma.account.update({
+      where: { shop },
+      data: { purchasedCredits: { decrement: amount } },
+    });
+    const after = await getAccountQuota(shop);
+    const usedAfter = after?.usedCredits ?? usedBefore;
+    const purchasedAfter = after?.purchasedCredits ?? Math.max(0, purchasedBefore - amount);
     const remainingAfter = after?.remainingCredits ?? Math.max(0, remainingBefore - amount);
 
     await appendBillingLog({
@@ -224,9 +233,11 @@ export async function migrateCreditsToSpark(
         status: "ok",
         amount,
         migratableBefore: migratable,
+        purchasedCreditsBefore: purchasedBefore,
+        purchasedCreditsAfter: purchasedAfter,
+        purchasedConsumedByUsage: quota.purchasedConsumedByUsage,
         subscriptionCredits: quota.subscriptionCredits,
         trialCredits: quota.trialCredits,
-        purchasedCredits: quota.purchasedCredits,
         sparkPurchasedBefore: grant.purchasedBefore,
         sparkPurchasedAfter: grant.purchasedAfter,
       },
@@ -239,6 +250,8 @@ export async function migrateCreditsToSpark(
       ok: true,
       tsfUsedBefore: usedBefore,
       tsfUsedAfter: usedAfter,
+      tsfPurchasedBefore: purchasedBefore,
+      tsfPurchasedAfter: purchasedAfter,
       sparkPurchasedBefore: grant.purchasedBefore,
       sparkPurchasedAfter: grant.purchasedAfter,
     });
@@ -252,6 +265,8 @@ export async function migrateCreditsToSpark(
       remainingAfter,
       usedCreditsBefore: usedBefore,
       usedCreditsAfter: usedAfter,
+      tsfPurchasedBefore: purchasedBefore,
+      tsfPurchasedAfter: purchasedAfter,
       sparkPurchasedBefore: grant.purchasedBefore,
       sparkPurchasedAfter: grant.purchasedAfter,
     };

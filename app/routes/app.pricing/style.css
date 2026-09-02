@@ -150,6 +150,33 @@
   gap: 8px;
 }
 
+.pricing-migrate-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--p-color-bg-surface-secondary, rgba(27, 39, 71, 0.04));
+  color: var(--app-color-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.pricing-migrate-breakdown__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--app-color-text-secondary);
+}
+
+.pricing-migrate-breakdown__row--result {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--app-color-border-secondary, rgba(27, 39, 71, 0.12));
+  color: var(--app-color-text);
+  font-weight: 600;
+}
+
 .pricing-usage-card__metric .ant-statistic {
   margin: 0;
 }
@@ -177,33 +204,6 @@
   color: var(--app-color-text-secondary);
   font-size: 13px;
   line-height: 20px;
-}
-
-.pricing-migrate-breakdown {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--p-color-bg-surface-secondary, rgba(27, 39, 71, 0.04));
-  color: var(--app-color-text);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.pricing-migrate-breakdown__row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  color: var(--app-color-text-secondary);
-}
-
-.pricing-migrate-breakdown__row--result {
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--app-color-border-secondary, rgba(27, 39, 71, 0.12));
-  color: var(--app-color-text);
-  font-weight: 600;
 }
 
 .pricing-plan-card {

@@ -30,22 +30,26 @@ export function getRemainingCredits(account: AccountBalanceFields): number {
   return Math.max(0, getTotalCredits(account) - account.usedCredits);
 }
 
+/** 已用超出订阅 + 试用后，占用购买池的部分。 */
+export function getPurchasedCreditsConsumedByUsage(
+  account: AccountBalanceFields,
+): number {
+  const used = Math.max(0, Math.floor(account.usedCredits));
+  const subscription = Math.max(0, Math.floor(account.subscriptionCredits));
+  const trial = Math.max(0, Math.floor(account.trialCredits));
+  return Math.max(0, used - subscription - trial);
+}
+
 /**
- * 可迁移到 Spark 的购买积分：总额度 − 订阅 − 试用 − 已用。
- * 等价于 max(0, purchasedCredits − usedCredits)。订阅 / 试用不可迁。
+ * 可迁移到 Spark 的购买积分：
+ * purchasedCredits − max(0, usedCredits − subscriptionCredits − trialCredits)。
+ * 已用先覆盖订阅和试用；超出部分占用购买池，占用掉的不能迁。
  */
 export function getMigratablePurchasedCredits(
   account: AccountBalanceFields,
 ): number {
-  return Math.max(
-    0,
-    Math.floor(
-      getTotalCredits(account) -
-        Math.max(0, account.subscriptionCredits) -
-        Math.max(0, account.trialCredits) -
-        Math.max(0, account.usedCredits),
-    ),
-  );
+  const purchased = Math.max(0, Math.floor(account.purchasedCredits));
+  return Math.max(0, purchased - getPurchasedCreditsConsumedByUsage(account));
 }
 
 /** 是否还有额度（gate 用）。 */

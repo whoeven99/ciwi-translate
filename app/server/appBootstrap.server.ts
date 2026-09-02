@@ -16,9 +16,9 @@ export type AppBootstrapData = {
   totalChars?: number;
   /** 试用 / Launch Credits 池余额（有值时 Pricing 账户卡展示）。 */
   trialCredits?: number;
-  /** 订阅周期额度（迁移窗口拆分）。 */
-  subscriptionCredits?: number;
-  /** 可迁移购买积分 = 总额度 − 订阅 − 试用 − 已用。 */
+  /** 购买积分池面额（Account.purchasedCredits）。 */
+  purchasedCredits?: number;
+  /** 可迁移购买积分 = 购买 − max(0, 已用 − 订阅 − 试用)。 */
   migratablePurchasedCredits?: number;
   isNew: boolean | null;
 };

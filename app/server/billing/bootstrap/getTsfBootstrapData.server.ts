@@ -69,7 +69,7 @@ export async function getTsfBootstrapData(
     chars: quota?.usedCredits,
     totalChars: quota?.totalCredits,
     trialCredits: quota?.trialCredits ?? 0,
-    subscriptionCredits: quota?.subscriptionCredits ?? 0,
+    purchasedCredits: quota?.purchasedCredits ?? 0,
     migratablePurchasedCredits: quota?.migratablePurchasedCredits ?? 0,
     isNew: activatedCount === 0,
   };

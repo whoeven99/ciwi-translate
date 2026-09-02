@@ -4,7 +4,7 @@ import {
   setIsNew,
   setMigratablePurchasedCredits,
   setPlan,
-  setSubscriptionCredits,
+  setPurchasedCredits,
   setTotalChars,
   setTrialCredits,
   setUpdateTime,
@@ -18,11 +18,7 @@ export function applyAppBootstrapCredits(
   dispatch(setChars({ chars: bootstrap.chars }));
   dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
   dispatch(setTrialCredits({ trialCredits: bootstrap.trialCredits ?? 0 }));
-  dispatch(
-    setSubscriptionCredits({
-      subscriptionCredits: bootstrap.subscriptionCredits ?? 0,
-    }),
-  );
+  dispatch(setPurchasedCredits({ purchasedCredits: bootstrap.purchasedCredits ?? 0 }));
   dispatch(
     setMigratablePurchasedCredits({
       migratablePurchasedCredits: bootstrap.migratablePurchasedCredits ?? 0,

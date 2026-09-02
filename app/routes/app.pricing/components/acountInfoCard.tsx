@@ -11,9 +11,7 @@ interface AcountInfoCardProps {
   translation_balance: number;
   /** 试用 / Launch Credits 池；>0 时展示说明。 */
   trialCredits?: number;
-  subscriptionCredits?: number;
-  usedCredits?: number;
-  totalCredits?: number;
+  purchasedCredits?: number;
   migratablePurchasedCredits?: number;
   onBuyCredits: () => void;
   onMigrateSuccess?: () => void;
@@ -34,9 +32,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   loading,
   translation_balance,
   trialCredits = 0,
-  subscriptionCredits = 0,
-  usedCredits = 0,
-  totalCredits = 0,
+  purchasedCredits = 0,
   migratablePurchasedCredits = 0,
   onBuyCredits,
   onMigrateSuccess,
@@ -48,7 +44,9 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   const [migrating, setMigrating] = useState(false);
   const transferIdRef = useRef<string>("");
 
+  const purchased = Math.max(0, Math.floor(purchasedCredits));
   const migratable = Math.max(0, Math.floor(migratablePurchasedCredits));
+  const consumed = Math.max(0, purchased - migratable);
   const canMigrate = migratable >= 1;
 
   const openMigrate = () => {
@@ -161,23 +159,14 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Text type="secondary">{t("pricing.migrate.help")}</Text>
-          <Text type="secondary">{t("pricing.migrate.formula")}</Text>
           <div className="pricing-migrate-breakdown">
             <div className="pricing-migrate-breakdown__row">
-              <span>{t("pricing.migrate.row.total")}</span>
-              <span>{formatCredits(totalCredits)}</span>
+              <span>{t("pricing.migrate.row.purchased")}</span>
+              <span>{formatCredits(purchased)}</span>
             </div>
             <div className="pricing-migrate-breakdown__row">
-              <span>{t("pricing.migrate.row.subscription")}</span>
-              <span>− {formatCredits(subscriptionCredits)}</span>
-            </div>
-            <div className="pricing-migrate-breakdown__row">
-              <span>{t("pricing.migrate.row.trial")}</span>
-              <span>− {formatCredits(trialCredits)}</span>
-            </div>
-            <div className="pricing-migrate-breakdown__row">
-              <span>{t("pricing.migrate.row.used")}</span>
-              <span>− {formatCredits(usedCredits)}</span>
+              <span>{t("pricing.migrate.row.consumed")}</span>
+              <span>− {formatCredits(consumed)}</span>
             </div>
             <div className="pricing-migrate-breakdown__row pricing-migrate-breakdown__row--result">
               <span>{t("pricing.migrate.row.migratable")}</span>

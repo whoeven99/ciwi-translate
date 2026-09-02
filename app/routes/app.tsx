@@ -43,8 +43,8 @@ import type { Dispatch } from "@reduxjs/toolkit";
 import {
   setIsNew,
   setPlan,
-  setSource,
   setShop,
+  setSource,
   setUpdateTime,
   setUserConfigIsLoading,
 } from "~/store/modules/userConfig";
