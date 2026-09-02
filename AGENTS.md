@@ -301,7 +301,9 @@ default `k=1.6` / `TRANSLATE_ESTIMATE_CREDITS_PER_CHAR`),
 `app/routes/app.translate-v4/useCreateTaskEstimate.ts` (wired in
 `CreateTaskCard` / `route.tsx`). Uses shop scan `moduleStats.chars` +
 coverage untranslated ratio; `includeLiquid` 时再加上 `sumPendingLiquidChars`
-（`liquidRule.server.ts`，PENDING 自定义 Liquid 字符数）。不是 worker 实扣公式。
+（`liquidRule.server.ts`，PENDING 自定义 Liquid 字符数）。写入 Cosmos 的
+`estimatedCredits`（`estimatePersistedJobCredits`）同样按该 job 的 `target`
+加 Liquid 字符，供积分不足邮件 `required_credits`；不是 worker 实扣公式。
 精准预估（可选、可等待）：`CreateTaskConfirmModal` →
 `useDetailedCreateTaskEstimate` → `/api/translate-v4/estimate-detailed`，
 按语言×v4 module 分片拉字段、拆叶子、`tmMGetByValue` 去命中后按 miss 字符×k。
