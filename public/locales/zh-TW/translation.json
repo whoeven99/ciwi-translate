@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "價值 $31.99",
   "v4.createTask.includeLiquid": "自訂 Liquid / 第三方文字",
   "v4.createTask.includeLiquidHelp": "翻譯待處理的商店前端 Liquid 規則（非 Shopify 資源）。結果會透過 DOM 取代方式顯示。",
+  "v4.module.CUSTOM_LIQUID": "自訂 Liquid",
   "v4.job.preparingHint": "準備完成後，我們會自動繼續翻譯。",
   "v4.job.preparingModules": "正在準備 {{modules}} 及相關內容",
   "v4.job.preparingStore": "正在準備商店內容",

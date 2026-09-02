@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "$31.99 相当",
   "v4.createTask.includeLiquid": "カスタムLiquid / サードパーティのテキスト",
   "v4.createTask.includeLiquidHelp": "未処理のストアフロントLiquidルールを翻訳します（Shopifyリソースは対象外）。結果はDOM置換で表示されます。",
+  "v4.module.CUSTOM_LIQUID": "カスタムLiquid",
   "v4.job.preparingHint": "準備が完了すると、自動的に翻訳を続行します。",
   "v4.job.preparingModules": "{{modules}} と関連コンテンツを準備中",
   "v4.job.preparingStore": "ストアコンテンツを準備中",

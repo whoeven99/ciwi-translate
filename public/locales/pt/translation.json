@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "valor de $31.99",
   "v4.createTask.includeLiquid": "Liquid personalizado / texto de terceiros",
   "v4.createTask.includeLiquidHelp": "Traduzir regras Liquid pendentes da loja (não os recursos Shopify). Os resultados aparecem através da substituição no DOM.",
+  "v4.module.CUSTOM_LIQUID": "Liquid personalizado",
   "v4.job.preparingHint": "Continuaremos a traduzir automaticamente quando a preparação estiver concluída.",
   "v4.job.preparingModules": "A preparar {{modules}} e conteúdo relacionado",
   "v4.job.preparingStore": "A preparar o conteúdo da loja",

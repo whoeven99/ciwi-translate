@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "Wert von $31.99",
   "v4.createTask.includeLiquid": "Benutzerdefiniertes Liquid / Text von Drittanbietern",
   "v4.createTask.includeLiquidHelp": "Übersetze ausstehende Liquid-Regeln des Storefronts (nicht Shopify-Ressourcen). Ergebnisse erscheinen per DOM-Ersetzung.",
+  "v4.module.CUSTOM_LIQUID": "Benutzerdefiniertes Liquid",
   "v4.job.preparingHint": "Wir werden automatisch mit dem Übersetzen fortfahren, sobald die Vorbereitung abgeschlossen ist.",
   "v4.job.preparingModules": "Vorbereitung von {{modules}} und zugehörigen Inhalten",
   "v4.job.preparingStore": "Vorbereitung der Store-Inhalte",

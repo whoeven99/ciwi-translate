@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "Вартість $31.99",
   "v4.createTask.includeLiquid": "Спеціальний Liquid / сторонній текст",
   "v4.createTask.includeLiquidHelp": "Перекладати правила Liquid для вітрини (не ресурси Shopify). Результати з'являються через заміну DOM.",
+  "v4.module.CUSTOM_LIQUID": "Спеціальний Liquid",
   "v4.job.preparingHint": "Ми автоматично продовжимо переклад, коли підготовку буде завершено.",
   "v4.job.preparingModules": "Підготовка {{modules}} і пов'язаного вмісту",
   "v4.job.preparingStore": "Підготовка вмісту магазину",

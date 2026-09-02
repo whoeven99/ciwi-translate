@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "$31.99 상당",
   "v4.createTask.includeLiquid": "커스텀 Liquid / 타사 텍스트",
   "v4.createTask.includeLiquidHelp": "대기 중인 스토어프런트 Liquid 규칙(Shopify 리소스 아님)을 번역합니다. 결과는 DOM 대체를 통해 표시됩니다.",
+  "v4.module.CUSTOM_LIQUID": "커스텀 Liquid",
   "v4.job.preparingHint": "준비가 완료되면 자동으로 번역을 계속합니다.",
   "v4.job.preparingModules": "{{modules}} 및 관련 콘텐츠 준비 중",
   "v4.job.preparingStore": "스토어 콘텐츠 준비 중",

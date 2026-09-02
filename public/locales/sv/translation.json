@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "$31.99 i värde",
   "v4.createTask.includeLiquid": "Anpassad Liquid / tredjepartstext",
   "v4.createTask.includeLiquidHelp": "Översätt väntande Liquid-regler för butiksfasad (inte Shopify-resurser). Resultaten visas via DOM-ersättning.",
+  "v4.module.CUSTOM_LIQUID": "Anpassad Liquid",
   "v4.job.preparingHint": "Vi fortsätter översätta automatiskt när förberedelsen är klar.",
   "v4.job.preparingModules": "Förbereder {{modules}} och relaterat innehåll",
   "v4.job.preparingStore": "Förbereder butiksinnehåll",

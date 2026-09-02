@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "$31.99 waarde",
   "v4.createTask.includeLiquid": "Aangepaste Liquid / tekst van derden",
   "v4.createTask.includeLiquidHelp": "Vertaal wachtende Liquid-regels voor de winkelpui (niet Shopify-bronnen). Resultaten verschijnen via DOM-vervanging.",
+  "v4.module.CUSTOM_LIQUID": "Aangepaste Liquid",
   "v4.job.preparingHint": "We gaan automatisch verder met vertalen zodra de voorbereiding klaar is.",
   "v4.job.preparingModules": "{{modules}} en gerelateerde inhoud voorbereiden",
   "v4.job.preparingStore": "Winkelinhoud voorbereiden",
