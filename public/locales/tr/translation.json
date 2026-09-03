@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "$31.99 değerinde",
   "v4.createTask.includeLiquid": "Özel Liquid / üçüncü taraf metin",
   "v4.createTask.includeLiquidHelp": "Bekleyen mağaza yüzeyi Liquid kurallarını çevirir (Shopify kaynakları değil). Sonuçlar DOM değişimiyle görünür.",
+  "v4.module.CUSTOM_LIQUID": "Özel Liquid",
   "v4.job.preparingHint": "Hazırlık tamamlandığında otomatik olarak çeviriye devam edeceğiz.",
   "v4.job.preparingModules": "{{modules}} ve ilgili içerik hazırlanıyor",
   "v4.job.preparingStore": "Mağaza içeriği hazırlanıyor",

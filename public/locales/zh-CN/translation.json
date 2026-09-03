@@ -1045,6 +1045,7 @@
   "v4.createTask.translateHandle": "翻译 handle",
   "v4.createTask.includeLiquid": "自定义 Liquid / 第三方文案",
   "v4.createTask.includeLiquidHelp": "翻译待处理的店面 Liquid 规则（非 Shopify 资源）。完成后由店面 DOM 替换生效。",
+  "v4.module.CUSTOM_LIQUID": "自定义 Liquid",
   "v4.createTask.translationOptions": "翻译选项",
   "v4.deleted": "已删除",
   "v4.done": "已完成",

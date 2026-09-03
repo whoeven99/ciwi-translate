@@ -1045,6 +1045,7 @@
   "v4.createTask.translateHandle": "Translate handle",
   "v4.createTask.includeLiquid": "Custom Liquid / third-party text",
   "v4.createTask.includeLiquidHelp": "Translate pending storefront Liquid rules (not Shopify resources). Results appear via DOM replace.",
+  "v4.module.CUSTOM_LIQUID": "Custom Liquid",
   "v4.createTask.translationOptions": "Translation options",
   "v4.deleted": "Deleted",
   "v4.done": "Done",

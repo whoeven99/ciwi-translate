@@ -91,6 +91,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const estimatedCredits = await estimatePersistedJobCredits({
     shop: shopName,
     v4Modules: modules,
+    includeLiquid,
+    target,
   }).catch((err) => {
     console.warn("[translateV4] estimatePersistedJobCredits failed:", err);
     return null;

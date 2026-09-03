@@ -1,3 +1,4 @@
+import { jobModulesWithLiquid } from "~/lib/jobModulesWithLiquid";
 import { getTranslateV4RedisClient, v4ControlKey, v4ProgressKey, type V4ControlAction } from "./redis.server";
 import {
   getV4Job,
@@ -510,7 +511,7 @@ function toProgressSummary(
     isTerminal: TERMINAL_V4_STATUSES.includes(displayStatus),
     source: job.source,
     target: job.target,
-    modules: job.modules,
+    modules: jobModulesWithLiquid(job),
     aiModel: job.aiModel,
     taskSource: job.taskSource ?? null,
     createdAt: job.createdAt,

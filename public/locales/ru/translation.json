@@ -1278,6 +1278,7 @@
   "v4.createTask.confirmTrialFeatureSpeedValue": "На сумму $31.99",
   "v4.createTask.includeLiquid": "Кастомный Liquid / сторонний текст",
   "v4.createTask.includeLiquidHelp": "Переводить ожидающие правила Liquid в витрине (не ресурсы Shopify). Результаты появляются через замену DOM.",
+  "v4.module.CUSTOM_LIQUID": "Кастомный Liquid",
   "v4.job.preparingHint": "Мы автоматически продолжим перевод после завершения подготовки.",
   "v4.job.preparingModules": "Подготовка {{modules}} и связанного контента",
   "v4.job.preparingStore": "Подготовка контента магазина",
