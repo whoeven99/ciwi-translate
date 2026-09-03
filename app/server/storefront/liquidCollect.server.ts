@@ -11,7 +11,8 @@ import { liquidSourceDigest } from "~/server/translateV4/liquidDigest.server";
  * 真正翻译走 v4 任务勾选「自定义 Liquid」→ Worker CUSTOM_LIQUID 管线。
  */
 
-const MAX_TEXT_LEN = 200;
+/** 与 extensions/ciwi-switcher/assets/ciwi-ui.js AUTO_LIQUID_MAX_LEN 保持同步。 */
+const MAX_TEXT_LEN = 500;
 const MIN_TEXT_LEN = 2;
 /** 单次请求最多新插入多少条 PENDING（与店面 AUTO_LIQUID_POST_CHUNK 对齐）。 */
 const MAX_PER_REQUEST = 100;
