@@ -134,6 +134,12 @@ enough for repeated work, and not like a marketing landing page.
 - Polaris is the visual and semantic baseline. Ant Design is allowed for complex
 tables, charts, dense filters, modal interiors, and high-density business
 controls.
+- Primary action buttons must use native Polaris `--p-color-bg-fill-brand` /
+`--p-color-bg-fill-brand-hover` / `--p-color-bg-fill-brand-active` (Admin
+brand fill, currently dark). Do not override those tokens to Ciwi purple or
+v4 indigo. `--app-accent-primary` remains for links, chips, Switch, and
+progress rings. `AppButton type="primary"` and Polaris `variant="primary"`
+both consume the native tokens via `app/styles.css`.
 - **Dropdowns in the embedded app:** prefer Polaris `Select` for single-select
 and chip / `ChoiceList` / `Combobox` for multi-select. Avoid Ant Design
 `Select` on translate-v4 / create-task surfaces unless there is a strong
