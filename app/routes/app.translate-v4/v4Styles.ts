@@ -34,6 +34,26 @@ export const v4Colors = {
   mono: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
 } as const;
 
+/** 着色标签字色：Polaris 语义 surface + text，保证 ≥ WCAG AA 4.5:1。不要用 accent fill 当 12px 字。 */
+export const v4ToneChip = {
+  info: {
+    background: "var(--app-color-surface-info)",
+    color: "var(--app-color-text-info)",
+  },
+  success: {
+    background: "var(--app-color-surface-success)",
+    color: "var(--app-color-text-success)",
+  },
+  caution: {
+    background: "var(--app-color-surface-caution)",
+    color: "var(--app-color-text-caution)",
+  },
+  critical: {
+    background: "var(--app-color-surface-critical)",
+    color: "var(--app-color-text-critical)",
+  },
+} as const;
+
 export const v4PageStyle: CSSProperties = {
   background: "var(--app-color-bg)",
   minHeight: "calc(100vh - 48px)",

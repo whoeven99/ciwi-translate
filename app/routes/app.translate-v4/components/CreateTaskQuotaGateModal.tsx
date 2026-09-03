@@ -2,7 +2,7 @@ import { useFetcher, useNavigate } from "@remix-run/react";
 import { Modal, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { v4CardStyle, v4Colors } from "../v4Styles";
+import { v4CardStyle, v4Colors, v4ToneChip } from "../v4Styles";
 import Button from "~/ui/components/AppButton";
 
 const { Paragraph, Text, Title } = Typography;
@@ -125,8 +125,8 @@ export function CreateTaskQuotaGateModal({ open, mode, onClose }: Props) {
               alignItems: "center",
               padding: "4px 10px",
               borderRadius: 999,
-              background: v4Colors.primarySoft,
-              color: v4Colors.primary,
+              background: v4ToneChip.info.background,
+              color: v4ToneChip.info.color,
               fontSize: 12,
               lineHeight: "20px",
               marginBottom: 12,

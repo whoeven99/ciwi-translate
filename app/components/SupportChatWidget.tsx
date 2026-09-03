@@ -7,7 +7,7 @@ import {
   type FormEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { v4Colors } from "~/routes/app.translate-v4/v4Styles";
+import { v4Colors, v4ToneChip } from "~/routes/app.translate-v4/v4Styles";
 import { SUPPORT_CHAT_OPEN_EVENT } from "~/utils/supportChat";
 
 type SupportImageAttachment = {
@@ -582,8 +582,8 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.35,
     minWidth: 56,
   },
-  savedText: { fontSize: 12, color: v4Colors.success, paddingLeft: 4 },
-  errorText: { fontSize: 12, color: v4Colors.danger, marginTop: 4 },
+  savedText: { fontSize: 12, color: v4ToneChip.success.color, paddingLeft: 4 },
+  errorText: { fontSize: 12, color: v4ToneChip.critical.color, marginTop: 4 },
   empty: {
     fontSize: 13,
     color: v4Colors.textMuted,
@@ -661,9 +661,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   errorBar: {
     fontSize: 12,
-    color: v4Colors.danger,
+    color: v4ToneChip.critical.color,
     padding: "4px 12px",
-    background: v4Colors.dangerBg,
+    background: v4ToneChip.critical.background,
   },
   inputBar: {
     display: "flex",
