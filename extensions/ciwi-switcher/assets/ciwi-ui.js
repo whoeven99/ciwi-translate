@@ -3825,7 +3825,8 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
               reason: body?.reason,
               raw: body,
             });
-            if (res?.success) {
+            // 仅真正入库（scheduled>0）才记已报；all_known 等应允许下轮重试。
+            if (res?.success && Number(body?.scheduled) > 0) {
               chunk.forEach((t) => reported.add(t));
               saveAutoLiquidReported(reportedKey, reported);
             }

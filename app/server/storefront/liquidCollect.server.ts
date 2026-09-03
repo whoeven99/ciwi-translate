@@ -224,6 +224,76 @@ async function mirrorPendingDigestsToRedis(
   }
 }
 
+/** Redis known 命中后回查 Turso，剔除无行的幽灵指纹并 SREM。 */
+async function reconcileRedisKnownCandidates(args: {
+  redis: ReturnType<typeof getTranslateV4RedisClient>;
+  shop: string;
+  target: string;
+  candidates: string[];
+  redisFlags: number[];
+}): Promise<string[]> {
+  const { redis, shop, target, candidates, redisFlags } = args;
+  const redisMisses: string[] = [];
+  const redisHits: string[] = [];
+  for (let i = 0; i < candidates.length; i++) {
+    if (Number(redisFlags[i])) redisHits.push(candidates[i]!);
+    else redisMisses.push(candidates[i]!);
+  }
+  if (!redisHits.length) return candidates;
+
+  const existingHits = await prisma.liquidRule.findMany({
+    where: { shop, languageCode: target, beforeTranslation: { in: redisHits } },
+    select: { beforeTranslation: true },
+  });
+  const existingHitSet = new Set(existingHits.map((r) => r.beforeTranslation));
+  const ghosts = redisHits.filter((t) => !existingHitSet.has(t));
+  if (ghosts.length) {
+    try {
+      await redis.srem(
+        knownDigestKey(shop, target),
+        ...ghosts.map((t) => liquidSourceDigest(t)),
+      );
+    } catch {
+      // ignore
+    }
+    debugLog("redis_ghost_heal", { shop, target, ghostCount: ghosts.length });
+  }
+  return [...redisMisses, ...ghosts];
+}
+
+function buildPendingAutoLiquidRow(shop: string, target: string, text: string) {
+  return {
+    shop,
+    beforeTranslation: text,
+    afterTranslation: "",
+    languageCode: target,
+    replacementMethod: false,
+    source: "auto" as const,
+    status: "PENDING" as const,
+    sourceDigest: liquidSourceDigest(text),
+    jobId: null,
+  };
+}
+
+/** createMany 竞态失败时逐条插入，只返回真正写入 Turso 的原文。 */
+async function insertPendingAutoLiquidRows(
+  shop: string,
+  target: string,
+  texts: string[],
+): Promise<string[]> {
+  const inserted: string[] = [];
+  for (const text of texts) {
+    try {
+      await prisma.liquidRule.create({ data: buildPendingAutoLiquidRow(shop, target, text) });
+      inserted.push(text);
+    } catch (err) {
+      if (isLiquidRuleUniqueConstraint(err)) continue;
+      throw err;
+    }
+  }
+  return inserted;
+}
+
 function todayKey(shop: string): string {
   const ymd = utcYmd();
   return `tsf:auto_liquid:count:${shop}:${ymd}`;
@@ -389,13 +459,19 @@ export async function collectAutoLiquidStrings(args: {
     }
   }
 
-  // 4) Redis 已知指纹集过滤：命中即已在 Turso（非 DONE），跳过 → 减少 findMany。
+  // 4) Redis 已知指纹集过滤：命中后回查 Turso，无行则 SREM 幽灵指纹。
   let unknown = candidates;
   if (redis && digests.length) {
     try {
       const flags = await redis.smismember(knownDigestKey(shop, target), ...digests);
       if (Array.isArray(flags) && flags.length === candidates.length) {
-        unknown = candidates.filter((_, i) => !Number(flags[i]));
+        unknown = await reconcileRedisKnownCandidates({
+          redis,
+          shop,
+          target,
+          candidates,
+          redisFlags: flags.map((f) => Number(f)),
+        });
       }
     } catch {
       // ignore → unknown 保持全量，走 findMany 兜底
@@ -465,17 +541,7 @@ export async function collectAutoLiquidStrings(args: {
   // LibSQL/Prisma adapter 不支持 createMany({ skipDuplicates })，去重已在上方完成。
   try {
     const result = await prisma.liquidRule.createMany({
-      data: toInsert.map((text) => ({
-        shop,
-        beforeTranslation: text,
-        afterTranslation: "",
-        languageCode: target,
-        replacementMethod: false,
-        source: "auto",
-        status: "PENDING",
-        sourceDigest: liquidSourceDigest(text),
-        jobId: null,
-      })),
+      data: toInsert.map((text) => buildPendingAutoLiquidRow(shop, target, text)),
     });
     await mirrorPendingDigestsToRedis(redis, shop, target, toInsert, result.count);
     console.log(
@@ -484,14 +550,22 @@ export async function collectAutoLiquidStrings(args: {
     return { scheduled: result.count, skipped: false };
   } catch (err) {
     if (isLiquidRuleUniqueConstraint(err)) {
-      await mirrorPendingDigestsToRedis(redis, shop, target, toInsert, 0);
-      debugLog("skip", {
-        shop,
-        target,
-        reason: "duplicate_race",
-        want: toInsert.length,
-      });
-      return { scheduled: 0, skipped: false, reason: "all_known" };
+      const inserted = await insertPendingAutoLiquidRows(shop, target, toInsert);
+      await mirrorPendingDigestsToRedis(redis, shop, target, inserted, inserted.length);
+      if (!inserted.length) {
+        debugLog("skip", {
+          shop,
+          target,
+          reason: "all_known",
+          via: "duplicate_race",
+          want: toInsert.length,
+        });
+        return { scheduled: 0, skipped: false, reason: "all_known" };
+      }
+      console.log(
+        `[auto-liquid] inserted-fallback shop=${shop} target=${target} scheduled=${inserted.length} inCount=${inCount}`,
+      );
+      return { scheduled: inserted.length, skipped: false };
     }
     console.error("[auto-liquid] createMany PENDING failed:", err);
     return { scheduled: 0, skipped: true, reason: "write_failed" };
