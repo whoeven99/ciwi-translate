@@ -5,6 +5,7 @@ import { scheduleCreditMigrationFeishuNotify } from "./creditMigrationFeishu.ser
 import { getAccountQuota } from "./quota/getAccountQuota.server";
 import {
   grantCreditsOnSpark,
+  isSparkCreditMigrationEnabled,
   isSparkMigrationConfigured,
   rollbackCreditsOnSpark,
 } from "./sparkCreditMigrationClient.server";
@@ -101,6 +102,16 @@ export async function migrateCreditsToSpark(
 ): Promise<MigrateCreditsToSparkResult> {
   const shop = input.shop.trim();
   const transferId = parseTransferId(input.transferId);
+  if (!isSparkCreditMigrationEnabled()) {
+    return {
+      ok: false,
+      errorCode: "FEATURE_DISABLED",
+      transferId,
+      amount: 0,
+      remainingBefore: 0,
+      remainingAfter: 0,
+    };
+  }
   const quota = await getAccountQuota(shop);
   const remainingBefore = quota?.remainingCredits ?? 0;
   const usedBefore = quota?.usedCredits ?? 0;

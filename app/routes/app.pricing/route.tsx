@@ -19,7 +19,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CollapseProps } from "antd";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { authenticate } from "~/shopify.server";
-import { useFetcher, useLocation } from "@remix-run/react";
+import { useFetcher, useLoaderData, useLocation } from "@remix-run/react";
+import { isSparkCreditMigrationEnabled } from "~/server/billing/sparkCreditMigrationClient.server";
 import type { OptionType } from "~/components/paymentModal";
 import { CheckOutlined } from "@ant-design/icons";
 import "./style.css";
@@ -72,7 +73,7 @@ const isBillingTestMode = (): boolean =>
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
-  return null;
+  return { sparkCreditMigrationEnabled: isSparkCreditMigrationEnabled() };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -243,6 +244,7 @@ const Index = () => {
   const { t, i18n } = useTranslation();
   const dispatch = useDispatch();
   const location = useLocation();
+  const { sparkCreditMigrationEnabled = false } = useLoaderData<typeof loader>() ?? {};
 
   const getPlanDisplayLabel = (planName: string | null | undefined) => {
     switch (planName) {
@@ -1135,6 +1137,7 @@ const Index = () => {
                   ? migratablePurchasedCredits
                   : 0
               }
+              sparkCreditMigrationEnabled={sparkCreditMigrationEnabled}
               onBuyCredits={handleOpenAddCreditsModal}
               onMigrateSuccess={() => {
                 void refreshBillingBootstrap(dispatch);

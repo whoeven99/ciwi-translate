@@ -13,6 +13,7 @@ interface AcountInfoCardProps {
   trialCredits?: number;
   purchasedCredits?: number;
   migratablePurchasedCredits?: number;
+  sparkCreditMigrationEnabled?: boolean;
   onBuyCredits: () => void;
   onMigrateSuccess?: () => void;
 }
@@ -34,6 +35,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   trialCredits = 0,
   purchasedCredits = 0,
   migratablePurchasedCredits = 0,
+  sparkCreditMigrationEnabled = false,
   onBuyCredits,
   onMigrateSuccess,
 }) => {
@@ -140,58 +142,62 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
               ) : null}
               <Space wrap>
                 <Button onClick={onBuyCredits}>{t("Buy credits")}</Button>
-                <Button onClick={openMigrate}>{t("pricing.migrate.button")}</Button>
+                {sparkCreditMigrationEnabled ? (
+                  <Button onClick={openMigrate}>{t("pricing.migrate.button")}</Button>
+                ) : null}
               </Space>
             </div>
           </div>
         )}
       </div>
 
-      <Modal
-        title={t("pricing.migrate.title")}
-        open={migrateOpen}
-        onCancel={closeMigrate}
-        onOk={() => void submitMigrate()}
-        okText={t("pricing.migrate.confirm")}
-        cancelText={t("pricing.migrate.cancel")}
-        confirmLoading={migrating}
-        okButtonProps={{ disabled: !canMigrate }}
-      >
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-          <Text type="secondary">{t("pricing.migrate.help")}</Text>
-          <div className="pricing-migrate-breakdown">
-            <div className="pricing-migrate-breakdown__row">
-              <span>{t("pricing.migrate.row.purchased")}</span>
-              <span>{formatCredits(purchased)}</span>
+      {sparkCreditMigrationEnabled ? (
+        <Modal
+          title={t("pricing.migrate.title")}
+          open={migrateOpen}
+          onCancel={closeMigrate}
+          onOk={() => void submitMigrate()}
+          okText={t("pricing.migrate.confirm")}
+          cancelText={t("pricing.migrate.cancel")}
+          confirmLoading={migrating}
+          okButtonProps={{ disabled: !canMigrate }}
+        >
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Text type="secondary">{t("pricing.migrate.help")}</Text>
+            <div className="pricing-migrate-breakdown">
+              <div className="pricing-migrate-breakdown__row">
+                <span>{t("pricing.migrate.row.purchased")}</span>
+                <span>{formatCredits(purchased)}</span>
+              </div>
+              <div className="pricing-migrate-breakdown__row">
+                <span>{t("pricing.migrate.row.consumed")}</span>
+                <span>− {formatCredits(consumed)}</span>
+              </div>
+              <div className="pricing-migrate-breakdown__row pricing-migrate-breakdown__row--result">
+                <span>{t("pricing.migrate.row.migratable")}</span>
+                <span>{formatCredits(migratable)}</span>
+              </div>
             </div>
-            <div className="pricing-migrate-breakdown__row">
-              <span>{t("pricing.migrate.row.consumed")}</span>
-              <span>− {formatCredits(consumed)}</span>
-            </div>
-            <div className="pricing-migrate-breakdown__row pricing-migrate-breakdown__row--result">
-              <span>{t("pricing.migrate.row.migratable")}</span>
-              <span>{formatCredits(migratable)}</span>
-            </div>
-          </div>
-          {canMigrate ? (
-            <Space wrap>
-              <InputNumber
-                min={1}
-                max={migratable}
-                value={migrateAmount ?? undefined}
-                onChange={(value) => {
-                  setMigrateAll(false);
-                  setMigrateAmount(typeof value === "number" ? value : null);
-                }}
-                style={{ width: 200 }}
-              />
-              <Button onClick={handleAll}>{t("pricing.migrate.all")}</Button>
-            </Space>
-          ) : (
-            <Text type="secondary">{t("pricing.migrate.empty")}</Text>
-          )}
-        </Space>
-      </Modal>
+            {canMigrate ? (
+              <Space wrap>
+                <InputNumber
+                  min={1}
+                  max={migratable}
+                  value={migrateAmount ?? undefined}
+                  onChange={(value) => {
+                    setMigrateAll(false);
+                    setMigrateAmount(typeof value === "number" ? value : null);
+                  }}
+                  style={{ width: 200 }}
+                />
+                <Button onClick={handleAll}>{t("pricing.migrate.all")}</Button>
+              </Space>
+            ) : (
+              <Text type="secondary">{t("pricing.migrate.empty")}</Text>
+            )}
+          </Space>
+        </Modal>
+      ) : null}
     </div>
   );
 };

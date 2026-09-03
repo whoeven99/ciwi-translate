@@ -61,6 +61,10 @@ export {
 export { deductCredits } from "./quota/deductCredits.server";
 export { migrateCreditsToSpark } from "./migrateCreditsToSpark.server";
 export {
+  isSparkCreditMigrationEnabled,
+  isSparkMigrationConfigured,
+} from "./sparkCreditMigrationClient.server";
+export {
   getShopCreditQuota,
   deductShopCredits,
   type DeductShopCreditsAudit,

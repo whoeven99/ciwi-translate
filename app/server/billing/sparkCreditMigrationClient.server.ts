@@ -38,6 +38,18 @@ export type SparkRollbackResult =
     }
   | { ok: false; errorCode: string };
 
+function envBool(value: string | undefined, defaultValue: boolean): boolean {
+  const raw = value?.trim().toLowerCase();
+  if (raw == null || raw === "") return defaultValue;
+  if (raw === "0" || raw === "false" || raw === "off" || raw === "no") {
+    return false;
+  }
+  if (raw === "1" || raw === "true" || raw === "on" || raw === "yes") {
+    return true;
+  }
+  return defaultValue;
+}
+
 function resolveConfig(env: NodeJS.ProcessEnv = process.env): {
   url: string;
   secret: string;
@@ -86,6 +98,13 @@ export function isSparkMigrationConfigured(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return resolveConfig(env) !== null;
+}
+
+/** 定价页展示 + API 准入。默认关；仅 `true`/`1`/`on`/`yes` 开启。 */
+export function isSparkCreditMigrationEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return envBool(env.SPARK_CREDIT_MIGRATION_ENABLED, false);
 }
 
 export async function grantCreditsOnSpark(params: {

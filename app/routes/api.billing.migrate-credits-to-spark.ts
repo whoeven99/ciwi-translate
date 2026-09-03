@@ -25,5 +25,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     transferId: body.transferId,
   });
 
-  return json(result, { status: result.ok ? 200 : 400 });
+  const status = result.ok
+    ? 200
+    : result.errorCode === "FEATURE_DISABLED"
+      ? 403
+      : 400;
+  return json(result, { status });
 };
