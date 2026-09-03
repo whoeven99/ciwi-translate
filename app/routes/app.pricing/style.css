@@ -59,13 +59,13 @@
 }
 
 .yearly_save {
-  background: var(--app-accent-utility-soft);
-  color: var(--app-accent-utility);
+  background: var(--app-color-surface-caution);
+  color: var(--app-color-text-caution);
   padding: 4px 12px;
   border-radius: 100px;
   text-align: center;
   gap: 4px;
-  border: 1px solid rgba(200, 139, 36, 0.18);
+  border: 1px solid transparent;
 }
 
 .pricing-usage-card {

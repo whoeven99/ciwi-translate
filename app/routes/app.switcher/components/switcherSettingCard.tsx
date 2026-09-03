@@ -1,12 +1,11 @@
 import { CloseOutlined } from "@ant-design/icons";
-import { Space, Typography, Skeleton } from "antd";
+import { Space, Skeleton } from "antd";
 import Button from "~/ui/components/AppButton";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useReport from "scripts/eventReport";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
-const { Text } = Typography;
 
 type SwitcherActivationStatus = "completed" | "uncompleted";
 
@@ -89,11 +88,18 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
               </Button>
             </a>
           </div>
-          <Text style={{ color: "var(--app-color-text-secondary)" }}>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--app-color-text-secondary)",
+              fontSize: "var(--app-font-size-body)",
+              lineHeight: "20px",
+            }}
+          >
             {t(
               "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.",
             )}
-          </Text>
+          </p>
         </Space>
       ) : null}
     </AppSectionCard>

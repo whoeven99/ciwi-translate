@@ -1,4 +1,4 @@
-import { SaveBar, TitleBar } from "@shopify/app-bridge-react";
+import { SaveBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import {
   Alert,
@@ -40,6 +40,9 @@ import CloseIcon from "~/components/icon/closeIcon";
 import { withEmbeddedSearch } from "~/utils/embeddedAction";
 import SwitcherSettingCard from "./components/switcherSettingCard";
 import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
 
@@ -274,6 +277,7 @@ const Index = () => {
   const { report } = useReport();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const homeBackAction = useAppHomeBackAction();
   const location = useLocation();
   const { plan } = useSelector((state: any) => state.userConfig);
   const isGeoLocationEnabled = editData.ipOpen;
@@ -796,11 +800,9 @@ const Index = () => {
         </button>
         <button onClick={handleCancel}>{t("Cancel")}</button>
       </SaveBar>
-      <TitleBar title={t("Switcher")} />
+      <AppSubpageTitleBar title={t("Switcher")} />
       <div style={pageContentStackStyle}>
-        <AppPageHeader
-          title={t("Switcher")}
-        />
+        <AppPageHeader title={t("Switcher")} backAction={homeBackAction} />
         <SwitcherSettingCard
           visible
           loading={cardLoading}

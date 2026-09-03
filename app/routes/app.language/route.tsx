@@ -1,5 +1,4 @@
 import { Page } from "@shopify/polaris";
-import { TitleBar } from "@shopify/app-bridge-react";
 import {
   Alert,
   Typography,
@@ -67,6 +66,9 @@ import styles from "./styles.module.css";
 import languageLocaleData from "~/utils/language-locale-data";
 import { withEmbeddedSearch } from "~/utils/embeddedAction";
 import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import { getTranslatePagePath } from "~/lib/translateNavigation";
 import { message } from "~/ui/message";
@@ -447,6 +449,7 @@ const Index = () => {
     useLoaderData<typeof loader>();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const homeBackAction = useAppHomeBackAction();
   const dispatch = useDispatch();
   const { plan, source, isNew } = useSelector((state: any) => ({
     plan: state.userConfig?.plan,
@@ -1346,7 +1349,7 @@ const Index = () => {
 
   return (
     <Page>
-      <TitleBar title={t("Language")} />
+      <AppSubpageTitleBar title={t("Language")} />
       <ScrollNotice
         text={t(
           "Welcome to our app! If you have any questions, feel free to email us at support@ciwi.ai, and we will respond as soon as possible.",
@@ -1355,7 +1358,11 @@ const Index = () => {
       <div className={styles.languagePage}>
         <div className={styles.languagePageInner}>
           <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-            <AppPageHeader title={t("Languages")} extra={<PrimaryLanguage />} />
+            <AppPageHeader
+              title={t("Languages")}
+              extra={<PrimaryLanguage />}
+              backAction={homeBackAction}
+            />
             <AppSectionCard bodyPadding="16px" style={{ width: "100%" }}>
               <div className={styles.languageTable_action}>
                 <Flex

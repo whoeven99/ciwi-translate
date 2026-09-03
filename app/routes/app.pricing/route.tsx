@@ -1,4 +1,3 @@
-import { TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import {
   Space,
@@ -34,6 +33,9 @@ import useReport from "scripts/eventReport";
 import { globalStore } from "~/globalStore";
 import AcountInfoCard from "./components/acountInfoCard";
 import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
 import {
   type ClientLogTrace,
@@ -244,6 +246,7 @@ const Index = () => {
   const { t, i18n } = useTranslation();
   const dispatch = useDispatch();
   const location = useLocation();
+  const homeBackAction = useAppHomeBackAction();
   const { sparkCreditMigrationEnabled = false } = useLoaderData<typeof loader>() ?? {};
 
   const getPlanDisplayLabel = (planName: string | null | undefined) => {
@@ -1101,12 +1104,13 @@ const Index = () => {
 
   return (
     <Page>
-      <TitleBar title={t("Pricing")} />
+      <AppSubpageTitleBar title={t("Pricing")} />
       <div className="pricing-page">
         <div className="pricing-page__inner">
           <Space direction="vertical" size="large" style={{ display: "flex" }}>
             <AppPageHeader
               title={t("Pricing")}
+              backAction={homeBackAction}
               extra={
                 plan.type ? (
                   <div className="pricing-page__plan-meta">

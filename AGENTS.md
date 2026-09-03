@@ -140,6 +140,11 @@ brand fill, currently dark). Do not override those tokens to Ciwi purple or
 v4 indigo. `--app-accent-primary` remains for links, chips, Switch, and
 progress rings. `AppButton type="primary"` and Polaris `variant="primary"`
 both consume the native tokens via `app/styles.css`.
+- **Text contrast (WCAG 2.1 AA / BFS 4.1.1):** body and chip/pill/badge copy
+must be ≥4.5:1 against its background. Tinted chips use Polaris
+`--p-color-text-{info,success,caution,critical}` on `--p-color-bg-surface-*`
+(`AppPill` / `AppStatusBadge` / `--app-color-text-*`). Do not put `--app-accent-*`
+fill hexes on `--app-accent-*-soft` as 12px text — those pairs fail AA.
 - **Dropdowns in the embedded app:** prefer Polaris `Select` for single-select
 and chip / `ChoiceList` / `Combobox` for multi-select. Avoid Ant Design
 `Select` on translate-v4 / create-task surfaces unless there is a strong
@@ -157,7 +162,13 @@ Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns
 - Ant Design theme values should be derived from Polaris-like tokens through
 `app/ui/theme.ts`; avoid creating a second visual system.
 - Prefer existing shared wrappers in `app/ui/components/*`, including
-`AppPageHeader`, `AppSectionCard`, `AppStatusBadge`, and `AppButton`.
+  `AppPageHeader`, `AppSubpageTitleBar`, `AppSectionCard`, `AppStatusBadge`, and `AppButton`.
+- Sub-pages (NavMenu children, history, custom create-task, shop-profile) must offer a
+  back control to the parent: `AppSubpageTitleBar` (App Bridge breadcrumb) plus
+  `AppPageHeader` `backAction` (Polaris arrow beside the in-page title). Parent of
+  sidebar pages is the app home (`getTranslatePagePath()` / `/app/translate-v4-mvp`).
+  Nested manage resource pages already use Polaris `Page` `backAction`. App home
+  (`translate-v4-mvp`) must not show a back button.
 - Avoid new hard-coded colors, ad hoc font sizes, one-off radius values, and
 large inline style blocks in route files.
 - Page patterns:

@@ -38,7 +38,7 @@ const titleStyle: CSSProperties = {
 const descriptionStyle: CSSProperties = {
   margin: 0,
   color: "var(--app-color-text-secondary)",
-  fontSize: "var(--app-font-size-body-small)",
+  fontSize: "var(--app-font-size-body)",
   lineHeight: "20px",
   maxWidth: 720,
 };

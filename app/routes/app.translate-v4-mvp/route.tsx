@@ -247,36 +247,34 @@ function getCoverageRating(
   if (percent == null) {
     return {
       label: t("v4.coverage.notScanned"),
-      accent: appColors.textTertiary,
+      accent: appColors.textSecondary,
     };
   }
-
-  const accent = v4Colors.primary;
 
   if (percent >= 100) {
     return {
       label: t("v4Mvp.coverageCard.ratingAmazing"),
-      accent,
+      accent: appColors.textSuccess,
     };
   }
 
   if (percent >= 80) {
     return {
       label: t("v4Mvp.coverageCard.ratingExcellent"),
-      accent,
+      accent: appColors.textSuccess,
     };
   }
 
   if (percent >= 60) {
     return {
       label: t("v4Mvp.coverageCard.ratingQualified"),
-      accent,
+      accent: appColors.textInfo,
     };
   }
 
   return {
     label: t("v4.coverage.needsImprovement"),
-    accent,
+    accent: appColors.textCaution,
   };
 }
 
@@ -1535,13 +1533,7 @@ function RecommendationCard({
         </InlineStack>
         <div style={recommendationMetaListStyle}>
           {coveragePercent != null ? (
-            <AppPill
-              style={{
-                background: v4Colors.infoBg,
-                color: v4Colors.info,
-                border: "1px solid transparent",
-              }}
-            >
+            <AppPill tone="info">
               {t("v4Mvp.recommended.metaCoverage", { percent: coveragePercent })}
             </AppPill>
           ) : null}
@@ -1838,10 +1830,10 @@ const recommendationStatusTextStyle = {
 function recommendationToneDotStyle(tone: RecommendationTone): CSSProperties {
   const color =
     tone === "success"
-      ? v4Colors.success
+      ? appColors.textSuccess
       : tone === "info"
-        ? v4Colors.info
-        : v4Colors.warning;
+        ? appColors.textInfo
+        : appColors.textCaution;
   return {
     width: "8px",
     height: "8px",

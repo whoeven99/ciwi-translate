@@ -1,4 +1,3 @@
-import { TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { authenticate } from "~/shopify.server";
@@ -18,6 +17,10 @@ import {
 } from "antd";
 import Button from "~/ui/components/AppButton";
 import AppSectionCard from "~/ui/components/AppSectionCard";
+import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import { queryShopLanguages } from "~/api/admin";
 import {
@@ -48,7 +51,7 @@ import {
   getTranslateV4ErrorMessage,
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export interface GLossaryDataType {
   key: number;
@@ -269,6 +272,7 @@ const Index = () => {
   const deleteTraceRef = useRef<ClientLogTrace | null>(null);
   const handledDeleteResponseRef = useRef<any>(null);
   const { t } = useTranslation();
+  const homeBackAction = useAppHomeBackAction();
   const { reportClick, report } = useReport();
   useEffect(() => {
     loadingFetcher.submit(
@@ -610,19 +614,20 @@ const Index = () => {
 
   return (
     <Page>
-      <TitleBar title={t("Glossary")} />
+      <AppSubpageTitleBar title={t("Glossary")} />
       <ScrollNotice
         text={t(
           "Welcome to our app! If you have any questions, feel free to email us at support@ciwi.ai, and we will respond as soon as possible.",
         )}
       />
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-        <Title style={{ fontSize: "1.25rem", display: "inline" }}>
-          {t("Glossary")}
-        </Title>
-        <Text>
-          {t("Create translation rules for certain words and phrases")}
-        </Text>
+        <AppPageHeader
+          title={t("Glossary")}
+          backAction={homeBackAction}
+          description={t(
+            "Create translation rules for certain words and phrases",
+          )}
+        />
         {showGlossaryEmptyState ? (
           <AppSectionCard
             title={t("No glossary rules yet")}

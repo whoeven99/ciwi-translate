@@ -65,7 +65,7 @@ export function v4ChipStyle(selected: boolean): CSSProperties {
     borderRadius: 999,
     border: `1px solid ${selected ? v4Colors.primary : v4Colors.cardBorder}`,
     background: selected ? v4Colors.primarySoft : v4Colors.cardBg,
-    color: selected ? v4Colors.primary : v4Colors.text,
+    color: selected ? v4Colors.info : v4Colors.text,
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",

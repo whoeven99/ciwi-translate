@@ -1,7 +1,10 @@
 import { json, redirect, type LoaderFunctionArgs, type ActionFunctionArgs } from "@remix-run/node";
 import { useFetcher, useLoaderData, useRevalidator } from "@remix-run/react";
-import { TitleBar } from "@shopify/app-bridge-react";
-import { Page } from "@shopify/polaris";
+import { Button as PolarisButton, Page } from "@shopify/polaris";
+import { ArrowLeftIcon } from "@shopify/polaris-icons";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import {
   Card,
   Col,
@@ -246,6 +249,7 @@ export default function ShopProfilePage() {
   } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<{ enqueued: boolean; reason?: string }>();
   const revalidator = useRevalidator();
+  const homeBackAction = useAppHomeBackAction();
 
   const isActive = scan ? ACTIVE_STATUSES.includes(scan.status) : false;
   const isRescanning = fetcher.state !== "idle";
@@ -325,11 +329,16 @@ export default function ShopProfilePage() {
 
   return (
     <Page>
-      <TitleBar title="店铺画像 (Shop Profile)" />
+      <AppSubpageTitleBar title="店铺画像 (Shop Profile)" />
       <Flex vertical gap={20}>
         {/* Header */}
         <Flex justify="space-between" align="center">
           <Flex align="center" gap={12}>
+            <PolarisButton
+              icon={ArrowLeftIcon}
+              accessibilityLabel={homeBackAction.accessibilityLabel}
+              onClick={homeBackAction.onAction}
+            />
             <DashboardOutlined style={{ fontSize: 22, color: "var(--app-accent-primary)" }} />
             <Title level={3} style={{ margin: 0 }}>
               店铺画像扫描结果

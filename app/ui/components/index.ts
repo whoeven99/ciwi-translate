@@ -10,6 +10,8 @@ export { default as AppMetricTile } from "./AppMetricTile";
 export { default as AppMobileListCard } from "./AppMobileListCard";
 export type { AppMobileListCardRow } from "./AppMobileListCard";
 export { default as AppPageHeader } from "./AppPageHeader";
+export type { AppPageBackAction } from "./AppPageHeader";
+export { default as AppSubpageTitleBar, useAppHomeBackAction } from "./AppSubpageTitleBar";
 export { default as AppPill } from "./AppPill";
 export type { AppPillTone } from "./AppPill";
 export { default as AppSectionCard } from "./AppSectionCard";
