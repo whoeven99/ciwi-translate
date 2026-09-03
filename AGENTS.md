@@ -914,9 +914,10 @@ redirect records.
  （含嵌套同源；跨域 iframe / closed shadow 不可访问则跳过）；触 `max_nodes`
  仍上报已扫候选；候选条数不设客户端上限，POST 按 100/片
  （`AUTO_LIQUID_POST_CHUNK` / 服务端 `MAX_PER_REQUEST`）。采集启动门禁：
- `customLiquidReplacePromise` + 第一次 countdown 补扫（500ms）都过完后
- `requestIdleCallback`（timeout 9s，无 4s 硬抢）；无 Liquid 规则提前 return
- 则无 500ms 门禁。语言门：只采「像 `primaryLanguage`（Switcher 配置接口附带，
+ `customLiquidReplacePromise` 结束后再等 `max(第一次 countdown 补扫, 2s)`
+ （无 Liquid 规则的店也等 2s，用来抓晚注入第三方文案），再
+ `requestIdleCallback`（timeout 9s，无 4s 硬抢）。countdown 定点补扫仍是
+ 500ms / 1.5s，不跟采集共用同一根 2s 针。语言门：只采「像 `primaryLanguage`（Switcher 配置接口附带，
  Shopify 主 locale，非商户手填）且不像当前目标语」；无 primary 则本轮不采。
  店面 Switcher **全店采集上报**；采集只写 PENDING，**不查额度**；真正扣费在
  后续 v4「自定义 Liquid」翻译阶段。`SwitcherConfiguration.autoLiquidCollect`
