@@ -647,6 +647,35 @@ export async function initializeCurrency({
 }
 
 /**
+ * 仅在本地已有货币列表 + 汇率缓存时立刻换价，不挡主线程等待网络。
+ * 无缓存返回 false，交给后续 CurrencySelectorTakeEffect 再拉。
+ */
+export function tryApplyCachedCurrencyConversion({
+  shop,
+  ciwiBlock,
+  marketCurrencyOpen = true,
+}) {
+  if (!shop || !ciwiBlock) return false;
+  const raw = getCurrencyDataCache(shop);
+  if (!raw) return false;
+  let currencyData;
+  try {
+    currencyData = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(currencyData) || !currencyData.length) return false;
+  if (!getSelectedCurrencyRateCache(shop)) return false;
+  initializeCurrency({
+    currencyData,
+    shop,
+    ciwiBlock,
+    marketCurrencyOpen,
+  }).catch(() => {});
+  return true;
+}
+
+/**
  * 观察 DOM 变化，动态处理新价格
  */
 export function initPriceObserver({ rate, moneyFormat, selectedCurrency }) {
@@ -1368,6 +1397,57 @@ export async function ProductImgTranslate(blockId, shop, ciwiBlock) {
   });
 }
 
+/** 首次全页 Liquid 替换单片主线程上限（ms）；countdown 单根仍同步。 */
+const LIQUID_REPLACE_SLICE_MS = 8;
+const LIQUID_REPLACE_PUMP_GEN_KEY = "__ciwi_liquid_replace_pump_gen__";
+const LIQUID_REPLACE_PUMP_ACTIVE_KEY = "__ciwi_liquid_replace_pump_active__";
+
+const liquidReplaceNow = () =>
+  typeof performance !== "undefined" && performance.now
+    ? performance.now()
+    : Date.now();
+
+const scheduleLiquidReplaceSlice = (fn) => {
+  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+    window.requestIdleCallback(fn, { timeout: 1000 });
+  } else {
+    setTimeout(fn, 0);
+  }
+};
+
+const runLiquidReplacePump = (nextWork, isAborted) =>
+  new Promise((resolve) => {
+    const pump = (deadline) => {
+      if (isAborted()) {
+        resolve();
+        return;
+      }
+      const sliceStart = liquidReplaceNow();
+      const exhausted = () => {
+        if (
+          deadline &&
+          typeof deadline.timeRemaining === "function" &&
+          deadline.timeRemaining() < 1
+        ) {
+          return true;
+        }
+        return liquidReplaceNow() - sliceStart >= LIQUID_REPLACE_SLICE_MS;
+      };
+      while (nextWork()) {
+        if (isAborted()) {
+          resolve();
+          return;
+        }
+        if (exhausted()) {
+          scheduleLiquidReplaceSlice(pump);
+          return;
+        }
+      }
+      resolve();
+    };
+    pump();
+  });
+
 /**
  * 根据数据库数据替换网页文本（安全版）
  */
@@ -1419,6 +1499,30 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
     .sort((a, b) => String(b.before).length - String(a.before).length);
 
   const looksLikeHtml = (text) => /<\/?[a-z][\s\S]*>/i.test(text || "");
+
+  const sourceNeedles = [];
+  const addSourceNeedle = (value) => {
+    const trimmed = String(value ?? "").trim();
+    if (!trimmed) return;
+    sourceNeedles.push(trimmed);
+    const collapsed = normalizeCollapsedText(trimmed);
+    if (collapsed && collapsed !== trimmed) sourceNeedles.push(collapsed);
+    if (looksLikeHtml(trimmed)) {
+      const stripped = normalizeCollapsedText(trimmed.replace(/<[^>]+>/g, " "));
+      if (stripped) sourceNeedles.push(stripped);
+    }
+  };
+  entries.forEach((entry) => addSourceNeedle(entry.before));
+
+  const rootHasPendingSourceText = (root) => {
+    if (!(root instanceof Node) || sourceNeedles.length === 0) return false;
+    const raw = String(root.textContent || "");
+    if (!raw) return false;
+    const collapsed = normalizeCollapsedText(raw);
+    return sourceNeedles.some(
+      (needle) => raw.includes(needle) || collapsed.includes(needle),
+    );
+  };
 
   // 默认开；localStorage.ciwi_debug_liquid_translate=0 或 ?ciwiDebugLiquid=0 可关。
   const debugLiquidTranslate = (() => {
@@ -1523,8 +1627,8 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
     );
   };
 
-  const replaceHtmlExactEntries = (entryList, root = document.body) => {
-    if (!root?.isConnected) return;
+  const makeHtmlJob = (entryList, root) => {
+    if (!root?.isConnected) return null;
     const htmlEntries = entryList
       .filter(({ before, after }) => looksLikeHtml(before) || looksLikeHtml(after))
       .map(({ before, after }) => {
@@ -1556,7 +1660,7 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
           !e.containsCustomElements,
       );
 
-    if (htmlEntries.length === 0) return;
+    if (htmlEntries.length === 0) return null;
 
     const htmlMap = new Map();
     const innerMap = new Map();
@@ -1613,27 +1717,16 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
       },
     );
 
-    const nodes = [];
-    if (
-      root instanceof Element &&
-      !skipTags.has(root.nodeName) &&
-      !(ciwiBlock && ciwiBlock.contains(root)) &&
-      !isPriceRelatedElement(root)
-    ) {
-      nodes.push(root);
-    }
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-
     const replacements = [];
-    nodes.forEach((node) => {
+    let seededRoot = false;
+    let applying = false;
+    let applyIndex = 0;
+    let loggedSummary = false;
+
+    const matchHtmlNode = (node) => {
       if (isElementHiddenForTranslation(node)) return;
       if (isPriceRelatedElement(node)) return;
-
-      // 预筛 1：标签名。任意命中都要求 node.nodeName 等于某条 before 元素标签名。
       if (candidateTags.size > 0 && !candidateTags.has(node.nodeName)) return;
-
-      // 预筛 2：折叠文本。有文本时必须命中某条源文本；无文本时仅放行“仅含元素”的条目。
-      // 通过后才做昂贵的 normalizeHtml，避免对全页每个元素都重解析 HTML。
       const nodeText = normalizeCollapsedText(node.textContent);
       if (nodeText) {
         if (!candidateTexts.has(nodeText)) return;
@@ -1676,18 +1769,14 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
         }
       }
 
-      // nodeText 已在循环开头算好（且必为非空才能走到这里时命中文本路径）
       if (!nodeText) return;
-
       const textCandidates = textCandidatesByKey.get(`${node.nodeName}\0${nodeText}`);
       if (!textCandidates) return;
-
       for (const candidate of textCandidates) {
         if (candidate.beforeClasses.length > 0) {
           const ok = candidate.beforeClasses.every((c) => node.classList?.contains(c));
           if (!ok) continue;
         }
-
         replacements.push({
           type: "inner",
           node,
@@ -1702,36 +1791,62 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
         });
         return;
       }
-    });
+    };
 
-    replacements.forEach(({ type, node, html }) => {
-      if (type === "outer") node.outerHTML = html;
-      else node.innerHTML = html;
-    });
-
-    if (debugLiquidTranslate) {
-      const missed = [];
-      hitStats.forEach((stats, key) => {
-        if (stats.outer === 0 && stats.inner === 0) missed.push(key);
-      });
-      debugLog("htmlSummary", {
-        replaced: replacements.length,
-        missed: missed.length,
-        missedSample: missed.slice(0, 5).map((k) => summarize(k)),
-      });
-    }
+    return {
+      step() {
+        if (!applying) {
+          if (!seededRoot) {
+            seededRoot = true;
+            if (
+              root instanceof Element &&
+              !skipTags.has(root.nodeName) &&
+              !(ciwiBlock && ciwiBlock.contains(root)) &&
+              !isPriceRelatedElement(root)
+            ) {
+              matchHtmlNode(root);
+              return true;
+            }
+          }
+          if (walker.nextNode()) {
+            matchHtmlNode(walker.currentNode);
+            return true;
+          }
+          applying = true;
+        }
+        if (applyIndex < replacements.length) {
+          const { type, node, html } = replacements[applyIndex];
+          applyIndex += 1;
+          if (type === "outer") node.outerHTML = html;
+          else node.innerHTML = html;
+          return true;
+        }
+        if (debugLiquidTranslate && !loggedSummary) {
+          loggedSummary = true;
+          const missed = [];
+          hitStats.forEach((stats, key) => {
+            if (stats.outer === 0 && stats.inner === 0) missed.push(key);
+          });
+          debugLog("htmlSummary", {
+            replaced: replacements.length,
+            missed: missed.length,
+            missedSample: missed.slice(0, 5).map((k) => summarize(k)),
+          });
+        }
+        return false;
+      },
+    };
   };
 
-  const replaceFuzzyEntriesFast = (entryList, root = document.body) => {
-    if (!root?.isConnected) return;
+  const makeFuzzyJob = (entryList, root) => {
+    if (!root?.isConnected) return null;
     const preparedEntries = [];
     entryList.forEach(({ before, after }) => {
       const prepared = createPreparedTextEntry(before, after);
       if (!prepared) return;
       preparedEntries.push(prepared);
     });
-
-    if (preparedEntries.length === 0) return;
+    if (preparedEntries.length === 0) return null;
 
     const walker = document.createTreeWalker(
       root,
@@ -1746,59 +1861,48 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
       },
     );
 
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
+    return {
+      step() {
+        if (!walker.nextNode()) return false;
+        const node = walker.currentNode;
+        if (isElementHiddenForTranslation(node.parentElement)) return true;
+        if (isPriceRelatedElement(node)) return true;
 
-    if (debugLiquidTranslate && entryList.length <= 50) {
-      debugLog("textFuzzyFast", {
-        entries: preparedEntries.length,
-        nodes: nodes.length,
-        root: root === document.body ? "body" : root.nodeName,
-      });
-    }
+        let original = node.nodeValue;
+        let normalized = normalizeText(original);
+        let collapsed = null;
 
-    nodes.forEach((node) => {
-      if (isElementHiddenForTranslation(node.parentElement)) return;
-      if (isPriceRelatedElement(node)) return;
+        for (const entry of preparedEntries) {
+          if (entry.flexibleWhitespace && collapsed === null) {
+            collapsed = getSentenceAwareCollapsedText(normalized);
+          }
+          const matches = entry.flexibleWhitespace
+            ? collapsed.includes(entry.collapsedBefore)
+            : normalized.includes(entry.trimmedBefore);
+          if (!matches) continue;
 
-      // 这些派生值只跟当前节点内容有关、与 entry 无关，因此每个节点只算一次；
-      // collapsed 仅在遇到 flexibleWhitespace 的 entry 时按需计算。
-      // 仅当本节点真正被替换后，才刷新缓存，保证多条 entry 命中同一节点时的级联替换行为不变。
-      let original = node.nodeValue;
-      let normalized = normalizeText(original);
-      let collapsed = null;
-
-      for (const entry of preparedEntries) {
-        if (entry.flexibleWhitespace && collapsed === null) {
-          collapsed = getSentenceAwareCollapsedText(normalized);
+          const newValue = original.replace(entry.re, () => entry.afterRaw);
+          const newValueWithWhitespace = preserveBoundaryWhitespace(original, newValue);
+          const keepQuote = hasOuterQuote(original);
+          if (debugLiquidTranslate && debugReplaceTextCount < 20) {
+            debugReplaceTextCount += 1;
+            debugLog("replace:text", {
+              before: summarize(original, 200),
+              after: summarize(newValueWithWhitespace, 200),
+            });
+          }
+          node.nodeValue = keepQuote ? `"${newValueWithWhitespace}"` : newValueWithWhitespace;
+          original = node.nodeValue;
+          normalized = normalizeText(original);
+          collapsed = null;
         }
-        const matches = entry.flexibleWhitespace
-          ? collapsed.includes(entry.collapsedBefore)
-          : normalized.includes(entry.trimmedBefore);
-        if (!matches) continue;
-
-        const newValue = original.replace(entry.re, () => entry.afterRaw);
-        const newValueWithWhitespace = preserveBoundaryWhitespace(original, newValue);
-        const keepQuote = hasOuterQuote(original);
-        if (debugLiquidTranslate && debugReplaceTextCount < 20) {
-          debugReplaceTextCount += 1;
-          debugLog("replace:text", {
-            before: summarize(original, 200),
-            after: summarize(newValueWithWhitespace, 200),
-          });
-        }
-        node.nodeValue = keepQuote ? `"${newValueWithWhitespace}"` : newValueWithWhitespace;
-
-        // 节点内容已变，刷新派生值供后续 entry 使用
-        original = node.nodeValue;
-        normalized = normalizeText(original);
-        collapsed = null;
-      }
-    });
+        return true;
+      },
+    };
   };
 
-  const replaceExactEntriesFast = (entryList, root = document.body) => {
-    if (!root?.isConnected) return;
+  const makeExactJob = (entryList, root) => {
+    if (!root?.isConnected) return null;
     const exactMap = new Map();
     entryList.forEach(({ before, after }) => {
       const prepared = createPreparedTextEntry(before, after);
@@ -1808,8 +1912,7 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
         flexibleWhitespace: prepared.flexibleWhitespace,
       });
     });
-
-    if (exactMap.size === 0) return;
+    if (exactMap.size === 0) return null;
 
     const walker = document.createTreeWalker(
       root,
@@ -1832,35 +1935,29 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
       },
     );
 
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-
-    if (debugLiquidTranslate && entryList.length <= 50) {
-      debugLog("textExactFast", {
-        keys: exactMap.size,
-        nodes: nodes.length,
-        root: root === document.body ? "body" : root.nodeName,
-      });
-    }
-
-    nodes.forEach((node) => {
-      if (isElementHiddenForTranslation(node.parentElement)) return;
-      if (isPriceRelatedElement(node)) return;
-      const original = node.nodeValue;
-      const { strict: strictKey, collapsed: collapsedKey } = getNodeMatchKeys(original);
-      const entry = exactMap.get(strictKey) || exactMap.get(collapsedKey);
-      if (!entry) return;
-      const keepQuote = hasOuterQuote(original);
-      const replacement = preserveBoundaryWhitespace(original, entry.replacement);
-      if (debugLiquidTranslate && debugReplaceTextCount < 20) {
-        debugReplaceTextCount += 1;
-        debugLog("replace:text", {
-          before: summarize(original, 200),
-          after: summarize(replacement, 200),
-        });
-      }
-      node.nodeValue = keepQuote ? `"${replacement}"` : replacement;
-    });
+    return {
+      step() {
+        if (!walker.nextNode()) return false;
+        const node = walker.currentNode;
+        if (isElementHiddenForTranslation(node.parentElement)) return true;
+        if (isPriceRelatedElement(node)) return true;
+        const original = node.nodeValue;
+        const { strict: strictKey, collapsed: collapsedKey } = getNodeMatchKeys(original);
+        const entry = exactMap.get(strictKey) || exactMap.get(collapsedKey);
+        if (!entry) return true;
+        const keepQuote = hasOuterQuote(original);
+        const replacement = preserveBoundaryWhitespace(original, entry.replacement);
+        if (debugLiquidTranslate && debugReplaceTextCount < 20) {
+          debugReplaceTextCount += 1;
+          debugLog("replace:text", {
+            before: summarize(original, 200),
+            after: summarize(replacement, 200),
+          });
+        }
+        node.nodeValue = keepQuote ? `"${replacement}"` : replacement;
+        return true;
+      },
+    };
   };
 
   const textLikeAttributeNames = new Set([
@@ -1908,12 +2005,8 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
     );
   };
 
-  const replaceAttributeEntriesFast = (
-    exactEntryList,
-    fuzzyEntryList,
-    root = document.body,
-  ) => {
-    if (!root?.isConnected) return;
+  const makeAttrJob = (exactEntryList, fuzzyEntryList, root) => {
+    if (!root?.isConnected) return null;
 
     const exactMap = new Map();
     exactEntryList.forEach(({ before, after }) => {
@@ -1929,7 +2022,7 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
       fuzzyPreparedEntries.push(prepared);
     });
 
-    if (exactMap.size === 0 && fuzzyPreparedEntries.length === 0) return;
+    if (exactMap.size === 0 && fuzzyPreparedEntries.length === 0) return null;
 
     const walker = document.createTreeWalker(
       root,
@@ -1945,18 +2038,9 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
       },
     );
 
-    const nodes = [];
-    if (
-      root instanceof Element &&
-      !skipTags.has(root.nodeName) &&
-      !(ciwiBlock && ciwiBlock.contains(root)) &&
-      !isPriceRelatedElement(root)
-    ) {
-      nodes.push(root);
-    }
-    while (walker.nextNode()) nodes.push(walker.currentNode);
+    let seededRoot = false;
 
-    nodes.forEach((node) => {
+    const processAttrNode = (node) => {
       if (!(node instanceof Element)) return;
       if (isElementHiddenForTranslation(node)) return;
       if (isPriceRelatedElement(node)) return;
@@ -2019,7 +2103,27 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
           node.setAttribute(attribute.name, nextValue);
         }
       });
-    });
+    };
+
+    return {
+      step() {
+        if (!seededRoot) {
+          seededRoot = true;
+          if (
+            root instanceof Element &&
+            !skipTags.has(root.nodeName) &&
+            !(ciwiBlock && ciwiBlock.contains(root)) &&
+            !isPriceRelatedElement(root)
+          ) {
+            processAttrNode(root);
+            return true;
+          }
+        }
+        if (!walker.nextNode()) return false;
+        processAttrNode(walker.currentNode);
+        return true;
+      },
+    };
   };
 
   const hasHtmlEntries = (entryList) =>
@@ -2106,11 +2210,21 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
     return pruneNestedRoots(roots);
   };
 
-  const applyReplacementsToRoots = (roots = [document.body]) => {
+  const applyReplacementsToRoots = (roots = [document.body], options = {}) => {
+    const sliced = options.sliced === true;
+    const pumpGen = options.pumpGen;
+    if (
+      !sliced &&
+      typeof window !== "undefined" &&
+      window[LIQUID_REPLACE_PUMP_ACTIVE_KEY]
+    ) {
+      return;
+    }
+
     const targets = pruneNestedRoots(
       roots.filter((root) => root?.isConnected && !shouldSkipTranslationRoot(root)),
     );
-    if (targets.length === 0) return;
+    if (targets.length === 0) return sliced ? Promise.resolve() : undefined;
 
     const scopes = [];
     const seenScopes = new Set();
@@ -2120,6 +2234,7 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
       scopes.push(scope);
     };
 
+    const shadowJobs = [];
     for (const root of targets) {
       pushScope(root);
       if (root instanceof Element && root.shadowRoot) {
@@ -2138,50 +2253,101 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
           },
         },
       );
+      shadowJobs.push({
+        step() {
+          if (!shadowWalker.nextNode()) return false;
+          if (shadowWalker.currentNode.shadowRoot) {
+            pushScope(shadowWalker.currentNode.shadowRoot);
+          }
+          return true;
+        },
+      });
+    }
 
-      while (shadowWalker.nextNode()) {
-        if (shadowWalker.currentNode.shadowRoot) {
-          pushScope(shadowWalker.currentNode.shadowRoot);
+    const buildReplaceJobs = () => {
+      const jobs = [];
+      for (const root of scopes) {
+        if (hasHtmlEntries(exactEntries) || hasHtmlEntries(fuzzyEntries)) {
+          jobs.push(makeHtmlJob(exactEntries, root));
+          jobs.push(makeHtmlJob(fuzzyEntries, root));
         }
+        jobs.push(makeAttrJob(exactEntries, fuzzyEntries, root));
+        jobs.push(makeExactJob(exactEntries, root));
+        jobs.push(makeFuzzyJob(fuzzyEntries, root));
       }
+      return jobs.filter(Boolean);
+    };
+
+    const runJobsSync = (jobs) => {
+      for (const job of jobs) {
+        while (job.step()) {}
+      }
+    };
+
+    if (!sliced) {
+      runJobsSync(shadowJobs);
+      runJobsSync(buildReplaceJobs());
+      return;
     }
 
-    for (const root of scopes) {
-      if (hasHtmlEntries(exactEntries) || hasHtmlEntries(fuzzyEntries)) {
-        replaceHtmlExactEntries(exactEntries, root);
-        replaceHtmlExactEntries(fuzzyEntries, root);
-      }
-      replaceAttributeEntriesFast(exactEntries, fuzzyEntries, root);
-      replaceExactEntriesFast(exactEntries, root);
-      replaceFuzzyEntriesFast(fuzzyEntries, root);
+    if (typeof window !== "undefined") {
+      window[LIQUID_REPLACE_PUMP_ACTIVE_KEY] = true;
     }
+
+    let phase = "shadow";
+    let jobIndex = 0;
+    let replaceJobs = [];
+    const nextWork = () => {
+      if (phase === "shadow") {
+        while (jobIndex < shadowJobs.length) {
+          if (shadowJobs[jobIndex].step()) return true;
+          jobIndex += 1;
+        }
+        replaceJobs = buildReplaceJobs();
+        phase = "replace";
+        jobIndex = 0;
+      }
+      while (jobIndex < replaceJobs.length) {
+        if (replaceJobs[jobIndex].step()) return true;
+        jobIndex += 1;
+      }
+      return false;
+    };
+
+    return runLiquidReplacePump(
+      nextWork,
+      () =>
+        typeof window !== "undefined" &&
+        pumpGen != null &&
+        window[LIQUID_REPLACE_PUMP_GEN_KEY] !== pumpGen,
+    ).finally(() => {
+      if (
+        typeof window !== "undefined" &&
+        (pumpGen == null || window[LIQUID_REPLACE_PUMP_GEN_KEY] === pumpGen)
+      ) {
+        window[LIQUID_REPLACE_PUMP_ACTIVE_KEY] = false;
+      }
+    });
   };
 
-  applyReplacementsToRoots();
+  const delayedTimeoutsKey = "__ciwi_liquid_translate_delayed_timeouts__";
+  const firstRescanPromiseKey = "__ciwi_countdown_first_rescan_promise__";
+  const firstRescanResolveKey = "__ciwi_countdown_first_rescan_resolve__";
+  const observerKey = "__ciwi_liquid_translate_observer__";
+  const countdownObserversKey = "__ciwi_countdown_timer_observers__";
 
   if (typeof window !== "undefined") {
-    // 第三方 bundle（如 Tably/bx-offer）常在首次替换后才插入 DOM；短窗口内补跑几次全页替换。
-    const delayedTimeoutsKey = "__ciwi_liquid_translate_delayed_timeouts__";
     const previousDelayed = window[delayedTimeoutsKey];
     if (Array.isArray(previousDelayed)) {
       previousDelayed.forEach((id) => clearTimeout(id));
     }
-    window[delayedTimeoutsKey] = [300, 1000, 2500].map((delayMs) =>
-      setTimeout(() => {
-        if (!document.body?.isConnected) return;
-        applyReplacementsToRoots();
-        debugLog("delayedReapply", { delayMs });
-      }, delayMs),
-    );
-
-    const observerKey = "__ciwi_liquid_translate_observer__";
-    const countdownObserversKey = "__ciwi_countdown_timer_observers__";
-    const countdownObserveOptions = {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    };
-
+    window[delayedTimeoutsKey] = [];
+    const previousFirstRescanResolve = window[firstRescanResolveKey];
+    if (typeof previousFirstRescanResolve === "function") {
+      try {
+        previousFirstRescanResolve();
+      } catch {}
+    }
     const previousCountdownObservers = window[countdownObserversKey];
     if (Array.isArray(previousCountdownObservers)) {
       previousCountdownObservers.forEach((observer) => {
@@ -2191,18 +2357,61 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
       });
     }
     window[countdownObserversKey] = [];
+  }
+
+  const pumpGen =
+    typeof window !== "undefined"
+      ? (Number(window[LIQUID_REPLACE_PUMP_GEN_KEY]) || 0) + 1
+      : 1;
+  if (typeof window !== "undefined") {
+    window[LIQUID_REPLACE_PUMP_GEN_KEY] = pumpGen;
+  }
+  await applyReplacementsToRoots([document.body], { sliced: true, pumpGen });
+  if (
+    typeof window !== "undefined" &&
+    window[LIQUID_REPLACE_PUMP_GEN_KEY] !== pumpGen
+  ) {
+    return;
+  }
+
+  if (typeof window !== "undefined") {
+    const countdownObserveOptions = {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    };
+
+    window[countdownObserversKey] = [];
     const observedCountdownTimerRoots = new WeakSet();
     const countdownObserverByRoot = new WeakMap();
+    const applyingCountdownRoots = new WeakSet();
+    const lastCountdownLabelKey = new WeakMap();
+
+    const countdownLabelKey = (node) =>
+      normalizeCollapsedText(
+        String(node?.textContent || "").replace(/\d+/g, ""),
+      );
 
     // 同步写回：MutationObserver 在绘制前触发。若再 setTimeout/rAF，英文会被先画出来造成闪烁。
     const applyCountdownTimerRootNow = (root, observer) => {
       if (!(root instanceof Element) || !root.isConnected) return;
+      if (applyingCountdownRoots.has(root)) return;
+      const labelKey = countdownLabelKey(root);
+      const lastLabelKey = lastCountdownLabelKey.get(root);
+      if (lastLabelKey !== undefined && lastLabelKey === labelKey) return;
+      if (!rootHasPendingSourceText(root)) {
+        lastCountdownLabelKey.set(root, labelKey);
+        return;
+      }
+      applyingCountdownRoots.add(root);
       try {
         observer?.disconnect();
       } catch {}
       try {
         applyReplacementsToRoots([root]);
+        lastCountdownLabelKey.set(root, countdownLabelKey(root));
       } finally {
+        applyingCountdownRoots.delete(root);
         if (observer && root.isConnected) {
           try {
             observer.observe(root, countdownObserveOptions);
@@ -2221,32 +2430,39 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
 
       const isTimerDigitText = (value) => /^\d{1,2}$/.test(String(value || "").trim());
 
+      const isTimerDigitOnlyNode = (node) => {
+        if (!node) return true;
+        if (node.nodeType === Node.TEXT_NODE) return isTimerDigitText(node.nodeValue);
+        if (node.nodeType !== Node.ELEMENT_NODE) return true;
+        const text = String(node.textContent || "").trim();
+        if (!text) return true;
+        return /^\d{1,2}(?:\s+\d{1,2})*$/.test(text);
+      };
+
       const mutationTouchesNonDigitText = (mutation) => {
         if (mutation.type === "characterData") {
           return !isTimerDigitText(mutation.target?.nodeValue);
         }
         if (mutation.type !== "childList") return true;
         for (const node of mutation.addedNodes) {
-          if (node.nodeType === Node.TEXT_NODE) {
-            if (!isTimerDigitText(node.nodeValue)) return true;
-            continue;
-          }
-          if (node.nodeType === Node.ELEMENT_NODE) return true;
+          if (!isTimerDigitOnlyNode(node)) return true;
         }
         for (const node of mutation.removedNodes) {
-          if (node.nodeType === Node.TEXT_NODE) {
-            if (!isTimerDigitText(node.nodeValue)) return true;
-            continue;
-          }
-          if (node.nodeType === Node.ELEMENT_NODE) return true;
+          if (!isTimerDigitOnlyNode(node)) return true;
         }
         return false;
       };
 
+      let applyQueued = false;
       const observer = new MutationObserver((mutations) => {
-        if (!root.isConnected) return;
+        if (!root.isConnected || applyQueued) return;
         if (!mutations.some(mutationTouchesNonDigitText)) return;
-        applyCountdownTimerRootNow(root, observer);
+        applyQueued = true;
+        try {
+          applyCountdownTimerRootNow(root, observer);
+        } finally {
+          applyQueued = false;
+        }
       });
       observer.observe(root, countdownObserveOptions);
       countdownObserverByRoot.set(root, observer);
@@ -2256,16 +2472,56 @@ export async function CustomLiquidTextTranslate(blockId, shop, ciwiBlock) {
 
     const onCountdownTimerRoot = (root) => {
       if (!root) return;
+      if (
+        countdownObserverByRoot.get(root) ||
+        observedCountdownTimerRoots.has(root)
+      ) {
+        return;
+      }
       const observer = observeCountdownTimerRoot(root);
       applyCountdownTimerRootNow(root, observer);
     };
     window.__ciwi_countdown_timer_on_root__ = onCountdownTimerRoot;
 
-    const countdownTimerRoots = collectCountdownTimerRootsIn(document.body);
-    debugLog("countdownTimerObservers", { count: countdownTimerRoots.length });
-    countdownTimerRoots.forEach((root) => {
-      observeCountdownTimerRoot(root);
+    let resolveFirstRescan = null;
+    window[firstRescanPromiseKey] = new Promise((resolve) => {
+      resolveFirstRescan = resolve;
     });
+    window[firstRescanResolveKey] = () => {
+      try {
+        resolveFirstRescan?.();
+      } catch {}
+      resolveFirstRescan = null;
+      window[firstRescanResolveKey] = null;
+    };
+
+    // 第三方 bundle（如 bx-offer）可能晚于首屏插入；首次全页替换后不立刻扫 countdown。
+    // 500ms / 1.5s 再 querySelectorAll('[class*="countdown-timer"]')，只给新根补译并挂 Observer。
+    const runDelayedCountdownRescan = (delayMs, { isFirstGate = false } = {}) => {
+      try {
+        if (document.body?.isConnected) {
+          const onRoot = window.__ciwi_countdown_timer_on_root__;
+          const roots = collectCountdownTimerRootsIn(document.body);
+          if (typeof onRoot === "function") {
+            roots.forEach((root) => onRoot(root));
+          }
+          debugLog("delayedReapply", {
+            delayMs,
+            rootsCount: roots.length,
+            skipped: roots.length === 0,
+            reason: roots.length === 0 ? "no_countdown_timer_roots" : undefined,
+          });
+        }
+      } finally {
+        if (isFirstGate && typeof window[firstRescanResolveKey] === "function") {
+          window[firstRescanResolveKey]();
+        }
+      }
+    };
+    window[delayedTimeoutsKey] = [
+      setTimeout(() => runDelayedCountdownRescan(500, { isFirstGate: true }), 500),
+      setTimeout(() => runDelayedCountdownRescan(1500), 1500),
+    ];
 
     if (!window[observerKey]) {
       const observer = new MutationObserver((mutations) => {
