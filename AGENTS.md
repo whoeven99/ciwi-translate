@@ -908,7 +908,7 @@ redirect records.
   `localStorage.ciwi_debug_auto_liquid=0` /
   `localStorage.ciwi_debug_liquid_translate=0`。
  主语言（Redis 缓存 1h）、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 0=
- 不限；需背压时设正数如 100）、总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 50000）。
+ 不限；需背压时设正数如 100）、总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 60000）。
  店面扫描：`ciwi-ui.js` TreeWalker **分片 idle**（单片约 8ms yield），不因
  时间预算整页放弃；扫描根 = `body` + **open shadowRoot** + **同源 iframe**
  （含嵌套同源；跨域 iframe / closed shadow 不可访问则跳过）；触 `max_nodes`

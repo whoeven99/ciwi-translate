@@ -24,7 +24,7 @@ const MAX_PER_REQUEST = 100;
 const DAILY_CAP = Number(process.env.AUTO_LIQUID_DAILY_CAP || 0);
 const DAILY_CAP_TTL_SEC = 60 * 60 * 25;
 /** 每店 auto 行总量上限（含 PENDING/DONE）；到顶停止新增。 */
-const TOTAL_CAP = Number(process.env.AUTO_LIQUID_TOTAL_CAP || 50_000);
+const TOTAL_CAP = Number(process.env.AUTO_LIQUID_TOTAL_CAP || 60_000);
 const PRIMARY_LOCALE_TTL_SEC = 60 * 60;
 /**
  * Redis 已知指纹集 TTL（安全网）：集合是 Turso PENDING 的镜像，
