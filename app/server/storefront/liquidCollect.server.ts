@@ -4,6 +4,10 @@ import { getOfflineSessionAccessToken } from "~/server/shop/offlineSessionToken.
 import { resolveShopPrimaryLocale } from "~/server/translateV4/shopLocales.server";
 import { getTranslateV4RedisClient } from "~/server/translateV4/redis.server";
 import { liquidSourceDigest } from "~/server/translateV4/liquidDigest.server";
+import {
+  clearAutoLiquidCapFeishuSlotIfBelowCap,
+  scheduleAutoLiquidTotalCapFeishuNotify,
+} from "~/server/storefront/autoLiquidCapFeishu.server";
 
 /**
  * 店面自动抓取：switcher 把页面上未翻译的第三方文本回传，
@@ -66,12 +70,17 @@ async function getCachedAutoTotal(
   if (redis) {
     try {
       const v = await redis.get(totalCountKey(shop));
-      if (v != null) return Number(v) || 0;
+      if (v != null) {
+        const cached = Number(v) || 0;
+        void clearAutoLiquidCapFeishuSlotIfBelowCap(shop, cached, TOTAL_CAP);
+        return cached;
+      }
     } catch {
       // ignore → 回退 Turso
     }
   }
   const n = await prisma.liquidRule.count({ where: { shop, source: "auto" } });
+  void clearAutoLiquidCapFeishuSlotIfBelowCap(shop, n, TOTAL_CAP);
   if (redis) {
     try {
       await redis.set(totalCountKey(shop), String(n), "EX", TOTAL_CACHE_TTL_SEC);
@@ -181,6 +190,29 @@ async function recordAllowlistDeny(
 function debugLog(step: string, extra?: Record<string, unknown>): void {
   if (!autoLiquidDebugEnabled()) return;
   console.log(`[auto-liquid] ${step}`, JSON.stringify(extra ?? {}));
+}
+
+function returnTotalCapSkip(args: {
+  shop: string;
+  target: string;
+  autoCount: number;
+  room?: number;
+}): CollectResult {
+  debugLog("skip", {
+    shop: args.shop,
+    target: args.target,
+    reason: "total_cap",
+    autoCount: args.autoCount,
+    TOTAL_CAP,
+    ...(args.room != null ? { room: args.room } : {}),
+  });
+  scheduleAutoLiquidTotalCapFeishuNotify({
+    shop: args.shop,
+    target: args.target,
+    autoCount: args.autoCount,
+    totalCap: TOTAL_CAP,
+  });
+  return { scheduled: 0, skipped: true, reason: "total_cap" };
 }
 
 /** 并发采集竞态：另一请求已插入同 (shop, locale, 原文) 行。 */
@@ -519,14 +551,12 @@ export async function collectAutoLiquidStrings(args: {
   // 6) 总量上限（只限 source=auto，读 Redis 计数缓存，避免每请求 COUNT）
   const autoCount = await getCachedAutoTotal(shop, redis);
   if (autoCount >= TOTAL_CAP) {
-    debugLog("skip", { shop, target, reason: "total_cap", autoCount, TOTAL_CAP });
-    return { scheduled: 0, skipped: true, reason: "total_cap" };
+    return returnTotalCapSkip({ shop, target, autoCount });
   }
   const room = Math.max(0, TOTAL_CAP - autoCount);
   const withinTotal = fresh.slice(0, room);
   if (!withinTotal.length) {
-    debugLog("skip", { shop, target, reason: "total_cap", autoCount, room });
-    return { scheduled: 0, skipped: true, reason: "total_cap" };
+    return returnTotalCapSkip({ shop, target, autoCount, room });
   }
 
   // 7) 每日名额预留（采集只落 PENDING，不扣额度；翻译时再计费）
