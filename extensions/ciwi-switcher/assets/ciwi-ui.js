@@ -3090,7 +3090,8 @@ export class CiwiswitcherForm extends HTMLElement {
 // 遍历可见文本节点，客户端去重后上报后端；后端异步翻译回填 LiquidRule。
 // ============================================================
 
-const AUTO_LIQUID_MAX_LEN = 200;
+/** 与 app/server/storefront/liquidCollect.server.ts MAX_TEXT_LEN 保持同步。 */
+const AUTO_LIQUID_MAX_LEN = 500;
 const AUTO_LIQUID_MIN_LEN = 2;
 /** 单次 POST 分片大小（对齐服务端 MAX_PER_REQUEST）；候选本身不设条数上限。 */
 const AUTO_LIQUID_POST_CHUNK = 100;
@@ -3824,7 +3825,8 @@ export function CollectUntranslatedText(shop, ciwiBlock, options = {}) {
               reason: body?.reason,
               raw: body,
             });
-            if (res?.success) {
+            // 仅真正入库（scheduled>0）才记已报；all_known 等应允许下轮重试。
+            if (res?.success && Number(body?.scheduled) > 0) {
               chunk.forEach((t) => reported.add(t));
               saveAutoLiquidReported(reportedKey, reported);
             }

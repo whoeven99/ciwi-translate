@@ -938,6 +938,9 @@ function ciwiOnload() {
         setTimeout(run, 2000);
       }
     };
+    // 替换结束后固定再等 2s，抓晚注入第三方文案。countdown 补扫仍是 500ms / 1.5s，
+    // 不改其计时；有规则时与第一次补扫并行，实际开扫 = max(补扫, 2s)。
+    const AUTO_LIQUID_COLLECT_AFTER_REPLACE_MS = 2000;
     Promise.resolve(customLiquidReplacePromise)
       .finally(() => {
         const countdownGate =
@@ -945,7 +948,13 @@ function ciwiOnload() {
           window.__ciwi_countdown_first_rescan_promise__
             ? window.__ciwi_countdown_first_rescan_promise__
             : Promise.resolve();
-        return Promise.resolve(countdownGate).catch(() => {});
+        const lateInjectGate = new Promise((resolve) => {
+          setTimeout(resolve, AUTO_LIQUID_COLLECT_AFTER_REPLACE_MS);
+        });
+        return Promise.all([
+          Promise.resolve(countdownGate).catch(() => {}),
+          lateInjectGate,
+        ]);
       })
       .finally(schedule);
   };

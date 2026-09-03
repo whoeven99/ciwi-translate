@@ -4,6 +4,10 @@ import { getOfflineSessionAccessToken } from "~/server/shop/offlineSessionToken.
 import { resolveShopPrimaryLocale } from "~/server/translateV4/shopLocales.server";
 import { getTranslateV4RedisClient } from "~/server/translateV4/redis.server";
 import { liquidSourceDigest } from "~/server/translateV4/liquidDigest.server";
+import {
+  clearAutoLiquidCapFeishuSlotIfBelowCap,
+  scheduleAutoLiquidTotalCapFeishuNotify,
+} from "~/server/storefront/autoLiquidCapFeishu.server";
 
 /**
  * 店面自动抓取：switcher 把页面上未翻译的第三方文本回传，
@@ -11,7 +15,8 @@ import { liquidSourceDigest } from "~/server/translateV4/liquidDigest.server";
  * 真正翻译走 v4 任务勾选「自定义 Liquid」→ Worker CUSTOM_LIQUID 管线。
  */
 
-const MAX_TEXT_LEN = 200;
+/** 与 extensions/ciwi-switcher/assets/ciwi-ui.js AUTO_LIQUID_MAX_LEN 保持同步。 */
+const MAX_TEXT_LEN = 500;
 const MIN_TEXT_LEN = 2;
 /** 单次请求最多新插入多少条 PENDING（与店面 AUTO_LIQUID_POST_CHUNK 对齐）。 */
 const MAX_PER_REQUEST = 100;
@@ -23,7 +28,7 @@ const MAX_PER_REQUEST = 100;
 const DAILY_CAP = Number(process.env.AUTO_LIQUID_DAILY_CAP || 0);
 const DAILY_CAP_TTL_SEC = 60 * 60 * 25;
 /** 每店 auto 行总量上限（含 PENDING/DONE）；到顶停止新增。 */
-const TOTAL_CAP = Number(process.env.AUTO_LIQUID_TOTAL_CAP || 50_000);
+const TOTAL_CAP = Number(process.env.AUTO_LIQUID_TOTAL_CAP || 60000);
 const PRIMARY_LOCALE_TTL_SEC = 60 * 60;
 /**
  * Redis 已知指纹集 TTL（安全网）：集合是 Turso PENDING 的镜像，
@@ -65,12 +70,17 @@ async function getCachedAutoTotal(
   if (redis) {
     try {
       const v = await redis.get(totalCountKey(shop));
-      if (v != null) return Number(v) || 0;
+      if (v != null) {
+        const cached = Number(v) || 0;
+        void clearAutoLiquidCapFeishuSlotIfBelowCap(shop, cached, TOTAL_CAP);
+        return cached;
+      }
     } catch {
       // ignore → 回退 Turso
     }
   }
   const n = await prisma.liquidRule.count({ where: { shop, source: "auto" } });
+  void clearAutoLiquidCapFeishuSlotIfBelowCap(shop, n, TOTAL_CAP);
   if (redis) {
     try {
       await redis.set(totalCountKey(shop), String(n), "EX", TOTAL_CACHE_TTL_SEC);
@@ -182,6 +192,29 @@ function debugLog(step: string, extra?: Record<string, unknown>): void {
   console.log(`[auto-liquid] ${step}`, JSON.stringify(extra ?? {}));
 }
 
+function returnTotalCapSkip(args: {
+  shop: string;
+  target: string;
+  autoCount: number;
+  room?: number;
+}): CollectResult {
+  debugLog("skip", {
+    shop: args.shop,
+    target: args.target,
+    reason: "total_cap",
+    autoCount: args.autoCount,
+    TOTAL_CAP,
+    ...(args.room != null ? { room: args.room } : {}),
+  });
+  scheduleAutoLiquidTotalCapFeishuNotify({
+    shop: args.shop,
+    target: args.target,
+    autoCount: args.autoCount,
+    totalCap: TOTAL_CAP,
+  });
+  return { scheduled: 0, skipped: true, reason: "total_cap" };
+}
+
 /** 并发采集竞态：另一请求已插入同 (shop, locale, 原文) 行。 */
 function isLiquidRuleUniqueConstraint(err: unknown): boolean {
   let cur: unknown = err;
@@ -221,6 +254,76 @@ async function mirrorPendingDigestsToRedis(
   } catch {
     // ignore（缓存尽力而为，权威在 Turso）
   }
+}
+
+/** Redis known 命中后回查 Turso，剔除无行的幽灵指纹并 SREM。 */
+async function reconcileRedisKnownCandidates(args: {
+  redis: ReturnType<typeof getTranslateV4RedisClient>;
+  shop: string;
+  target: string;
+  candidates: string[];
+  redisFlags: number[];
+}): Promise<string[]> {
+  const { redis, shop, target, candidates, redisFlags } = args;
+  const redisMisses: string[] = [];
+  const redisHits: string[] = [];
+  for (let i = 0; i < candidates.length; i++) {
+    if (Number(redisFlags[i])) redisHits.push(candidates[i]!);
+    else redisMisses.push(candidates[i]!);
+  }
+  if (!redisHits.length) return candidates;
+
+  const existingHits = await prisma.liquidRule.findMany({
+    where: { shop, languageCode: target, beforeTranslation: { in: redisHits } },
+    select: { beforeTranslation: true },
+  });
+  const existingHitSet = new Set(existingHits.map((r) => r.beforeTranslation));
+  const ghosts = redisHits.filter((t) => !existingHitSet.has(t));
+  if (ghosts.length) {
+    try {
+      await redis.srem(
+        knownDigestKey(shop, target),
+        ...ghosts.map((t) => liquidSourceDigest(t)),
+      );
+    } catch {
+      // ignore
+    }
+    debugLog("redis_ghost_heal", { shop, target, ghostCount: ghosts.length });
+  }
+  return [...redisMisses, ...ghosts];
+}
+
+function buildPendingAutoLiquidRow(shop: string, target: string, text: string) {
+  return {
+    shop,
+    beforeTranslation: text,
+    afterTranslation: "",
+    languageCode: target,
+    replacementMethod: false,
+    source: "auto" as const,
+    status: "PENDING" as const,
+    sourceDigest: liquidSourceDigest(text),
+    jobId: null,
+  };
+}
+
+/** createMany 竞态失败时逐条插入，只返回真正写入 Turso 的原文。 */
+async function insertPendingAutoLiquidRows(
+  shop: string,
+  target: string,
+  texts: string[],
+): Promise<string[]> {
+  const inserted: string[] = [];
+  for (const text of texts) {
+    try {
+      await prisma.liquidRule.create({ data: buildPendingAutoLiquidRow(shop, target, text) });
+      inserted.push(text);
+    } catch (err) {
+      if (isLiquidRuleUniqueConstraint(err)) continue;
+      throw err;
+    }
+  }
+  return inserted;
 }
 
 function todayKey(shop: string): string {
@@ -388,13 +491,19 @@ export async function collectAutoLiquidStrings(args: {
     }
   }
 
-  // 4) Redis 已知指纹集过滤：命中即已在 Turso（非 DONE），跳过 → 减少 findMany。
+  // 4) Redis 已知指纹集过滤：命中后回查 Turso，无行则 SREM 幽灵指纹。
   let unknown = candidates;
   if (redis && digests.length) {
     try {
       const flags = await redis.smismember(knownDigestKey(shop, target), ...digests);
       if (Array.isArray(flags) && flags.length === candidates.length) {
-        unknown = candidates.filter((_, i) => !Number(flags[i]));
+        unknown = await reconcileRedisKnownCandidates({
+          redis,
+          shop,
+          target,
+          candidates,
+          redisFlags: flags.map((f) => Number(f)),
+        });
       }
     } catch {
       // ignore → unknown 保持全量，走 findMany 兜底
@@ -442,14 +551,12 @@ export async function collectAutoLiquidStrings(args: {
   // 6) 总量上限（只限 source=auto，读 Redis 计数缓存，避免每请求 COUNT）
   const autoCount = await getCachedAutoTotal(shop, redis);
   if (autoCount >= TOTAL_CAP) {
-    debugLog("skip", { shop, target, reason: "total_cap", autoCount, TOTAL_CAP });
-    return { scheduled: 0, skipped: true, reason: "total_cap" };
+    return returnTotalCapSkip({ shop, target, autoCount });
   }
   const room = Math.max(0, TOTAL_CAP - autoCount);
   const withinTotal = fresh.slice(0, room);
   if (!withinTotal.length) {
-    debugLog("skip", { shop, target, reason: "total_cap", autoCount, room });
-    return { scheduled: 0, skipped: true, reason: "total_cap" };
+    return returnTotalCapSkip({ shop, target, autoCount, room });
   }
 
   // 7) 每日名额预留（采集只落 PENDING，不扣额度；翻译时再计费）
@@ -464,17 +571,7 @@ export async function collectAutoLiquidStrings(args: {
   // LibSQL/Prisma adapter 不支持 createMany({ skipDuplicates })，去重已在上方完成。
   try {
     const result = await prisma.liquidRule.createMany({
-      data: toInsert.map((text) => ({
-        shop,
-        beforeTranslation: text,
-        afterTranslation: "",
-        languageCode: target,
-        replacementMethod: false,
-        source: "auto",
-        status: "PENDING",
-        sourceDigest: liquidSourceDigest(text),
-        jobId: null,
-      })),
+      data: toInsert.map((text) => buildPendingAutoLiquidRow(shop, target, text)),
     });
     await mirrorPendingDigestsToRedis(redis, shop, target, toInsert, result.count);
     console.log(
@@ -483,14 +580,22 @@ export async function collectAutoLiquidStrings(args: {
     return { scheduled: result.count, skipped: false };
   } catch (err) {
     if (isLiquidRuleUniqueConstraint(err)) {
-      await mirrorPendingDigestsToRedis(redis, shop, target, toInsert, 0);
-      debugLog("skip", {
-        shop,
-        target,
-        reason: "duplicate_race",
-        want: toInsert.length,
-      });
-      return { scheduled: 0, skipped: false, reason: "all_known" };
+      const inserted = await insertPendingAutoLiquidRows(shop, target, toInsert);
+      await mirrorPendingDigestsToRedis(redis, shop, target, inserted, inserted.length);
+      if (!inserted.length) {
+        debugLog("skip", {
+          shop,
+          target,
+          reason: "all_known",
+          via: "duplicate_race",
+          want: toInsert.length,
+        });
+        return { scheduled: 0, skipped: false, reason: "all_known" };
+      }
+      console.log(
+        `[auto-liquid] inserted-fallback shop=${shop} target=${target} scheduled=${inserted.length} inCount=${inCount}`,
+      );
+      return { scheduled: inserted.length, skipped: false };
     }
     console.error("[auto-liquid] createMany PENDING failed:", err);
     return { scheduled: 0, skipped: true, reason: "write_failed" };

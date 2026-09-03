@@ -908,15 +908,18 @@ redirect records.
   `localStorage.ciwi_debug_auto_liquid=0` /
   `localStorage.ciwi_debug_liquid_translate=0`。
  主语言（Redis 缓存 1h）、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 0=
- 不限；需背压时设正数如 100）、总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 50000）。
+ 不限；需背压时设正数如 100）、总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 60000）。
+ 触顶 skip（`reason=total_cap`）时异步飞书客服群（`FEISHU_WEBHOOK_URL_SUPPORT`）；
+ Redis `tsf:auto_liquid:cap_feishu:{shop}` SET NX 去重，计数回落到上限以下 DEL 后可再通知。
  店面扫描：`ciwi-ui.js` TreeWalker **分片 idle**（单片约 8ms yield），不因
  时间预算整页放弃；扫描根 = `body` + **open shadowRoot** + **同源 iframe**
  （含嵌套同源；跨域 iframe / closed shadow 不可访问则跳过）；触 `max_nodes`
  仍上报已扫候选；候选条数不设客户端上限，POST 按 100/片
  （`AUTO_LIQUID_POST_CHUNK` / 服务端 `MAX_PER_REQUEST`）。采集启动门禁：
- `customLiquidReplacePromise` + 第一次 countdown 补扫（500ms）都过完后
- `requestIdleCallback`（timeout 9s，无 4s 硬抢）；无 Liquid 规则提前 return
- 则无 500ms 门禁。语言门：只采「像 `primaryLanguage`（Switcher 配置接口附带，
+ `customLiquidReplacePromise` 结束后再等 `max(第一次 countdown 补扫, 2s)`
+ （无 Liquid 规则的店也等 2s，用来抓晚注入第三方文案），再
+ `requestIdleCallback`（timeout 9s，无 4s 硬抢）。countdown 定点补扫仍是
+ 500ms / 1.5s，不跟采集共用同一根 2s 针。语言门：只采「像 `primaryLanguage`（Switcher 配置接口附带，
  Shopify 主 locale，非商户手填）且不像当前目标语」；无 primary 则本轮不采。
  店面 Switcher **全店采集上报**；采集只写 PENDING，**不查额度**；真正扣费在
  后续 v4「自定义 Liquid」翻译阶段。`SwitcherConfiguration.autoLiquidCollect`
