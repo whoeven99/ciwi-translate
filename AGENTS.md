@@ -249,6 +249,8 @@ real `route.tsx` or route module is added.
 `app/server/appBootstrap.server.ts`（plan / credits / locales 一次性引导数据，
 `app/routes/app.tsx` 与 Redux `userConfig` 共用）。
 - `/api/billing/active-subscription`: `app/routes/api.billing.active-subscription.ts`.
+- `/api/billing/migrate-credits-to-spark`: `app/routes/api.billing.migrate-credits-to-spark.ts`
+  （定价页迁剩余积分到 Spark：先加 Spark `purchasedTokens`，再加翻译 `usedCredits`；成败写 `BillingLog` 并异步飞书）。
 - `/api/shop-profile`: `app/routes/api.shop-profile.ts`.
 - `/api/support`: `app/routes/api.support.tsx`.
 - `/api/storefront/*`: `app/routes/api.storefront.$.ts`, the Shopify App Proxy API.
@@ -719,6 +721,11 @@ Models:
 - `TranslateV4JobUsage`: per v4 job usage snapshot (Worker writes on terminal status).
 - `CreditUsage`: per-deduction credit audit (`single` / `image` / `v4_job`);
   units are billable credits (not cash). `BillingLog` remains income-only.
+  定价页仅可将未被用量占用的购买积分 1:1 迁入 Spark：可迁 =
+  `purchasedCredits − max(0, usedCredits − subscriptionCredits − trialCredits)`，
+  成功后 `purchasedCredits -= amount`（不改 `usedCredits`），Spark
+  `purchasedTokens += amount`；流水 `CREDITS_MIGRATED_OUT` /
+  `CREDITS_MIGRATION_FAILED`（`app/server/billing/migrateCreditsToSpark.server.ts`）。
 
 Code:
 
@@ -754,6 +761,8 @@ leftover `AppSubscription` when restoring a soft-deleted Account.
   Redis NX duplicate) appends `挽回邮件：未发（原因）` on the snapshot message
   (`7 天内已发过` for duplicate; SES 仍跳过，飞书照发且标题仍带分群). Scheduled from
   `APP_UNINSTALLED` in `webhooks.tsx`.
+- 迁积分到 Spark：`SPARK_CREDIT_MIGRATION_ENABLED`（默认关；`true`/`1`/`on`/`yes` 才展示定价页按钮并放行 API）+ `SPARK_CREDIT_MIGRATION_URL` + `SPARK_CREDIT_MIGRATION_SECRET`
+  （HMAC，与 Spark `CREDIT_MIGRATION_SECRET` 相同）；飞书仍走 `FEISHU_WEBHOOK_URL_SUPPORT`。
 - 收件人/后台 token：`app/server/shop/fetchShopContact.server.ts`（Shopify
 GraphQL 拉店铺联系邮箱）与 `app/server/shop/offlineSessionToken.server.ts`
 （App 侧唯一的 offline token 读取口，Turso `Session`；storefront switcher /
@@ -1323,6 +1332,7 @@ For "合入PR然后发布测试环境", the script will:
 | Quota mismatch                   | `quotaRouter.server.ts`                               | `webhooks.tsx`, TSF billing webhooks, worker `tsfQuota.ts`                                              |
 | Subscription/purchase bug        | `app/routes/app.pricing/route.tsx`                    | `webhooks.tsx`, `app/server/billing/*`                                                                  |
 | 补额度弹窗 / Shopify 回跳        | `app/utils/creditsPurchaseModal.ts`                   | `app/components/paymentModal.tsx`, `app/routes/app.tsx`, `app/utils/billingReturn.ts`, `app/lib/shopifyAppHandle.server.ts` |
+| 迁移积分到 Spark                 | `app/server/billing/migrateCreditsToSpark.server.ts`  | `SPARK_CREDIT_MIGRATION_ENABLED`（默认关）、`api.billing.migrate-credits-to-spark.ts`、定价页 `AcountInfoCard`、Spark `/api/internal/credit-migration` |
 | 任务历史页                       | `app/routes/app.translate-v4-history/route.tsx`       | `app/routes/app.translate-v4/jobFilters.ts`, `components/TaskQueueSection.tsx`, `progress.server.ts`     |
 | Currency switcher bug            | `app/server/currency/currency.server.ts`              | `api.storefront.$.ts`, extension `ciwi-api.js`                                                          |
 | App Proxy 401/404                | `api.storefront.$.ts`                                 | `server/storefront/auth.server.ts`, extension caller                                                    |

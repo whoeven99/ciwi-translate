@@ -288,7 +288,7 @@ model AppSubscription {
 model BillingLog {
   id           String   @id @default(cuid())
   shop         String
-  /// SUBSCRIPTION_ACTIVATED | SUBSCRIPTION_RENEWED | SUBSCRIPTION_CANCELLED | TOKEN_PACK_PURCHASED | TRIAL_GRANTED
+  /// SUBSCRIPTION_ACTIVATED | SUBSCRIPTION_RENEWED | SUBSCRIPTION_CANCELLED | TOKEN_PACK_PURCHASED | TRIAL_GRANTED | CREDITS_MIGRATED_OUT | CREDITS_MIGRATION_FAILED
   eventType    String
   planKey      String?
   /// Shopify subscription / purchase GID，做幂等
