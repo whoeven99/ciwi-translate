@@ -100,3 +100,20 @@ export function buildSwitcherThemeEditorUrl(
   // as %2F breaks the theme-editor deep link.
   return `https://${host}/admin/themes/current/editor?context=apps&activateAppId=${appId}/${CIWI_SWITCHER_EMBED_HANDLE}`;
 }
+
+/** Open the theme editor in the top Admin frame. `<a href>` / Polaris `url` stays in the app iframe and Chrome blocks Admin with X-Frame-Options. */
+export function openSwitcherThemeEditor(url: string): boolean {
+  const target = url.trim();
+  if (typeof window === "undefined" || !target) return false;
+  try {
+    window.open(target, "_top");
+    return true;
+  } catch {
+    try {
+      window.top!.location.href = target;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}

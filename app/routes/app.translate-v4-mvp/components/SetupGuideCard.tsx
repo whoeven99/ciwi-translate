@@ -5,6 +5,7 @@ import { useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { APP_NAV_ITEMS } from "~/lib/appNav";
 import type { SetupGuideState } from "~/lib/setupGuide";
+import { openSwitcherThemeEditor } from "~/lib/themeAppExtensions";
 import { appColors } from "~/ui/tokens";
 import { v4CardStyle } from "~/routes/app.translate-v4/v4Styles";
 
@@ -193,7 +194,10 @@ export function SetupGuideCard({
                   {t("v4Mvp.setupGuide.switcher.enabled")}
                 </Text>
                 {themeEditorUrl ? (
-                  <Button size="slim" url={themeEditorUrl} external>
+                  <Button
+                    size="slim"
+                    onClick={() => openSwitcherThemeEditor(themeEditorUrl)}
+                  >
                     {t("v4Mvp.themeExtension.disable")}
                   </Button>
                 ) : (
@@ -221,13 +225,13 @@ export function SetupGuideCard({
                   action={
                     <Button
                       size="slim"
-                      url={themeEditorUrl ?? undefined}
-                      external={Boolean(themeEditorUrl)}
-                      onClick={
-                        themeEditorUrl
-                          ? undefined
-                          : () => navigate(APP_NAV_ITEMS.switcher)
-                      }
+                      onClick={() => {
+                        if (themeEditorUrl) {
+                          openSwitcherThemeEditor(themeEditorUrl);
+                          return;
+                        }
+                        navigate(APP_NAV_ITEMS.switcher);
+                      }}
                     >
                       {t("v4Mvp.setupGuide.switcher.ctaTheme")}
                     </Button>

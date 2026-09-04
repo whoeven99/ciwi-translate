@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { APP_NAV_ITEMS } from "~/lib/appNav";
 import {
   buildSwitcherThemeEditorUrl,
+  openSwitcherThemeEditor,
   type ThemeEmbedLoadStatus,
 } from "~/lib/themeAppExtensions";
 import { AppSectionCard, AppStatusBadge } from "~/ui/components";
@@ -101,7 +102,7 @@ function StatusCardActions({
     return (
       <InlineStack gap="200" wrap>
         {themeEditorUrl ? (
-          <Button url={themeEditorUrl} external>
+          <Button onClick={() => openSwitcherThemeEditor(themeEditorUrl)}>
             {t("v4Mvp.themeExtension.disable")}
           </Button>
         ) : null}
@@ -112,7 +113,10 @@ function StatusCardActions({
 
   if (themeEditorUrl) {
     return (
-      <Button variant="primary" url={themeEditorUrl} external>
+      <Button
+        variant="primary"
+        onClick={() => openSwitcherThemeEditor(themeEditorUrl)}
+      >
         {t("v4Mvp.themeExtension.enable")}
       </Button>
     );

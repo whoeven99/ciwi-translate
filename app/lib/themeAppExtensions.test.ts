@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   CIWI_SWITCHER_EMBED_HANDLE,
   buildSwitcherThemeEditorUrl,
+  openSwitcherThemeEditor,
   resolveThemeEmbedStatus,
 } from "./themeAppExtensions.ts";
 
@@ -81,5 +82,32 @@ describe("buildSwitcherThemeEditorUrl", () => {
   it("returns null when shop or app id is blank", () => {
     assert.equal(buildSwitcherThemeEditorUrl("", "123"), null);
     assert.equal(buildSwitcherThemeEditorUrl("demo.myshopify.com", "  "), null);
+  });
+});
+
+describe("openSwitcherThemeEditor", () => {
+  it("opens the theme editor in the top admin frame", () => {
+    const url =
+      "https://demo.myshopify.com/admin/themes/current/editor?context=apps&activateAppId=123456/ciwi_I18n_Switcher";
+    const calls: unknown[][] = [];
+    const previous = globalThis.window;
+    globalThis.window = {
+      open: (...args: unknown[]) => {
+        calls.push(args);
+        return {} as Window;
+      },
+    } as Window & typeof globalThis;
+
+    try {
+      assert.equal(openSwitcherThemeEditor(url), true);
+      assert.deepEqual(calls, [[url, "_top"]]);
+    } finally {
+      globalThis.window = previous;
+    }
+  });
+
+  it("returns false when the url is blank", () => {
+    assert.equal(openSwitcherThemeEditor(""), false);
+    assert.equal(openSwitcherThemeEditor("   "), false);
   });
 });
