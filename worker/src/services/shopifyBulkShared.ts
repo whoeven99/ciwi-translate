@@ -121,7 +121,7 @@ export function isRetriableBulkSubmitError(message: string): boolean {
       message,
     ) ||
     /THROTTLED|429|rate limit|Too many requests/i.test(message) ||
-    /HTTP.*502|HTTP.*503|HTTP.*504|ETIMEDOUT|ECONNRESET/i.test(message)
+    /HTTP.*500|HTTP.*502|HTTP.*503|HTTP.*504|ETIMEDOUT|ECONNRESET/i.test(message)
   );
 }
 
