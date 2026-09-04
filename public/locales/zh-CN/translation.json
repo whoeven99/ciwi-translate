@@ -172,6 +172,8 @@
   "Currency Switcher": "货币切换器",
   "Current plan: ": "当前计划：",
   "Custom Liquid": "自定义 Liquid",
+  "customLiquid.noMatchingRules": "没有匹配的规则",
+  "customLiquid.searchPlaceholder": "搜索原文",
   "Customers can switch languages and currencies when visiting the site. ": "客户在访问网站时可以切换语言和货币。",
   "Customize Redirects by Region": "按地区自定义重定向",
   "Dashboard": "仪表盘",

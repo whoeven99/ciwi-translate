@@ -5,7 +5,7 @@ import {
 } from "@remix-run/node";
 import { authenticate } from "~/shopify.server";
 import {
-  listLiquidDo,
+  listLiquidPage,
   createLiquidDo,
   updateLiquidDo,
   deleteLiquidDo,
@@ -32,11 +32,25 @@ function fail(errorKey: keyof typeof TRANSLATE_V4_ERROR_KEYS) {
   );
 }
 
-/** GET /api/translate-v4/liquid —— 列出本店 Liquid 规则。 */
+/** GET /api/translate-v4/liquid?languageCode&q&page —— 按语言分页列出原文查询结果。 */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const languageCode = url.searchParams.get("languageCode")?.trim() ?? "";
+  if (!languageCode) return fail("INVALID_REQUEST");
+  const q = url.searchParams.get("q") ?? "";
+  const page = Number(url.searchParams.get("page") ?? "1");
+  const pageSize = Number(url.searchParams.get("pageSize") ?? "10");
   try {
-    return ok(await listLiquidDo(session.shop));
+    return ok(
+      await listLiquidPage({
+        shop: session.shop,
+        languageCode,
+        q,
+        page: Number.isFinite(page) ? page : 1,
+        pageSize: Number.isFinite(pageSize) ? pageSize : 10,
+      }),
+    );
   } catch (err) {
     console.error("[liquid] list failed:", err);
     return fail("LIQUID_LIST_FAILED");

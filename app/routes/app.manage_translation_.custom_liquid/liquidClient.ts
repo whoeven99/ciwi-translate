@@ -29,21 +29,42 @@ async function postTsfLiquid(body: Record<string, unknown>) {
   return res.json();
 }
 
-export async function selectLiquidCompat(_args: {
-  migrated?: boolean;
-  shop?: string;
+export async function selectLiquidCompat(args: {
+  languageCode: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+  signal?: AbortSignal;
 }): Promise<{
   success: boolean;
+  aborted?: boolean;
   response?: LiquidTableRow[];
+  hasNext?: boolean;
   errorMsg?: string;
 }> {
-  const res = await fetch("/api/translate-v4/liquid");
-  const data = await res.json();
-  if (!data.success) return data;
-  const rows = (data.response ?? []).map((item: Record<string, unknown>) =>
-    mapLiquidDoToRow(item),
-  );
-  return { success: true, response: rows };
+  const params = new URLSearchParams();
+  params.set("languageCode", args.languageCode);
+  if (args.q) params.set("q", args.q);
+  params.set("page", String(args.page ?? 1));
+  params.set("pageSize", String(args.pageSize ?? 10));
+  try {
+    const res = await fetch(`/api/translate-v4/liquid?${params.toString()}`, {
+      signal: args.signal,
+    });
+    const data = await res.json();
+    if (!data.success) return data;
+    const payload = (data.response ?? {}) as {
+      rows?: Record<string, unknown>[];
+      hasNext?: boolean;
+    };
+    const rows = (payload.rows ?? []).map((item) => mapLiquidDoToRow(item));
+    return { success: true, response: rows, hasNext: Boolean(payload.hasNext) };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return { success: false, aborted: true };
+    }
+    throw err;
+  }
 }
 
 export async function insertLiquidCompat(args: {

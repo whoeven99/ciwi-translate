@@ -16,7 +16,6 @@ const DEFAULT_REPLACEMENT_METHOD = false;
 
 interface UpdateCustomTransModalProps {
   migrated: boolean;
-  dataSource: LiquidTableRow[];
   languageCode: string;
   title: string;
   open: boolean;
@@ -26,7 +25,6 @@ interface UpdateCustomTransModalProps {
 
 const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
   migrated,
-  dataSource,
   languageCode,
   title,
   open,
@@ -61,18 +59,6 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
   };
 
   const handleConfirm = async () => {
-    const duplicate = dataSource.some(
-      (item) =>
-        item.sourceText === sourceText && item.languageCode === languageCode,
-    );
-    if (duplicate) {
-      setModalAlert({
-        type: "warning",
-        message: t("You cannot add two conflicting rules."),
-      });
-      return;
-    }
-
     setModalAlert(null);
     setSubmitting(true);
     const data = await insertLiquidCompat({
@@ -102,12 +88,16 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
       shopify.toast.show(t("Saved successfully"));
       setIsModalHide();
     } else {
+      const isDuplicate =
+        data.errorMsg === TRANSLATE_V4_ERROR_KEYS.LIQUID_DUPLICATE_RULE;
       setModalAlert({
-        type: "error",
+        type: isDuplicate ? "warning" : "error",
         message: getTranslateV4ErrorMessage(
           t,
           data.errorMsg,
-          TRANSLATE_V4_ERROR_KEYS.LIQUID_SAVE_FAILED,
+          isDuplicate
+            ? TRANSLATE_V4_ERROR_KEYS.LIQUID_DUPLICATE_RULE
+            : TRANSLATE_V4_ERROR_KEYS.LIQUID_SAVE_FAILED,
         ),
       });
     }

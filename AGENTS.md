@@ -275,7 +275,7 @@ real `route.tsx` or route module is added.
 （单字段积分预估，展示用；`singleTranslateEstimate.server.ts`）。
 - `/api/translate-v4/image`: `app/routes/api.translate-v4.image.ts`.
 - `/api/translate-v4/currency`: `app/routes/api.translate-v4.currency.ts`.
-- `/api/translate-v4/glossary`, `liquid`, `pagefly`, `switcher`,
+- `/api/translate-v4/glossary`, `liquid`（GET 需 `languageCode`，可选 `q`/`page`/`pageSize`）, `pagefly`, `switcher`,
 `target-locale`: feature-specific translate-v4 APIs.
 
 
@@ -1005,7 +1005,8 @@ gets `302` from `authenticate.admin` on `/api/picture/upload`.
 - Main page: `app/routes/app.manage_translation/route.tsx`.
 - Resource pages: `app/routes/app.manage_translation_.*/route.tsx`.
 - Custom Liquid（metafield 风格）：`app/routes/app.manage_translation_.custom_liquid/route.tsx`；
-  顶栏语言筛选，不展示 status / source / 替换方式；新建默认模糊替换。
+  顶栏语言筛选，原文搜索走 GET `/api/translate-v4/liquid?languageCode&q&page`（服务端分页，不拉全店）；
+  不展示 status / source / 替换方式；新建默认模糊替换。
   `/app/manage_translation/pagefly` 重定向到 custom_liquid（店面 PageFly 接口仍保留）。
 - Server helper: `app/server/manageTranslation/manageTranslationRoute.server.ts`.
 - Manage save paths use TSF/Shopify helpers such as
