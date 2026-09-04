@@ -1459,5 +1459,6 @@
   "pricing.plan.pro": "专业版",
   "pricing.plan.premium": "高级计划",
   "pricing.plan.yearly": "年度",
-  "pricing.plan.yearlyLabel": "{{plan}} - {{period}}"
+  "pricing.plan.yearlyLabel": "{{plan}} - {{period}}",
+  "pricing.compare.scrollHint": "左右滑动查看全部套餐"
 }

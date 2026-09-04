@@ -900,18 +900,26 @@ const Index = () => {
     return 6;
   }, [plans.length]);
 
+  const comparisonFeatureColWidth = 168;
+  const comparisonPlanColWidth = 220;
+  const comparisonTableScrollX =
+    comparisonFeatureColWidth + comparisonPlanColWidth * 4;
+
   const columns = [
     {
       title: t("Features"),
       dataIndex: "features",
       key: "features",
-      width: "20%",
+      width: comparisonFeatureColWidth,
+      fixed: "left" as const,
+      className: "pricing-comparison-table__feature",
     },
     {
       title: getPlanDisplayLabel("Free"),
       dataIndex: "free",
       key: "free",
-      width: "20%",
+      width: comparisonPlanColWidth,
+      className: "pricing-comparison-table__plan",
       render: (_: any, record: any) => {
         switch (true) {
           case record.type === "credits":
@@ -927,7 +935,8 @@ const Index = () => {
       title: getPlanDisplayLabel("Basic"),
       dataIndex: "basic",
       key: "basic",
-      width: "20%",
+      width: comparisonPlanColWidth,
+      className: "pricing-comparison-table__plan",
       render: (_: any, record: any) => {
         switch (true) {
           case record.type === "credits":
@@ -943,7 +952,8 @@ const Index = () => {
       title: getPlanDisplayLabel("Pro"),
       dataIndex: "pro",
       key: "pro",
-      width: "20%",
+      width: comparisonPlanColWidth,
+      className: "pricing-comparison-table__plan",
       render: (_: any, record: any) => {
         switch (true) {
           case record.type === "credits":
@@ -959,7 +969,8 @@ const Index = () => {
       title: getPlanDisplayLabel("Premium"),
       dataIndex: "premium",
       key: "premium",
-      width: "20%",
+      width: comparisonPlanColWidth,
+      className: "pricing-comparison-table__plan",
       render: (_: any, record: any) => {
         switch (true) {
           case record.type === "credits":
@@ -1349,15 +1360,21 @@ const Index = () => {
                   <h2 className="pricing-section__title">
                     {t("Compare plans")}
                   </h2>
+                  <p className="pricing-comparison-scroll-hint">
+                    {t("pricing.compare.scrollHint")}
+                  </p>
                 </div>
               </div>
-              <Table
-                className="pricing-comparison-table"
-                dataSource={tableData}
-                columns={columns}
-                rowKey={(record) => String(record.key)}
-                pagination={false}
-              />
+              <div className="pricing-comparison-table-wrap">
+                <Table
+                  className="pricing-comparison-table"
+                  dataSource={tableData}
+                  columns={columns}
+                  rowKey={(record) => String(record.key)}
+                  pagination={false}
+                  scroll={{ x: comparisonTableScrollX }}
+                />
+              </div>
             </section>
             <section className="pricing-section pricing-section--compact">
               <div className="pricing-section__header">

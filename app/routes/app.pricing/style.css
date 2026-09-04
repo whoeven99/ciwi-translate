@@ -4,6 +4,8 @@
 
 .pricing-page {
   width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .pricing-page__plan-meta {
@@ -293,6 +295,18 @@
   font-weight: 500;
 }
 
+.pricing-comparison-scroll-hint {
+  display: none;
+  margin: 0;
+  color: var(--app-color-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.pricing-comparison-table-wrap {
+  max-width: 100%;
+}
+
 .pricing-comparison-table .ant-table-thead > tr > th {
   background: var(--p-color-bg-surface-secondary);
   color: var(--p-color-text);
@@ -309,6 +323,24 @@
   border: 1px solid var(--app-color-border-secondary);
 }
 
+.pricing-comparison-table .ant-table-content,
+.pricing-comparison-table .ant-table-body {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pricing-comparison-table .pricing-comparison-table__feature {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.pricing-comparison-table .pricing-comparison-table__plan {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
 @media (max-width: 768px) {
   .pricing-page {
     padding: 16px 16px 32px;
@@ -321,5 +353,9 @@
   .pricing-section {
     padding: 18px 16px 18px;
     border-radius: 18px;
+  }
+
+  .pricing-comparison-scroll-hint {
+    display: block;
   }
 }

@@ -1459,5 +1459,6 @@
   "pricing.plan.pro": "Pro",
   "pricing.plan.premium": "Premium Plan",
   "pricing.plan.yearly": "Yearly",
-  "pricing.plan.yearlyLabel": "{{plan}} - {{period}}"
+  "pricing.plan.yearlyLabel": "{{plan}} - {{period}}",
+  "pricing.compare.scrollHint": "Swipe to see all plans"
 }
