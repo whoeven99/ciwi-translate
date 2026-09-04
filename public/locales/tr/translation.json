@@ -773,7 +773,7 @@
   "Try Premium Plan": "Premium Plan'ı dene",
   "Turn on automatic translation to keep your store updated in real time.": "Mağazanızın gerçek zamanlı olarak güncel kalmasını sağlamak için otomatik çeviriyi açın.",
   "Unauthorized": "Yetkisiz",
-  "Uncompleted": "Tamamlanmadı",
+  "Uncompleted": "Tamamlanmamış",
   "Unilever – Mass-market & trusted (FMCG)": "Unilever – Kitlesel pazar ve güvenilir (Hızlı tüketim)",
   "Uniqlo – Clean & functional (Essentials)": "Uniqlo – Temiz ve işlevsel (Temel parçalar)",
   "Uniqlo – Simple & comfortable (Everyday basics)": "Uniqlo – Sade ve rahat (Günlük temel parçalar)",
@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Adım 1: Değiştiriciyi etkinleştirin",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Alışveriş yapanların dil ve para birimini değiştirebilmesi için geçerli temanızda mağaza değiştiriciyi etkinleştirin.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Ekstra para birimi formatı kurulumu gerekmez. Sadece geçerli temanızda mağaza değiştiriciyi etkinleştirin.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Geçerli Shopify tema düzenleyicisine gidin; Shopify sizin için Ciwi değiştirici uygulama bloğunu açacaktır. Ardından etkinleştirin ve Kaydet'e tıklayın.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Tema düzenleyicisine gidin. Shopify, Ciwi Switcher uygulama bloğunu açar. Etkinleştirin, ardından Kaydet'e tıklayın.",
   "Feature settings": "Özellik ayarları",
   "Auto adaptation settings": "Otomatik uyarlama ayarları",
   "Switcher style settings": "Değiştirici stil ayarları",
@@ -1447,5 +1447,7 @@
   "pricing.migrate.error.GRANT_FAILED": "Spark’a kredi eklenemedi.",
   "pricing.migrate.error.DEDUCT_FAILED": "Satın alınan krediler düşülemedi. Mümkünse Spark geri alındı.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Çeviri faturalama hesabı bulunamadı.",
-  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Bu aktarım geri alındı. Yeniden deneyin."
+  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Bu aktarım geri alındı. Yeniden deneyin.",
+  "Activate plugin": "Uygulama bloğunu etkinleştir",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Switcher'ı etkinleştirerek pazarı, dili ve para birimini IP'ye göre otomatik değiştirin; ayrıca üçüncü taraf uygulamaları ve görsel alt metnini çevirin."
 }

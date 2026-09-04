@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Paso 1: Activar el conmutador",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Activa el conmutador de la tienda en tu tema actual para que los compradores puedan cambiar de idioma y moneda.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "No se requiere configuración adicional de formato de moneda. Simplemente activa el conmutador de la tienda en tu tema actual.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Ve al editor de temas actual de Shopify y Shopify abrirá el bloque de la aplicación Ciwi switcher por ti. Luego actívalo y haz clic en Guardar.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Ve al editor de temas. Shopify abrirá el bloque de la app Ciwi Switcher. Actívalo y luego haz clic en Guardar.",
   "Feature settings": "Configuración de funciones",
   "Auto adaptation settings": "Configuración de adaptación automática",
   "Switcher style settings": "Configuración de estilo del conmutador",
@@ -1447,5 +1447,7 @@
   "pricing.migrate.error.GRANT_FAILED": "No se pudieron añadir créditos en Spark.",
   "pricing.migrate.error.DEDUCT_FAILED": "No se pudieron deducir los créditos comprados. Spark se revirtió si fue posible.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "No se encontró una cuenta de facturación de traducción.",
-  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Esta transferencia se revirtió. Inténtalo de nuevo."
+  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Esta transferencia se revirtió. Inténtalo de nuevo.",
+  "Activate plugin": "Activar bloque de la app",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Activa el Switcher para cambiar automáticamente mercados, idioma y moneda según la IP, y traducir apps de terceros y el texto alt de las imágenes."
 }

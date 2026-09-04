@@ -773,7 +773,7 @@
   "Try Premium Plan": "Prova Premium-planen",
   "Turn on automatic translation to keep your store updated in real time.": "Aktivera automatisk översättning för att hålla din butik uppdaterad i realtid.",
   "Unauthorized": "Obehörig",
-  "Uncompleted": "Ej slutförd",
+  "Uncompleted": "Ofullständig",
   "Unilever – Mass-market & trusted (FMCG)": "Unilever – Massmarknad och pålitlig (FMCG)",
   "Uniqlo – Clean & functional (Essentials)": "Uniqlo – Ren och funktionell (Essentials)",
   "Uniqlo – Simple & comfortable (Everyday basics)": "Uniqlo – Enkelt och bekvämt (Vardagsbasics)",
@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Steg 1: Aktivera växlaren",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Aktivera butiksväxlaren i ditt nuvarande tema så att kunderna kan byta språk och valuta.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Ingen extra konfigurering av valutaformat krävs. Aktivera bara butiksväxlaren i ditt nuvarande tema.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Gå till Shopifys temaredigerare för det aktuella temat så öppnar Shopify Ciwi-växlarens appblock åt dig. Aktivera det och klicka sedan på Spara.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Gå till temaredigeraren. Shopify öppnar Ciwi Switcher-appblocket. Aktivera det och klicka sedan på Spara.",
   "Feature settings": "Funktionsinställningar",
   "Auto adaptation settings": "Inställningar för automatisk anpassning",
   "Switcher style settings": "Inställningar för växlarstil",
@@ -1447,5 +1447,7 @@
   "pricing.migrate.error.GRANT_FAILED": "Kunde inte lägga till krediter i Spark.",
   "pricing.migrate.error.DEDUCT_FAILED": "Kunde inte dra av köpta krediter. Spark återställdes om möjligt.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Inget faktureringskonto för översättning hittades.",
-  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Den här överföringen har återställts. Försök igen."
+  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Den här överföringen har återställts. Försök igen.",
+  "Activate plugin": "Aktivera appblock",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Aktivera Switcher för att automatiskt växla marknader, språk och valuta baserat på IP, och för att översätta tredjepartsappar och bilders alt-text."
 }

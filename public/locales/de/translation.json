@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Schritt 1: Umschalter aktivieren",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Aktivieren Sie den Storefront-Umschalter in Ihrem aktuellen Theme, damit Kunden Sprache und Währung wechseln können.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Keine zusätzliche Einrichtung des Währungsformats erforderlich. Aktivieren Sie einfach den Storefront-Umschalter in Ihrem aktuellen Theme.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Wechseln Sie zum aktuellen Shopify-Theme-Editor, und Shopify öffnet den Ciwi-Switcher-App-Block für Sie. Aktivieren Sie ihn dann und klicken Sie auf Speichern.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Öffne den Theme-Editor. Shopify öffnet den Ciwi Switcher-App-Block. Aktiviere ihn und klicke dann auf Speichern.",
   "Feature settings": "Funktionseinstellungen",
   "Auto adaptation settings": "Automatische Anpassungseinstellungen",
   "Switcher style settings": "Umschalter-Stileinstellungen",
@@ -1447,5 +1447,7 @@
   "pricing.migrate.error.GRANT_FAILED": "Credits konnten in Spark nicht gutgeschrieben werden.",
   "pricing.migrate.error.DEDUCT_FAILED": "Gekaufte Credits konnten nicht abgezogen werden. Spark wurde nach Möglichkeit zurückgesetzt.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Kein Übersetzungs-Rechnungskonto gefunden.",
-  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Diese Übertragung wurde zurückgesetzt. Bitte erneut versuchen."
+  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Diese Übertragung wurde zurückgesetzt. Bitte erneut versuchen.",
+  "Activate plugin": "App-Block aktivieren",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Aktiviere den Switcher, um Markt, Sprache und Währung automatisch per IP zu wechseln und Drittanbieter-Apps sowie Bild-Alt-Text zu übersetzen."
 }

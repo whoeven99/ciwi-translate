@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Крок 1: Увімкніть перемикач",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Увімкніть перемикач вітрини магазину у вашій поточній темі, щоб покупці могли перемикати мову та валюту.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Не потрібне додаткове налаштування формату валюти. Просто увімкніть перемикач вітрини магазину у вашій поточній темі.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Перейдіть до редактора поточної теми Shopify, і Shopify відкриє для вас блок застосунку перемикача Ciwi. Потім увімкніть його та натисніть «Зберегти».",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Перейдіть до редактора теми. Shopify відкриє блок застосунку Ciwi Switcher. Увімкніть його, потім натисніть «Зберегти».",
   "Feature settings": "Налаштування функцій",
   "Auto adaptation settings": "Налаштування автоматичної адаптації",
   "Switcher style settings": "Налаштування стилю перемикача",
@@ -1447,5 +1447,7 @@
   "pricing.migrate.error.GRANT_FAILED": "Не вдалося додати кредити в Spark.",
   "pricing.migrate.error.DEDUCT_FAILED": "Не вдалося списати куплені кредити. Spark відкотили, якщо це було можливо.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Не знайдено платіжний обліковий запис перекладу.",
-  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Це перенесення вже відкотили. Спробуйте ще раз."
+  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Це перенесення вже відкотили. Спробуйте ще раз.",
+  "Activate plugin": "Увімкнути блок застосунку",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Увімкніть Switcher, щоб автоматично змінювати ринки, мову та валюту за IP, а також перекладати сторонні застосунки та alt-текст зображень."
 }

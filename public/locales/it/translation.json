@@ -773,7 +773,7 @@
   "Try Premium Plan": "Prova il Piano Premium",
   "Turn on automatic translation to keep your store updated in real time.": "Attiva la traduzione automatica per mantenere il tuo negozio aggiornato in tempo reale.",
   "Unauthorized": "Non autorizzato",
-  "Uncompleted": "Non completato",
+  "Uncompleted": "Incompleto",
   "Unilever – Mass-market & trusted (FMCG)": "Unilever – Mass market e affidabile (FMCG)",
   "Uniqlo – Clean & functional (Essentials)": "Uniqlo – Pulito e funzionale (Essenziali)",
   "Uniqlo – Simple & comfortable (Everyday basics)": "Uniqlo – Semplice e confortevole (Basics quotidiani)",
@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Passaggio 1: Abilita il selettore",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Abilita il selettore dello storefront nel tuo tema attuale così i clienti possono cambiare lingua e valuta.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Non è richiesta alcuna configurazione aggiuntiva per il formato della valuta. Abilita semplicemente il selettore dello storefront nel tuo tema attuale.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Vai all'editor del tema Shopify corrente e Shopify aprirà il blocco dell'app Ciwi switcher per te. Quindi abilitalo e fai clic su Salva.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Vai all'editor del tema. Shopify aprirà il blocco app Ciwi Switcher. Attivalo, quindi fai clic su Salva.",
   "Feature settings": "Impostazioni funzionalità",
   "Auto adaptation settings": "Impostazioni di adattamento automatico",
   "Switcher style settings": "Impostazioni stile del selettore",
@@ -1447,5 +1447,7 @@
   "pricing.migrate.error.GRANT_FAILED": "Impossibile aggiungere crediti su Spark.",
   "pricing.migrate.error.DEDUCT_FAILED": "Impossibile detrarre i crediti acquistati. Spark è stato ripristinato se possibile.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Nessun account di fatturazione traduzione trovato.",
-  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Questo trasferimento è stato annullato. Riprova."
+  "pricing.migrate.error.ALREADY_ROLLED_BACK": "Questo trasferimento è stato annullato. Riprova.",
+  "Activate plugin": "Attiva blocco app",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Attiva lo Switcher per cambiare automaticamente mercati, lingua e valuta in base all'IP e per tradurre le app di terze parti e il testo alt delle immagini."
 }
