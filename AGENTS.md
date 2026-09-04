@@ -250,7 +250,7 @@ and embedded `/app` redirect/landing behavior.
 ### Main Pages
 
 - `/app`: `app/routes/app._index/route.tsx` 重定向到 `/app/translate-v4-mvp`（`getTranslatePagePath()` 同指向 MVP）。
-- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：可关闭 Setup Guide（BFS 4.2.2）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。
+- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：可关闭 Setup Guide（BFS 4.2.2；步骤 1「立即翻译」与步骤 2「打开设置」都进 `/app/translate-v4-mvp-custom`）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。
 - `/app/translate-v4-mvp-custom`: `app/routes/app.translate-v4-mvp-custom/route.tsx`（自定义语言/模块建任务）。
 - `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（全量工作台保留；只展示进行中 /
 暂停 / 失败任务，见 `jobFilters.ts` `isCurrentV4Job`）。
@@ -1091,7 +1091,8 @@ create-task 编排成一条「店铺理解 → 推荐 → 试用/建首个任务
 
 BFS 4.2.2 首页 Setup Guide（可关闭清单）在 `/app/translate-v4-mvp`，与本全页引导
 相互独立；关闭写入 `ShopOnboarding.setupGuideDismissedAt`。任务 1、3 完成且
-Switcher embed 已启用时会自动关闭（与手动 X 同一写入路径）。
+Switcher embed 已启用时会自动关闭（与手动 X 同一写入路径）。翻译任务步骤 1「立即翻译」
+与步骤 2「打开设置」都进 `/app/translate-v4-mvp-custom`；推荐卡片「立即翻译」仍走一键确认弹窗。
 
 Core files:
 
@@ -1366,7 +1367,7 @@ For "合入PR然后发布测试环境", the script will:
 | NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
 | 上下文保存栏离开拦截（BFS 4.1.5） | `app/hooks/useContextualSaveBar.ts`                   | `app/lib/saveBarNavigation.ts`、`app.switcher/route.tsx`、`AppSubpageTitleBar`                           |
 | 主题扩展状态 / BFS 4.2.3          | `app/lib/themeAppExtensions.ts`                       | mvp `ThemeExtensionStatusCard`、switcher `switcherSettingCard`、`shopify.app.extensions()`；打开主题编辑器用 `openSwitcherThemeEditor`（`_top`），不要用 Polaris `Button url`（会把 iframe 带到不可嵌入的 Admin） |
-| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldAutoDismissSetupGuide`、`app/server/setupGuide.server.ts`、`ShopOnboarding.setupGuideDismissedAt` |
+| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldAutoDismissSetupGuide`、`app/server/setupGuide.server.ts`、`ShopOnboarding.setupGuideDismissedAt`；步骤 1/2 CTA 都进 `/app/translate-v4-mvp-custom`（推荐卡片「立即翻译」仍一键确认） |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
 | Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslate.server.ts`, translation-core `syncTranslate.ts` / `llmTranslate.ts`, quota guard       |

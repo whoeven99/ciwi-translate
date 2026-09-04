@@ -727,7 +727,7 @@ export default function TranslateV4MvpRoute() {
     autoDismissedGuideRef.current = true;
     handleDismissSetupGuide();
   }, [guideDismissed, handleDismissSetupGuide, setupGuideState]);
-  const handleSetupGuideConfigureTask = useCallback(() => {
+  const handleSetupGuideOpenCustom = useCallback(() => {
     setHasOpenedCreateFlow(true);
     navigate(
       buildCustomTranslationPath({
@@ -1022,42 +1022,6 @@ export default function TranslateV4MvpRoute() {
     untranslatedRatioByLocale,
   ]);
 
-  const handleSetupGuideStartTranslate = useCallback(() => {
-    setHasOpenedCreateFlow(true);
-    const first = displayedRecommendations[0];
-    if (!first) {
-      navigate(
-        buildCustomTranslationPath({
-          targets: customTargets,
-          modules: customModules,
-        }),
-      );
-      return;
-    }
-    if ("pendingItems" in first) {
-      void handleRecommendationTranslate(first);
-      return;
-    }
-    void handleRecommendationTranslate({
-      id: first.id,
-      title: first.title,
-      locale: first.locale,
-      reasons: [],
-      targets: first.targets,
-      modules: first.modules,
-      pendingItems: 0,
-      coveragePercent: null,
-      contentChanged: false,
-      tone: first.tone,
-    });
-  }, [
-    customModules,
-    customTargets,
-    displayedRecommendations,
-    handleRecommendationTranslate,
-    navigate,
-  ]);
-
   useEffect(() => {
     const recommendationId = createConfirmConfig?.recommendationId;
     if (!recommendationId) return;
@@ -1207,8 +1171,8 @@ export default function TranslateV4MvpRoute() {
               state={setupGuideState}
               themeEditorUrl={themeEditorUrl}
               onDismiss={handleDismissSetupGuide}
-              onStartTranslate={handleSetupGuideStartTranslate}
-              onConfigureTask={handleSetupGuideConfigureTask}
+              onStartTranslate={handleSetupGuideOpenCustom}
+              onConfigureTask={handleSetupGuideOpenCustom}
             />
           )}
 
