@@ -4,17 +4,17 @@ import { useSelector } from "react-redux";
 
 const { Text } = Typography;
 
-const PrimaryLanguage = ({ }) => {
+const PrimaryLanguage = () => {
   const { t } = useTranslation();
 
   //用户默认语言数据
   const { source } = useSelector((state: any) => state.userConfig);
 
   return (
-    <div>
-      <Text>{t("Your store's default language:")}</Text>
-      <Text strong>{source?.name ? source?.name : ""}</Text>
-    </div>
+    <span>
+      <Text>{t("Your store's default language:")} </Text>
+      <Text strong>{source?.name ? source.name : ""}</Text>
+    </span>
   );
 };
 

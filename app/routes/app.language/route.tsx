@@ -1360,18 +1360,13 @@ const Index = () => {
           <Space direction="vertical" size="middle" style={{ display: "flex" }}>
             <AppPageHeader
               title={t("Languages")}
-              extra={<PrimaryLanguage />}
+              description={<PrimaryLanguage />}
               backAction={homeBackAction}
             />
             <AppSectionCard bodyPadding="16px" style={{ width: "100%" }}>
               <div className={styles.languageTable_action}>
-                <Flex
-                  className={styles.languageToolbar}
-                  align="center"
-                  justify="space-between" // 使按钮左右分布
-                  style={{ width: "100%", marginBottom: "16px" }}
-                >
-                  <Flex align="center" gap="middle">
+                <div className={styles.languageToolbar}>
+                  <Flex align="center" gap="middle" wrap="wrap">
                     <Button
                       disabled={!hasSelected}
                       loading={deleteloading}
@@ -1392,12 +1387,12 @@ const Index = () => {
                     </Text>
                   </Flex>
                   {loading ? (
-                    <Space>
+                    <Space wrap>
                       <Skeleton.Button active />
                       <Skeleton.Button active />
                     </Space>
                   ) : (
-                    <Space>
+                    <Space wrap>
                       {!isMobile && (
                         <Button type="default" onClick={PreviewClick}>
                           {t("Preview store")}
@@ -1408,7 +1403,7 @@ const Index = () => {
                       </Button>
                     </Space>
                   )}
-                </Flex>
+                </div>
                 {autoTranslateAlert ? (
                   <Alert
                     type="error"
