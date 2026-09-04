@@ -162,7 +162,14 @@ Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns
 - Ant Design theme values should be derived from Polaris-like tokens through
 `app/ui/theme.ts`; avoid creating a second visual system.
 - Prefer existing shared wrappers in `app/ui/components/*`, including
-  `AppPageHeader`, `AppSubpageTitleBar`, `AppSectionCard`, `AppStatusBadge`, and `AppButton`.
+  `AppPageHeader`, `AppSubpageTitleBar`, `AppSectionCard`, `AppStatusBadge`,
+  `AppButton`, and `AppSModal`.
+- **BFS 4.1.6 modals:** merchant-facing overlays with a primary/secondary CTA
+  must use App Home `<s-modal>` via `AppSModal` (`heading` + `primary-action` /
+  `secondary-actions` slots). Do not put those CTAs in the modal body. Polaris
+  web components load from `polaris-1.js` in `app/root.tsx`. In-body actions
+  (e.g. Precise estimate) stay in children. Remaining Ant/Polaris React dialogs
+  are P1.
 - Sub-pages (NavMenu children, history, custom create-task, shop-profile) must offer a
   back control to the parent: `AppSubpageTitleBar` (App Bridge breadcrumb) plus
   `AppPageHeader` `backAction` (Polaris arrow beside the in-page title). Parent of
