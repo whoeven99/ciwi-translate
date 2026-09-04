@@ -32,24 +32,52 @@ function fail(errorKey: keyof typeof TRANSLATE_V4_ERROR_KEYS) {
   );
 }
 
-/** GET /api/translate-v4/liquid?languageCode&q&page —— 按语言分页列出原文查询结果。 */
+function resolveListLanguage(
+  languageCode?: string | null,
+  language?: string | null,
+): string {
+  return (languageCode || language || "").trim();
+}
+
+async function listLiquidJson(
+  shop: string,
+  languageCode: string,
+  q: string,
+  page: number,
+  pageSize: number,
+) {
+  if (!languageCode) {
+    return ok({ rows: [], hasNext: false });
+  }
+  return ok(
+    await listLiquidPage({
+      shop,
+      languageCode,
+      q,
+      page: Number.isFinite(page) ? page : 1,
+      pageSize: Number.isFinite(pageSize) ? pageSize : 10,
+    }),
+  );
+}
+
+/** GET 兼容：认 languageCode 或页面同名 language；缺语言返回空列表，不 400。 */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const url = new URL(request.url);
-  const languageCode = url.searchParams.get("languageCode")?.trim() ?? "";
-  if (!languageCode) return fail("INVALID_REQUEST");
+  const languageCode = resolveListLanguage(
+    url.searchParams.get("languageCode"),
+    url.searchParams.get("language"),
+  );
   const q = url.searchParams.get("q") ?? "";
   const page = Number(url.searchParams.get("page") ?? "1");
   const pageSize = Number(url.searchParams.get("pageSize") ?? "10");
   try {
-    return ok(
-      await listLiquidPage({
-        shop: session.shop,
-        languageCode,
-        q,
-        page: Number.isFinite(page) ? page : 1,
-        pageSize: Number.isFinite(pageSize) ? pageSize : 10,
-      }),
+    return await listLiquidJson(
+      session.shop,
+      languageCode,
+      q,
+      page,
+      pageSize,
     );
   } catch (err) {
     console.error("[liquid] list failed:", err);
@@ -58,8 +86,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 /**
- * POST /api/translate-v4/liquid —— Liquid 增删改。
- * body: { intent: "insert"|"update"|"delete"|"toggleReplacementMethod", ... }
+ * POST /api/translate-v4/liquid —— Liquid 列表 / 增删改。
+ * body: { intent: "list"|"insert"|"update"|"delete"|"toggleReplacementMethod", ... }
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -71,11 +99,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     sourceText?: string;
     targetText?: string;
     languageCode?: string;
+    language?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
     replacementMethod?: boolean;
   };
 
   try {
     switch (body.intent) {
+      case "list": {
+        const languageCode = resolveListLanguage(
+          body.languageCode,
+          body.language,
+        );
+        return await listLiquidJson(
+          shop,
+          languageCode,
+          body.q ?? "",
+          Number(body.page ?? 1),
+          Number(body.pageSize ?? 10),
+        );
+      }
       case "insert": {
         if (!body.sourceText || !body.targetText || !body.languageCode) {
           return fail("LIQUID_REQUIRED_FIELDS");

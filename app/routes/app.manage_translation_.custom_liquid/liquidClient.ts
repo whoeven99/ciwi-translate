@@ -20,11 +20,15 @@ function mapLiquidDoToRow(item: Record<string, unknown>): LiquidTableRow {
   };
 }
 
-async function postTsfLiquid(body: Record<string, unknown>) {
+async function postTsfLiquid(
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+) {
   const res = await fetch("/api/translate-v4/liquid", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   return res.json();
 }
@@ -42,16 +46,18 @@ export async function selectLiquidCompat(args: {
   hasNext?: boolean;
   errorMsg?: string;
 }> {
-  const params = new URLSearchParams();
-  params.set("languageCode", args.languageCode);
-  if (args.q) params.set("q", args.q);
-  params.set("page", String(args.page ?? 1));
-  params.set("pageSize", String(args.pageSize ?? 10));
   try {
-    const res = await fetch(`/api/translate-v4/liquid?${params.toString()}`, {
-      signal: args.signal,
-    });
-    const data = await res.json();
+    const data = await postTsfLiquid(
+      {
+        intent: "list",
+        languageCode: args.languageCode,
+        language: args.languageCode,
+        ...(args.q ? { q: args.q } : {}),
+        page: args.page ?? 1,
+        pageSize: args.pageSize ?? 10,
+      },
+      args.signal,
+    );
     if (!data.success) return data;
     const payload = (data.response ?? {}) as {
       rows?: Record<string, unknown>[];

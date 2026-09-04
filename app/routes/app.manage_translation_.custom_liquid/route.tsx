@@ -156,6 +156,10 @@ const Index = () => {
 
   useEffect(() => {
     if (!selectedLanguage) {
+      if (!languageOptions.length) {
+        setLoading(true);
+        return;
+      }
       setLoading(false);
       setDataSource([]);
       setHasNext(false);
@@ -167,7 +171,7 @@ const Index = () => {
       setLoading(true);
       const data = await selectLiquidCompat({
         languageCode: selectedLanguage,
-        q: debouncedQuery,
+        ...(debouncedQuery ? { q: debouncedQuery } : {}),
         page: currentPage,
         pageSize: PAGE_SIZE,
         signal: controller.signal,
@@ -193,7 +197,7 @@ const Index = () => {
       cancelled = true;
       controller.abort();
     };
-  }, [selectedLanguage, debouncedQuery, currentPage, t]);
+  }, [selectedLanguage, languageOptions.length, debouncedQuery, currentPage, t]);
 
   const resourceData = useMemo<FieldRecord[]>(
     () =>
@@ -542,7 +546,14 @@ const Index = () => {
             ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
             : null}
         </Flex>
-        <div style={{ flex: 1, maxWidth: 360, minWidth: 160 }}>
+        <div
+          style={{
+            flex: "1 1 240px",
+            minWidth: 240,
+            maxWidth: 420,
+            flexShrink: 0,
+          }}
+        >
           <TextField
             label={t("customLiquid.searchPlaceholder")}
             labelHidden
@@ -645,6 +656,7 @@ const Index = () => {
                 dataSource={pagedData}
                 pagination={false}
                 rowKey="key"
+                locale={{ emptyText: t("customLiquid.noMatchingRules") }}
               />
             )}
             <div
