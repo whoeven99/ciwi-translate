@@ -68,6 +68,7 @@ import {
   buildTranslateV4TaskCreditsPurchaseContext,
 } from "~/utils/creditsPurchaseTaskContext";
 import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
+import { ThemeExtensionStatusCard } from "./components/ThemeExtensionStatusCard";
 
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -138,6 +139,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop: session.shop,
     locales,
     primaryLocale,
+    ciwiSwitcherId: process.env.SHOPIFY_CIWI_SWITCHER_ID ?? "",
   });
 };
 
@@ -358,7 +360,8 @@ function buildRecommendations(
 
 export default function TranslateV4MvpRoute() {
   const { t } = useTranslation();
-  const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
+  const { shop, locales, primaryLocale, ciwiSwitcherId } =
+    useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialWorkbenchTabParam = searchParams.get("tab");
@@ -1082,6 +1085,11 @@ export default function TranslateV4MvpRoute() {
           <PageHeaderBar
             credits={normalizedQuota?.remaining ?? null}
             planType={planType}
+          />
+
+          <ThemeExtensionStatusCard
+            shop={shop}
+            ciwiSwitcherId={ciwiSwitcherId}
           />
 
           <div style={summaryHeroGridStyle}>
