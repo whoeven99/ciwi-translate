@@ -341,10 +341,7 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                   padding: "14px 16px",
                   borderRadius: 16,
                   border: `1px solid ${v4Colors.cardBorder}`,
-                  background:
-                    shortfallCredits && shortfallCredits > 0
-                      ? "rgba(239, 68, 68, 0.06)"
-                      : v4Colors.cardSubdued,
+                  background: v4Colors.cardSubdued,
                 }}
               >
                 <Text strong style={{ display: "block", marginBottom: 12 }}>
@@ -360,12 +357,10 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                   <StatItem
                     label={t("Estimated total")}
                     value={estimateLabel}
-                    critical={false}
                   />
                   <StatItem
                     label={t("Available now")}
                     value={remainingLabel}
-                    critical={false}
                   />
                   <StatItem
                     label={t("Need to top up")}
@@ -374,7 +369,6 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                         ? t("Estimating...")
                         : `${shortfallCredits.toLocaleString()} ${t("credits")}`
                     }
-                    critical={Boolean(shortfallCredits && shortfallCredits > 0)}
                   />
                 </div>
               </div>
@@ -413,25 +407,16 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
 function StatItem({
   label,
   value,
-  critical,
 }: {
   label: string;
   value: string;
-  critical: boolean;
 }) {
   return (
     <div>
       <Text type="secondary" style={{ display: "block", fontSize: 12 }}>
         {label}
       </Text>
-      <Text
-        strong
-        style={{
-          display: "block",
-          marginTop: 4,
-          color: critical ? "#dc2626" : undefined,
-        }}
-      >
+      <Text strong style={{ display: "block", marginTop: 4 }}>
         {value}
       </Text>
     </div>

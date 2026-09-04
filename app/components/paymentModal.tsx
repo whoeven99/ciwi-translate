@@ -248,7 +248,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <TaskStat
                 label={t("Need to top up")}
                 value={formatCreditsValue(taskContext.shortfallCredits, t)}
-                tone="critical"
               />
             </div>
             {recommendedOption ? (
@@ -321,7 +320,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <TaskStat
                 label={t("Need to top up")}
                 value={formatCreditsValue(singleTranslateContext.shortfallCredits, t)}
-                tone="critical"
               />
             </div>
             {recommendedOption ? (
@@ -370,7 +368,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <TaskStat
                 label={t("Need to top up")}
                 value={formatCreditsValue(createTaskContext.shortfallCredits, t)}
-                tone="critical"
               />
             </div>
             {recommendedOption ? (
@@ -457,11 +454,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 function TaskStat({
   label,
   value,
-  tone = "default",
 }: {
   label: string;
   value: string;
-  tone?: "default" | "critical";
 }) {
   return (
     <div>
@@ -469,12 +464,7 @@ function TaskStat({
         {label}
       </PolarisText>
       <div style={{ marginTop: 4 }}>
-        <PolarisText
-          as="p"
-          variant="headingMd"
-          fontWeight="bold"
-          tone={tone === "critical" ? "critical" : undefined}
-        >
+        <PolarisText as="p" variant="headingMd" fontWeight="bold">
           {value}
         </PolarisText>
       </div>
