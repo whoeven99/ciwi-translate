@@ -169,6 +169,10 @@ Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns
   sidebar pages is the app home (`getTranslatePagePath()` / `/app/translate-v4-mvp`).
   Nested manage resource pages already use Polaris `Page` `backAction`. App home
   (`translate-v4-mvp`) must not show a back button.
+- BFS 4.1.4 parent highlight is App Bridge URL-prefix matching. Nested pages must
+  sit under their visible NavMenu href (`/app/manage_translation/product` keeps
+  Manage Translation active). Do not point `rel="home"` at `/app`. Path table:
+  `app/lib/appNav.ts`.
 - Avoid new hard-coded colors, ad hoc font sizes, one-off radius values, and
 large inline style blocks in route files.
 - Page patterns:
@@ -196,6 +200,7 @@ sweeps moved plan names, modal copy, and worker notice text into locale keys.
 ### App Shell, Auth, Webhooks
 
 - `app/routes/app.tsx`: app shell loader/action, navigation, app bootstrap.
+  NavMenu `rel="home"` 指向 `getTranslatePagePath()`（`/app/translate-v4-mvp`），不要用 `/app`（BFS 4.1.4：`/app` 是所有嵌入路由的前缀，会抢走子页高亮）。可见导航 href / 子路径前缀见 `app/lib/appNav.ts`。
 - `app/routes/auth.$.tsx`, `app/routes/auth.login/route.tsx`: Shopify auth.
 - `app/routes/webhooks.tsx`: Shopify webhook topic handling. Billing and uninstall
 logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
@@ -1125,6 +1130,7 @@ Common edits:
 Language:
 
 - Page: `app/routes/app.language/route.tsx`.
+- Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
 - Server: `app/server/translateV4/targetLocale.server.ts`,
 `shopLocales.server.ts`, `languageStatus.server.ts`（语言页 status 0..4，
@@ -1338,6 +1344,7 @@ For "合入PR然后发布测试环境", the script will:
 
 | User asks about                  | First read                                            | Then read                                                                                               |
 | -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
 | Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslate.server.ts`, translation-core `syncTranslate.ts` / `llmTranslate.ts`, quota guard       |
