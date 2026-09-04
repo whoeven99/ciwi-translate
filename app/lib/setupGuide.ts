@@ -69,3 +69,11 @@ export function buildSetupGuideState(input: SetupGuideInput): SetupGuideState {
     },
   };
 }
+
+export function shouldAutoDismissSetupGuide(state: SetupGuideState): boolean {
+  return (
+    state.translate.complete &&
+    state.switcher.enabled &&
+    state.autoTranslate.complete
+  );
+}

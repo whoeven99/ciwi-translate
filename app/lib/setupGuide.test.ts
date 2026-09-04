@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildSetupGuideState,
+  shouldAutoDismissSetupGuide,
   type SetupGuideInput,
 } from "./setupGuide.ts";
 
@@ -93,5 +94,44 @@ describe("buildSetupGuideState", () => {
     assert.equal(state.translate.visible, false);
     assert.equal(state.switcher.visible, true);
     assert.equal(state.autoTranslate.visible, false);
+  });
+});
+
+describe("shouldAutoDismissSetupGuide", () => {
+  it("is false until translate, switcher embed, and auto-translate are all done", () => {
+    assert.equal(shouldAutoDismissSetupGuide(buildSetupGuideState(input())), false);
+    assert.equal(
+      shouldAutoDismissSetupGuide(buildSetupGuideState(input({ hasV4Job: true }))),
+      false,
+    );
+    assert.equal(
+      shouldAutoDismissSetupGuide(
+        buildSetupGuideState(input({ hasV4Job: true, embedStatus: "active" })),
+      ),
+      false,
+    );
+    assert.equal(
+      shouldAutoDismissSetupGuide(
+        buildSetupGuideState(
+          input({ hasV4Job: true, hasAutoTranslate: true, embedStatus: "loading" }),
+        ),
+      ),
+      false,
+    );
+  });
+
+  it("is true when all three setup tasks are complete", () => {
+    assert.equal(
+      shouldAutoDismissSetupGuide(
+        buildSetupGuideState(
+          input({
+            hasV4Job: true,
+            embedStatus: "active",
+            hasAutoTranslate: true,
+          }),
+        ),
+      ),
+      true,
+    );
   });
 });

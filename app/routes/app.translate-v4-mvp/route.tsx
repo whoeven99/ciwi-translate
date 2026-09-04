@@ -69,7 +69,7 @@ import {
 } from "~/utils/creditsPurchaseTaskContext";
 import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
 import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
-import { buildSetupGuideState } from "~/lib/setupGuide";
+import { buildSetupGuideState, shouldAutoDismissSetupGuide } from "~/lib/setupGuide";
 import {
   CIWI_SWITCHER_EMBED_HANDLE,
   buildSwitcherThemeEditorUrl,
@@ -428,6 +428,7 @@ export default function TranslateV4MvpRoute() {
   const embedStatus = useThemeAppExtensionStatus(CIWI_SWITCHER_EMBED_HANDLE);
   const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
+  const autoDismissedGuideRef = useRef(setupGuide.dismissed);
   const planType = plan?.type?.trim() || null;
 
   const customTargets = useMemo(
@@ -719,6 +720,13 @@ export default function TranslateV4MvpRoute() {
     setGuideDismissed(true);
     fetcher.submit({ intent: "dismissSetupGuide" }, { method: "post", preventScrollReset: true });
   }, [fetcher]);
+
+  useEffect(() => {
+    if (guideDismissed || autoDismissedGuideRef.current) return;
+    if (!shouldAutoDismissSetupGuide(setupGuideState)) return;
+    autoDismissedGuideRef.current = true;
+    handleDismissSetupGuide();
+  }, [guideDismissed, handleDismissSetupGuide, setupGuideState]);
   const handleSetupGuideConfigureTask = useCallback(() => {
     setHasOpenedCreateFlow(true);
     navigate(
