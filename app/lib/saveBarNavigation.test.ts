@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it, beforeEach, afterEach } from "node:test";
-import { confirmLeaveSaveBar, getAppBridgeSaveBar } from "./saveBarNavigation.ts";
+import {
+  confirmLeaveSaveBar,
+  getAppBridgeSaveBar,
+  runAfterSaveBarLeave,
+} from "./saveBarNavigation.ts";
 
 type ShopifyHost = {
   shopify?: {
@@ -47,5 +51,23 @@ describe("confirmLeaveSaveBar", () => {
 
     await confirmLeaveSaveBar();
     assert.equal(called, true);
+  });
+
+  it("runs the action after leaveConfirmation", async () => {
+    host.shopify = {
+      saveBar: {
+        show() {},
+        hide() {},
+        leaveConfirmation: async () => {},
+      },
+    };
+    let ran = false;
+    await new Promise((resolve) => {
+      runAfterSaveBarLeave(() => {
+        ran = true;
+        resolve();
+      });
+    });
+    assert.equal(ran, true);
   });
 });

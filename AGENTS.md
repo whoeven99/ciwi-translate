@@ -891,7 +891,7 @@ Currency changes often touch admin, App Proxy, and extension JS.
 - Admin page: `app/routes/app.switcher/route.tsx`.
 - Contextual Save Bar (BFS 4.1.5): `app/hooks/useContextualSaveBar.ts` +
   `app/lib/saveBarNavigation.ts`。dirty 时 `show`；Remix 离开 / 子页返回 /
-  Upgrade 先 `await confirmLeaveSaveBar()`；dirty 卸载不 `hide`。
+  Upgrade / manage 换语言与翻页先 `runAfterSaveBarLeave`；dirty 卸载不 `hide`。
 - Client helper: `app/routes/app.switcher/switcherClient.ts`.
 - UI component: `app/routes/app.switcher/components/switcherSettingCard.tsx`.
 - Server: `app/server/storefront/switcherAdmin.server.ts`,
@@ -1029,6 +1029,10 @@ gets `302` from `authenticate.admin` on `/api/picture/upload`.
 - 页面共享行为：`app/utils/manageSave.ts`、`manageTranslationState.ts`、
 `manageTranslationErrors.ts`（保存提交 / 脏值状态 / 错误归一）。改一个 manage 页
 的保存或报错前，先看这三个是否已经有实现。
+- Contextual Save Bar (BFS 4.1.5)：资源编辑页用
+`useContextualSaveBar("save-bar", confirmData.length > 0)`；换语言 / 换模块 /
+翻页 / 返回走 `runAfterSaveBarLeave`（`app/lib/saveBarNavigation.ts`），不要在
+`leaveConfirmation` 之后立刻 `hide`。
 - Shopify translation helper: `app/server/shopify/translations.server.ts`.
 
 These pages are not the same UX as translation v4 jobs. Preserve existing

@@ -23,3 +23,8 @@ export async function confirmLeaveSaveBar(): Promise<void> {
   }
   await saveBar.leaveConfirmation();
 }
+
+/** 等商家处理完 CSB 后再执行跳转 / 翻页等离开当前表单的动作。 */
+export function runAfterSaveBarLeave(action: () => void): void {
+  void confirmLeaveSaveBar().then(action);
+}

@@ -14,6 +14,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import { Page, Pagination, Select } from "@shopify/polaris";
 import { SaveBar } from "@shopify/app-bridge-react";
+import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
+import { runAfterSaveBarLeave } from "~/lib/saveBarNavigation";
 import { useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
 import { SingleTextTranslate } from "~/api/translateV4Client";
@@ -193,7 +195,6 @@ const Index = () => {
     setSelectedRowKeys([]);
     setConfirmData([]);
     setSuccessTranslatedKey([]);
-    shopify.saveBar.hide("save-bar");
   }, [selectedLanguage]);
 
   useEffect(() => {
@@ -207,13 +208,7 @@ const Index = () => {
     });
   }, [languageRows, confirmData]);
 
-  useEffect(() => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.show("save-bar");
-    } else {
-      shopify.saveBar.hide("save-bar");
-    }
-  }, [confirmData]);
+  useContextualSaveBar("save-bar", confirmData.length > 0);
 
   const hasSelected = selectedRowKeys.length > 0;
   const currentPageKeys = pagedData.map((item) => item.key);
@@ -238,23 +233,17 @@ const Index = () => {
   };
 
   const handleLanguageChange = (language: string) => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-      return;
-    }
-    shopify.saveBar.hide("save-bar");
-    setSelectedLanguage(language);
-    navigate(`/app/manage_translation/custom_liquid?language=${language}`);
+    runAfterSaveBarLeave(() => {
+      setSelectedLanguage(language);
+      navigate(`/app/manage_translation/custom_liquid?language=${language}`);
+    });
   };
 
   const handleItemChange = (item: string) => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-      return;
-    }
-    shopify.saveBar.hide("save-bar");
-    setSelectedItem(item);
-    navigate(`/app/manage_translation/${item}?language=${selectedLanguage}`);
+    runAfterSaveBarLeave(() => {
+      setSelectedItem(item);
+      navigate(`/app/manage_translation/${item}?language=${selectedLanguage}`);
+    });
   };
 
   const handleDelete = async () => {
@@ -317,7 +306,6 @@ const Index = () => {
       }
       setConfirmData([]);
       setSuccessTranslatedKey([]);
-      shopify.saveBar.hide("save-bar");
       shopify.toast.show(t("Saved successfully"));
     } finally {
       setSaving(false);
@@ -325,7 +313,6 @@ const Index = () => {
   };
 
   const handleDiscard = () => {
-    shopify.saveBar.hide("save-bar");
     setConfirmData([]);
     setSuccessTranslatedKey([]);
     setTranslatedValues(
@@ -444,12 +431,9 @@ const Index = () => {
   ];
 
   const onCancel = () => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-      return;
-    }
-    shopify.saveBar.hide("save-bar");
-    navigate(`/app/manage_translation?language=${selectedLanguage}`);
+    runAfterSaveBarLeave(() => {
+      navigate(`/app/manage_translation?language=${selectedLanguage}`);
+    });
   };
 
   const hasPrevious = currentPage > 1;
@@ -465,7 +449,7 @@ const Index = () => {
         <button variant="primary" onClick={handleConfirm} disabled={saving}>
           {t("Save")}
         </button>
-        <button onClick={handleDiscard}>{t("Cancel")}</button>
+        <button onClick={handleDiscard}>{t("Discard")}</button>
       </SaveBar>
       <div
         style={{
