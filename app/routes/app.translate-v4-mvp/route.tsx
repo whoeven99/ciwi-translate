@@ -6,8 +6,8 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
+import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
+import { useFetcher, useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { useSelector } from "react-redux";
 import {
@@ -68,7 +68,18 @@ import {
   buildTranslateV4TaskCreditsPurchaseContext,
 } from "~/utils/creditsPurchaseTaskContext";
 import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
+import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
+import { buildSetupGuideState } from "~/lib/setupGuide";
+import {
+  CIWI_SWITCHER_EMBED_HANDLE,
+  buildSwitcherThemeEditorUrl,
+} from "~/lib/themeAppExtensions";
+import {
+  dismissSetupGuide,
+  loadSetupGuideSnapshot,
+} from "~/server/setupGuide.server";
 import { ThemeExtensionStatusCard } from "./components/ThemeExtensionStatusCard";
+import { SetupGuideCard } from "./components/SetupGuideCard";
 
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -135,12 +146,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.error("[translate-v4-mvp] load locales failed:", err);
   }
 
+  const setupGuide = await loadSetupGuideSnapshot(session.shop);
+
   return json({
     shop: session.shop,
     locales,
     primaryLocale,
     ciwiSwitcherId: process.env.SHOPIFY_CIWI_SWITCHER_ID ?? "",
+    setupGuide,
   });
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  if (String(formData.get("intent")) !== "dismissSetupGuide") {
+    return json({ ok: false, error: "unknown intent" }, { status: 400 });
+  }
+
+  try {
+    await dismissSetupGuide(session.shop);
+    return json({ ok: true });
+  } catch (err) {
+    console.error("[setup-guide] dismiss failed:", err);
+    return json({ ok: false }, { status: 500 });
+  }
 };
 
 async function readJsonResponse<T = unknown>(res: Response): Promise<T> {
@@ -360,9 +390,10 @@ function buildRecommendations(
 
 export default function TranslateV4MvpRoute() {
   const { t } = useTranslation();
-  const { shop, locales, primaryLocale, ciwiSwitcherId } =
+  const { shop, locales, primaryLocale, ciwiSwitcherId, setupGuide } =
     useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const fetcher = useFetcher<{ ok?: boolean }>();
   const [searchParams] = useSearchParams();
   const initialWorkbenchTabParam = searchParams.get("tab");
   const plan = useSelector((state: RootState) => state.userConfig.plan);
@@ -392,6 +423,10 @@ export default function TranslateV4MvpRoute() {
     null,
   );
   const [creating, setCreating] = useState(false);
+  const [guideDismissed, setGuideDismissed] = useState(setupGuide.dismissed);
+  const [hasOpenedCreateFlow, setHasOpenedCreateFlow] = useState(false);
+  const embedStatus = useThemeAppExtensionStatus(CIWI_SWITCHER_EMBED_HANDLE);
+  const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
   const planType = plan?.type?.trim() || null;
 
@@ -658,6 +693,41 @@ export default function TranslateV4MvpRoute() {
     isCoverageInitializing && visibleRecommendations.length === 0
       ? initializationRecommendations
       : visibleRecommendations;
+  const hasV4Job = !jobsLoading && jobs.length > 0;
+  const hasAutoTranslate =
+    !coverageLoading && coverage.locales.some((row) => row.autoTranslate);
+  const setupGuideState = useMemo(
+    () =>
+      buildSetupGuideState({
+        hasV4Job,
+        hasOpenedCreateFlow,
+        hasCurrency: setupGuide.hasCurrency,
+        ipOpen: setupGuide.ipOpen,
+        embedStatus,
+        hasAutoTranslate,
+      }),
+    [
+      embedStatus,
+      hasAutoTranslate,
+      hasOpenedCreateFlow,
+      hasV4Job,
+      setupGuide.hasCurrency,
+      setupGuide.ipOpen,
+    ],
+  );
+  const handleDismissSetupGuide = useCallback(() => {
+    setGuideDismissed(true);
+    fetcher.submit({ intent: "dismissSetupGuide" }, { method: "post", preventScrollReset: true });
+  }, [fetcher]);
+  const handleSetupGuideConfigureTask = useCallback(() => {
+    setHasOpenedCreateFlow(true);
+    navigate(
+      buildCustomTranslationPath({
+        targets: customTargets,
+        modules: customModules,
+      }),
+    );
+  }, [customModules, customTargets, navigate]);
   const createConfirmScenario:
     | "ready"
     | "insufficient_paid"
@@ -834,6 +904,7 @@ export default function TranslateV4MvpRoute() {
   ]);
 
   const handleRecommendationTranslate = useCallback(async (item: Recommendation) => {
+    setHasOpenedCreateFlow(true);
     if (createQuotaGatePending) {
       message.info(
         t("Checking your trial eligibility. Please try again in a moment."),
@@ -941,6 +1012,42 @@ export default function TranslateV4MvpRoute() {
     remainingCredits,
     t,
     untranslatedRatioByLocale,
+  ]);
+
+  const handleSetupGuideStartTranslate = useCallback(() => {
+    setHasOpenedCreateFlow(true);
+    const first = displayedRecommendations[0];
+    if (!first) {
+      navigate(
+        buildCustomTranslationPath({
+          targets: customTargets,
+          modules: customModules,
+        }),
+      );
+      return;
+    }
+    if ("pendingItems" in first) {
+      void handleRecommendationTranslate(first);
+      return;
+    }
+    void handleRecommendationTranslate({
+      id: first.id,
+      title: first.title,
+      locale: first.locale,
+      reasons: [],
+      targets: first.targets,
+      modules: first.modules,
+      pendingItems: 0,
+      coveragePercent: null,
+      contentChanged: false,
+      tone: first.tone,
+    });
+  }, [
+    customModules,
+    customTargets,
+    displayedRecommendations,
+    handleRecommendationTranslate,
+    navigate,
   ]);
 
   useEffect(() => {
@@ -1087,9 +1194,20 @@ export default function TranslateV4MvpRoute() {
             planType={planType}
           />
 
+          {guideDismissed ? null : (
+            <SetupGuideCard
+              state={setupGuideState}
+              themeEditorUrl={themeEditorUrl}
+              onDismiss={handleDismissSetupGuide}
+              onStartTranslate={handleSetupGuideStartTranslate}
+              onConfigureTask={handleSetupGuideConfigureTask}
+            />
+          )}
+
           <ThemeExtensionStatusCard
             shop={shop}
             ciwiSwitcherId={ciwiSwitcherId}
+            status={embedStatus}
           />
 
           <div style={summaryHeroGridStyle}>

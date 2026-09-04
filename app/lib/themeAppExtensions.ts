@@ -2,6 +2,7 @@
 export const CIWI_SWITCHER_EMBED_HANDLE = "ciwi_I18n_Switcher";
 
 export type ThemeEmbedUiStatus = "active" | "inactive" | "unknown";
+export type ThemeEmbedLoadStatus = ThemeEmbedUiStatus | "loading";
 
 type ThemeExtensionActivation = {
   handle?: unknown;

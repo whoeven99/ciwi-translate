@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import {
   fetchThemeAppExtensions,
   resolveThemeEmbedStatus,
-  type ThemeEmbedUiStatus,
+  type ThemeEmbedLoadStatus,
 } from "~/lib/themeAppExtensions";
 
-export type ThemeEmbedLoadStatus = ThemeEmbedUiStatus | "loading";
+export type { ThemeEmbedLoadStatus };
 
 export function useThemeAppExtensionStatus(embedHandle: string): ThemeEmbedLoadStatus {
   const [status, setStatus] = useState<ThemeEmbedLoadStatus>("loading");

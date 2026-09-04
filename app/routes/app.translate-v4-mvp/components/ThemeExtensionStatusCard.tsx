@@ -1,26 +1,26 @@
-import { Button } from "@shopify/polaris";
+import { Button, InlineStack } from "@shopify/polaris";
 import { useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { APP_NAV_ITEMS } from "~/lib/appNav";
 import {
-  CIWI_SWITCHER_EMBED_HANDLE,
   buildSwitcherThemeEditorUrl,
+  type ThemeEmbedLoadStatus,
 } from "~/lib/themeAppExtensions";
-import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
 import { AppSectionCard, AppStatusBadge } from "~/ui/components";
 
 type ThemeExtensionStatusCardProps = {
   shop: string;
   ciwiSwitcherId: string;
+  status: ThemeEmbedLoadStatus;
 };
 
 export function ThemeExtensionStatusCard({
   shop,
   ciwiSwitcherId,
+  status,
 }: ThemeExtensionStatusCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const status = useThemeAppExtensionStatus(CIWI_SWITCHER_EMBED_HANDLE);
   const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
 
   const badge = badgeForStatus(status, t);
@@ -61,7 +61,7 @@ export function ThemeExtensionStatusCard({
 }
 
 function badgeForStatus(
-  status: ReturnType<typeof useThemeAppExtensionStatus>,
+  status: ThemeEmbedLoadStatus,
   t: ReturnType<typeof useTranslation>["t"],
 ): { tone: "success" | "info" | "caution"; label: string } {
   if (status === "active") {
@@ -77,7 +77,7 @@ function badgeForStatus(
 }
 
 function descriptionForStatus(
-  status: ReturnType<typeof useThemeAppExtensionStatus>,
+  status: ThemeEmbedLoadStatus,
   t: ReturnType<typeof useTranslation>["t"],
 ): string {
   if (status === "active") return t("v4Mvp.themeExtension.descriptionActive");
@@ -99,18 +99,20 @@ function StatusCardActions({
 }) {
   if (status === "active") {
     return (
-      <Button onClick={onManage}>{t("v4Mvp.themeExtension.manage")}</Button>
+      <InlineStack gap="200" wrap>
+        {themeEditorUrl ? (
+          <Button url={themeEditorUrl} external>
+            {t("v4Mvp.themeExtension.disable")}
+          </Button>
+        ) : null}
+        <Button onClick={onManage}>{t("v4Mvp.themeExtension.manage")}</Button>
+      </InlineStack>
     );
   }
 
   if (themeEditorUrl) {
     return (
-      <Button
-        variant="primary"
-        onClick={() => {
-          window.open(themeEditorUrl, "_blank", "noopener,noreferrer");
-        }}
-      >
+      <Button variant="primary" url={themeEditorUrl} external>
         {t("v4Mvp.themeExtension.enable")}
       </Button>
     );
