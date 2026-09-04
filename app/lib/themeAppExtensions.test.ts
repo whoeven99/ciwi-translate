@@ -57,7 +57,7 @@ describe("buildSwitcherThemeEditorUrl", () => {
   it("builds the theme-editor deep link", () => {
     assert.equal(
       buildSwitcherThemeEditorUrl("demo.myshopify.com", "123456"),
-      `https://demo.myshopify.com/admin/themes/current/editor?context=apps&activateAppId=${encodeURIComponent("123456/ciwi_I18n_Switcher")}`,
+      "https://demo.myshopify.com/admin/themes/current/editor?context=apps&activateAppId=123456/ciwi_I18n_Switcher",
     );
   });
 

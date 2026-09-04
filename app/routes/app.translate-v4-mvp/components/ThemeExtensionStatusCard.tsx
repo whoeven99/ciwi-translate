@@ -105,7 +105,12 @@ function StatusCardActions({
 
   if (themeEditorUrl) {
     return (
-      <Button variant="primary" url={themeEditorUrl} external>
+      <Button
+        variant="primary"
+        onClick={() => {
+          window.open(themeEditorUrl, "_blank", "noopener,noreferrer");
+        }}
+      >
         {t("v4Mvp.themeExtension.enable")}
       </Button>
     );

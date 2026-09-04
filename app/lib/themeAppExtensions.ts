@@ -81,5 +81,7 @@ export function buildSwitcherThemeEditorUrl(
   const host = shop.trim();
   const appId = ciwiSwitcherId.trim();
   if (!host || !appId) return null;
-  return `https://${host}/admin/themes/current/editor?context=apps&activateAppId=${encodeURIComponent(`${appId}/${CIWI_SWITCHER_EMBED_HANDLE}`)}`;
+  // Slash in activateAppId must stay literal (`{apiKey}/{handle}`). Encoding it
+  // as %2F breaks the theme-editor deep link.
+  return `https://${host}/admin/themes/current/editor?context=apps&activateAppId=${appId}/${CIWI_SWITCHER_EMBED_HANDLE}`;
 }
