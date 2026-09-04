@@ -1005,7 +1005,7 @@ gets `302` from `authenticate.admin` on `/api/picture/upload`.
 - Main page: `app/routes/app.manage_translation/route.tsx`.
 - Resource pages: `app/routes/app.manage_translation_.*/route.tsx`.
 - Custom Liquid（metafield 风格）：`app/routes/app.manage_translation_.custom_liquid/route.tsx`；
-  顶栏搜索（模糊 contains）+ 语言/模块下拉，左侧规则列表 / 右侧详情（对齐产品管理页）；
+  顶栏搜索（模糊 contains）+ 语言/模块下拉，主区列表编辑（无侧栏）；
   原文搜索走 `POST /api/translate-v4/liquid` `intent=list`（当前语言分页，空 q 为列表；输入后再带 q）；
   不展示 status / source / 替换方式；新建默认模糊替换。
   `/app/manage_translation/pagefly` 重定向到 custom_liquid（店面 PageFly 接口仍保留）。
