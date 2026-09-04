@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "步驟 1：啟用切換器",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "在目前主題中啟用店面切換器，讓顧客可以切換語言和貨幣。",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "無需額外的貨幣格式設定。只要在目前主題中啟用店面切換器即可。",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "前往主題編輯器。Shopify 會開啟 Ciwi Switcher 應用程式區塊。啟用後按一下「儲存」即可。",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "主題編輯器會開啟「應用程式內嵌」。開啟 Ciwi Switcher，然後點一下儲存。",
   "Feature settings": "功能設定",
   "Auto adaptation settings": "自動適應設定",
   "Switcher style settings": "切換器樣式設定",
@@ -1448,6 +1448,7 @@
   "pricing.migrate.error.DEDUCT_FAILED": "無法扣減購買點數。若已入帳 Spark，已嘗試回滾。",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "找不到翻譯計費帳戶。",
   "pricing.migrate.error.ALREADY_ROLLED_BACK": "該次遷移已回滾，請重新發起。",
-  "Activate plugin": "啟用應用程式區塊",
-  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "啟用 Switcher 後，即可依 IP 自動切換市場、語言與貨幣，並為第三方應用程式和圖片 alt 文字提供翻譯。"
+  "Activate plugin": "開啟主題編輯器",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "在主題中啟用切換器後，顧客可以切換語言和貨幣，並支援依 IP 比對市場以及翻譯第三方應用程式。",
+  "Activate Switcher": "啟用切換器"
 }

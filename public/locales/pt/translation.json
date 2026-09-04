@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Passo 1: Ativar o seletor",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Ative o seletor da loja no seu tema atual para que os clientes possam mudar de idioma e moeda.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Não é necessária nenhuma configuração adicional de formato de moeda. Basta ativar o seletor da loja no seu tema atual.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Aceda ao editor de temas. O Shopify abrirá o bloco da app Ciwi Switcher. Ative-o e clique em Guardar.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "O editor de temas abre as incorporações de apps. Ative o Ciwi Switcher e clique em Guardar.",
   "Feature settings": "Definições de funcionalidades",
   "Auto adaptation settings": "Definições de adaptação automática",
   "Switcher style settings": "Definições de estilo do seletor",
@@ -1448,6 +1448,7 @@
   "pricing.migrate.error.DEDUCT_FAILED": "Não foi possível deduzir os créditos comprados. O Spark foi revertido, se possível.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Não foi encontrada uma conta de faturação de tradução.",
   "pricing.migrate.error.ALREADY_ROLLED_BACK": "Esta transferência foi revertida. Tente novamente.",
-  "Activate plugin": "Ativar bloco da app",
-  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Ative o Switcher para mudar automaticamente mercados, idioma e moeda por IP e para traduzir apps de terceiros e o texto alt das imagens."
+  "Activate plugin": "Abrir o editor de temas",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Adicione o seletor ao tema para que os clientes possam alterar o idioma e a moeda. Também suporta correspondência de mercado por IP e tradução de apps de terceiros.",
+  "Activate Switcher": "Ativar o seletor"
 }

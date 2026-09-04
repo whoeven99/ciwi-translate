@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Étape 1 : Activer le sélecteur",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Activez le sélecteur de boutique dans votre thème actuel afin que les clients puissent changer de langue et de devise.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Aucune configuration supplémentaire du format de devise n'est requise. Activez simplement le sélecteur de boutique dans votre thème actuel.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Accédez à l'éditeur de thème. Shopify ouvrira le bloc d'application Ciwi Switcher. Activez-le, puis cliquez sur Enregistrer.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "L'éditeur de thème ouvre les incorporations d'applications. Activez Ciwi Switcher, puis cliquez sur Enregistrer.",
   "Feature settings": "Paramètres de fonctionnalité",
   "Auto adaptation settings": "Paramètres d'adaptation automatique",
   "Switcher style settings": "Paramètres de style du sélecteur",
@@ -1448,6 +1448,7 @@
   "pricing.migrate.error.DEDUCT_FAILED": "Impossible de déduire les crédits achetés. Spark a été annulé si possible.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Aucun compte de facturation traduction trouvé.",
   "pricing.migrate.error.ALREADY_ROLLED_BACK": "Ce transfert a été annulé. Réessayez.",
-  "Activate plugin": "Activer le bloc d'application",
-  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Activez le Switcher pour changer automatiquement les marchés, la langue et la devise selon l'IP, et traduire les applications tierces ainsi que le texte alt des images."
+  "Activate plugin": "Ouvrir l'éditeur de thème",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Ajoutez le sélecteur à votre thème pour que les clients puissent changer de langue et de devise. Prend aussi en charge l'association du marché par IP et la traduction des applications tierces.",
+  "Activate Switcher": "Activer le sélecteur"
 }

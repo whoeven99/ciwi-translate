@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Schritt 1: Umschalter aktivieren",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Aktivieren Sie den Storefront-Umschalter in Ihrem aktuellen Theme, damit Kunden Sprache und Währung wechseln können.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Keine zusätzliche Einrichtung des Währungsformats erforderlich. Aktivieren Sie einfach den Storefront-Umschalter in Ihrem aktuellen Theme.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Öffne den Theme-Editor. Shopify öffnet den Ciwi Switcher-App-Block. Aktiviere ihn und klicke dann auf Speichern.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Der Theme-Editor öffnet die App-Einbettungen. Aktiviere Ciwi Switcher und klicke dann auf Speichern.",
   "Feature settings": "Funktionseinstellungen",
   "Auto adaptation settings": "Automatische Anpassungseinstellungen",
   "Switcher style settings": "Umschalter-Stileinstellungen",
@@ -1448,6 +1448,7 @@
   "pricing.migrate.error.DEDUCT_FAILED": "Gekaufte Credits konnten nicht abgezogen werden. Spark wurde nach Möglichkeit zurückgesetzt.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Kein Übersetzungs-Rechnungskonto gefunden.",
   "pricing.migrate.error.ALREADY_ROLLED_BACK": "Diese Übertragung wurde zurückgesetzt. Bitte erneut versuchen.",
-  "Activate plugin": "App-Block aktivieren",
-  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Aktiviere den Switcher, um Markt, Sprache und Währung automatisch per IP zu wechseln und Drittanbieter-Apps sowie Bild-Alt-Text zu übersetzen."
+  "Activate plugin": "Theme-Editor öffnen",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Füge den Umschalter zu deinem Theme hinzu, damit Kund:innen Sprache und Währung wechseln können. Unterstützt außerdem die marktbasierte Zuordnung per IP und die Übersetzung von Drittanbieter-Apps.",
+  "Activate Switcher": "Umschalter aktivieren"
 }

@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "Stap 1: Switcher inschakelen",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "Schakel de storefront-switcher in je huidige thema in, zodat klanten van taal en valuta kunnen wisselen.",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "Er is geen extra instelling voor valuta-indeling nodig. Schakel gewoon de storefront-switcher in je huidige thema in.",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "Ga naar de thema-editor. Shopify opent het Ciwi Switcher-appblok. Schakel het in en klik daarna op Opslaan.",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "De thema-editor opent App-insluitingen. Schakel Ciwi Switcher in en klik daarna op Opslaan.",
   "Feature settings": "Functie-instellingen",
   "Auto adaptation settings": "Instellingen voor automatische aanpassing",
   "Switcher style settings": "Switcher-stijlinstellingen",
@@ -1448,6 +1448,7 @@
   "pricing.migrate.error.DEDUCT_FAILED": "Gekochte credits konden niet worden afgetrokken. Spark is indien mogelijk teruggedraaid.",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "Geen vertaalfactuuraccount gevonden.",
   "pricing.migrate.error.ALREADY_ROLLED_BACK": "Deze overdracht is teruggedraaid. Probeer het opnieuw.",
-  "Activate plugin": "App-blok inschakelen",
-  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Schakel de Switcher in om automatisch markten, taal en valuta op IP te wisselen en om apps van derden en alt-tekst van afbeeldingen te vertalen."
+  "Activate plugin": "Thema-editor openen",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Voeg de wisselaar toe aan je thema zodat klanten van taal en valuta kunnen wisselen. Ondersteunt ook marktmatching op IP en vertaling van apps van derden.",
+  "Activate Switcher": "Wisselaar inschakelen"
 }

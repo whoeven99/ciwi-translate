@@ -1194,7 +1194,7 @@
   "Step 1: Enable switcher": "ステップ1: スイッチャーを有効にする",
   "Enable the storefront switcher in your current theme so shoppers can switch language and currency.": "買い物客が言語と通貨を切り替えられるように、現在のテーマでストアフロントのスイッチャーを有効にします。",
   "No extra currency format setup is required. Just enable the storefront switcher in your current theme.": "追加の通貨形式の設定は必要ありません。現在のテーマでストアフロントのスイッチャーを有効にするだけです。",
-  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "テーマエディタを開きます。Shopify が Ciwi Switcher のアプリブロックを開きます。有効にしてから「保存」をクリックしてください。",
+  "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.": "テーマエディタで「アプリの埋め込み」が開きます。Ciwi Switcher をオンにして、保存をクリックしてください。",
   "Feature settings": "機能設定",
   "Auto adaptation settings": "自動適応設定",
   "Switcher style settings": "スイッチャースタイル設定",
@@ -1448,6 +1448,7 @@
   "pricing.migrate.error.DEDUCT_FAILED": "購入クレジットを差し引けませんでした。可能な場合は Spark をロールバックしました。",
   "pricing.migrate.error.ACCOUNT_NOT_FOUND": "翻訳の請求アカウントが見つかりません。",
   "pricing.migrate.error.ALREADY_ROLLED_BACK": "この移行はロールバック済みです。もう一度お試しください。",
-  "Activate plugin": "アプリブロックを有効にする",
-  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "Switcher を有効にすると、IP に基づいて市場・言語・通貨を自動切り替えし、サードパーティアプリと画像の alt テキストを翻訳できます。"
+  "Activate plugin": "テーマエディタを開く",
+  "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.": "テーマにスイッチャーを追加すると、お客様は言語と通貨を切り替えられます。IP に基づくマーケット照合とサードパーティアプリの翻訳にも対応します。",
+  "Activate Switcher": "スイッチャーを有効にする"
 }
