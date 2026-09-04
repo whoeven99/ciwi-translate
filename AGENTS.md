@@ -889,6 +889,9 @@ Currency changes often touch admin, App Proxy, and extension JS.
 ### Switcher And Storefront App Proxy
 
 - Admin page: `app/routes/app.switcher/route.tsx`.
+- Contextual Save Bar (BFS 4.1.5): `app/hooks/useContextualSaveBar.ts` +
+  `app/lib/saveBarNavigation.ts`。dirty 时 `show`；Remix 离开 / 子页返回 /
+  Upgrade 先 `await confirmLeaveSaveBar()`；dirty 卸载不 `hide`。
 - Client helper: `app/routes/app.switcher/switcherClient.ts`.
 - UI component: `app/routes/app.switcher/components/switcherSettingCard.tsx`.
 - Server: `app/server/storefront/switcherAdmin.server.ts`,
@@ -1345,6 +1348,7 @@ For "合入PR然后发布测试环境", the script will:
 | User asks about                  | First read                                            | Then read                                                                                               |
 | -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
+| 上下文保存栏离开拦截（BFS 4.1.5） | `app/hooks/useContextualSaveBar.ts`                   | `app/lib/saveBarNavigation.ts`、`app.switcher/route.tsx`、`AppSubpageTitleBar`                           |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
 | Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslate.server.ts`, translation-core `syncTranslate.ts` / `llmTranslate.ts`, quota guard       |

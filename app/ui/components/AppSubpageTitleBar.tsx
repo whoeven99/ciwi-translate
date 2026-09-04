@@ -2,6 +2,7 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { useNavigate } from "@remix-run/react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { confirmLeaveSaveBar } from "~/lib/saveBarNavigation";
 import { getTranslatePagePath } from "~/lib/translateNavigation";
 import type { AppPageBackAction } from "./AppPageHeader";
 
@@ -23,7 +24,9 @@ export function useAppHomeBackAction(
   return useMemo(
     () => ({
       accessibilityLabel: label,
-      onAction: () => navigate(url),
+      onAction: () => {
+        void confirmLeaveSaveBar().then(() => navigate(url));
+      },
     }),
     [label, navigate, url],
   );

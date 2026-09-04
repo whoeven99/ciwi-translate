@@ -45,6 +45,8 @@ import AppSubpageTitleBar, {
 } from "~/ui/components/AppSubpageTitleBar";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
+import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
+import { confirmLeaveSaveBar } from "~/lib/saveBarNavigation";
 
 const { Text, Title } = Typography;
 
@@ -459,6 +461,11 @@ const Index = () => {
     () => !areSwitcherConfigsEqual(editData, originalData),
     [editData, originalData],
   );
+  useContextualSaveBar("switcher-save-bar", isDirty);
+
+  const goToPricing = () => {
+    void confirmLeaveSaveBar().then(() => navigate("/app/pricing"));
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -576,20 +583,6 @@ const Index = () => {
       document.removeEventListener("visibilitychange", handleFocusRefresh);
     };
   }, [ciwiSwitcherBlocksId, location.search]);
-
-  useEffect(() => {
-    if (isDirty) {
-      shopify.saveBar.show("switcher-save-bar");
-    } else {
-      shopify.saveBar.hide("switcher-save-bar");
-    }
-  }, [isDirty]);
-
-  useEffect(() => {
-    return () => {
-      shopify.saveBar.hide("switcher-save-bar");
-    };
-  }, []);
 
   useEffect(() => {
     if (isTransparent) {
@@ -798,7 +791,7 @@ const Index = () => {
         >
           {updateLoading ? t("Saving...") : t("Save")}
         </button>
-        <button onClick={handleCancel}>{t("Cancel")}</button>
+        <button onClick={handleCancel}>{t("Discard")}</button>
       </SaveBar>
       <AppSubpageTitleBar title={t("Switcher")} />
       <div style={pageContentStackStyle}>
@@ -845,7 +838,7 @@ const Index = () => {
                       trigger="hover"
                       showCancel={false}
                       okText={t("Upgrade")}
-                      onConfirm={() => navigate("/app/pricing")}
+                      onConfirm={goToPricing}
                     >
                       <Button type="text" icon={<InfoCircleOutlined />}>
                         {t("Paid feature")}
@@ -1523,7 +1516,7 @@ const Index = () => {
           centered
           width={700}
           footer={
-            <Button type="primary" onClick={() => navigate("/app/pricing")}>
+            <Button type="primary" onClick={goToPricing}>
               {t("Upgrade")}
             </Button>
           }
