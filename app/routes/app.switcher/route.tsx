@@ -20,11 +20,7 @@ import {
 import styles from "./styles.module.css";
 import { useEffect, useMemo, useState } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import {
-  useLoaderData,
-  useLocation,
-  useNavigate,
-} from "@remix-run/react";
+import { useLoaderData, useNavigate } from "@remix-run/react";
 import { authenticate } from "~/shopify.server";
 import {
   loadSwitcherConfigCompat,
@@ -37,7 +33,6 @@ import { InfoCircleOutlined } from "@ant-design/icons";
 import defaultStyles from "../styles/defaultStyles.module.css";
 import useReport from "scripts/eventReport";
 import CloseIcon from "~/components/icon/closeIcon";
-import { withEmbeddedSearch } from "~/utils/embeddedAction";
 import SwitcherSettingCard from "./components/switcherSettingCard";
 import AppPageHeader from "~/ui/components/AppPageHeader";
 import AppSubpageTitleBar, {
@@ -199,48 +194,6 @@ function areSwitcherConfigsEqual(
   return switcherComparableKeys.every((key) => left[key] === right[key]);
 }
 
-type SwitcherActivationStatus = "completed" | "uncompleted";
-
-function extractSwitcherActivationStatus(
-  payload: unknown,
-  ciwiSwitcherBlocksId: string,
-): SwitcherActivationStatus | null {
-  const content =
-    (payload as any)?.data?.nodes?.[0]?.files?.nodes?.[0]?.body?.content;
-
-  if (typeof content !== "string" || !content.trim()) {
-    return null;
-  }
-
-  try {
-    const sanitized = content.replace(/\/\*[\s\S]*?\*\//g, "").trim();
-    const blocks = JSON.parse(sanitized)?.current?.blocks;
-    if (!blocks || typeof blocks !== "object") {
-      return null;
-    }
-
-    const normalizedSwitcherBlockId = ciwiSwitcherBlocksId.trim().toLowerCase();
-    const switcherBlock = Object.values(blocks).find(
-      (block: any) => {
-        const type = String(block?.type || "").trim().toLowerCase();
-        return (
-          type === normalizedSwitcherBlockId ||
-          type.includes(normalizedSwitcherBlockId) ||
-          type.includes("ciwi_i18n_switcher")
-        );
-      },
-    ) as { disabled?: boolean } | undefined;
-
-    if (!switcherBlock) {
-      return "uncompleted";
-    }
-
-    return switcherBlock.disabled === true ? "uncompleted" : "completed";
-  } catch {
-    return null;
-  }
-}
-
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const adminAuthResult = await authenticate.admin(request);
   const { shop } = adminAuthResult.session;
@@ -248,13 +201,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     migrated: true,
     ciwiSwitcherId: process.env.SHOPIFY_CIWI_SWITCHER_ID as string,
-    ciwiSwitcherBlocksId: process.env.SHOPIFY_CIWI_SWITCHER_THEME_ID as string,
   };
 };
 
 const Index = () => {
-  const { shop, migrated, ciwiSwitcherId, ciwiSwitcherBlocksId } =
-    useLoaderData<typeof loader>();
+  const { shop, migrated, ciwiSwitcherId } = useLoaderData<typeof loader>();
   const defaultEditData = useMemo(() => buildSwitcherEditDefaults(shop), [shop]);
   const [originalData, setOriginalData] =
     useState<SwitcherEditData>(defaultEditData);
@@ -272,15 +223,11 @@ const Index = () => {
   const [showWarnModal, setShowWarnModal] = useState(false);
   const [saveAlert, setSaveAlert] = useState<string>("");
   const [loadAlert, setLoadAlert] = useState(false);
-  const [switcherActivationStatus, setSwitcherActivationStatus] =
-    useState<SwitcherActivationStatus>("uncompleted");
-  const [cardLoading, setCardLoading] = useState<boolean>(true);
   const [updateLoading, setUpdateLoading] = useState<boolean>(false);
   const { report } = useReport();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const homeBackAction = useAppHomeBackAction();
-  const location = useLocation();
   const { plan } = useSelector((state: any) => state.userConfig);
   const isGeoLocationEnabled = editData.ipOpen;
   const isIncludedFlag = editData.includedFlag;
@@ -514,77 +461,6 @@ const Index = () => {
   }, [defaultEditData, migrated, shop]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-    const cachedActivationStatus =
-      localStorage.getItem("switcherActivationStatus");
-
-    if (
-      cachedActivationStatus === "completed" ||
-      cachedActivationStatus === "uncompleted"
-    ) {
-      setSwitcherActivationStatus(cachedActivationStatus);
-    }
-
-    const loadSwitcherGuide = async () => {
-      setCardLoading(true);
-
-      try {
-        const formData = new FormData();
-        formData.append("theme", JSON.stringify(true));
-
-        const response = await fetch(
-          withEmbeddedSearch("/app/currency", location.search),
-          {
-            method: "POST",
-            body: formData,
-            signal: controller.signal,
-          },
-        );
-        const payload = await response.json().catch(() => null);
-        if (!active) return;
-
-        const nextStatus = extractSwitcherActivationStatus(
-          payload,
-          ciwiSwitcherBlocksId,
-        );
-
-        if (nextStatus) {
-          setSwitcherActivationStatus(nextStatus);
-          localStorage.setItem("switcherActivationStatus", nextStatus);
-        }
-      } catch (error) {
-        if (!active || controller.signal.aborted) {
-          return;
-        }
-      } finally {
-        if (active) {
-          setCardLoading(false);
-        }
-      }
-    };
-
-    void loadSwitcherGuide();
-
-    const handleFocusRefresh = () => {
-      if (document.visibilityState === "hidden") {
-        return;
-      }
-      loadSwitcherGuide();
-    };
-
-    window.addEventListener("focus", handleFocusRefresh);
-    document.addEventListener("visibilitychange", handleFocusRefresh);
-
-    return () => {
-      active = false;
-      controller.abort();
-      window.removeEventListener("focus", handleFocusRefresh);
-      document.removeEventListener("visibilitychange", handleFocusRefresh);
-    };
-  }, [ciwiSwitcherBlocksId, location.search]);
-
-  useEffect(() => {
     if (isTransparent) {
       setIsSelectorOpen(false);
       setActivePreviewMenu(null);
@@ -798,8 +674,6 @@ const Index = () => {
         <AppPageHeader title={t("Switcher")} backAction={homeBackAction} />
         <SwitcherSettingCard
           visible
-          loading={cardLoading}
-          status={switcherActivationStatus}
           shop={shop}
           ciwiSwitcherId={ciwiSwitcherId}
         />

@@ -5,6 +5,7 @@ export type ThemeEmbedUiStatus = "active" | "inactive" | "unknown";
 
 type ThemeExtensionActivation = {
   handle?: unknown;
+  name?: unknown;
   status?: unknown;
 };
 
@@ -66,7 +67,20 @@ export function resolveThemeEmbedStatus(
       const blockHandle = String(block?.handle ?? "")
         .trim()
         .toLowerCase();
-      if (blockHandle !== needle && !blockHandle.includes(needle)) continue;
+      const blockName = String(block?.name ?? "")
+        .trim()
+        .toLowerCase();
+      const matchesHandle =
+        blockHandle === needle || blockHandle.includes(needle);
+      const lookingForSwitcher =
+        needle === CIWI_SWITCHER_EMBED_HANDLE.toLowerCase() ||
+        needle.includes("ciwi_i18n_switcher");
+      const matchesSchemaName =
+        lookingForSwitcher &&
+        (blockHandle === "ciwi_switcher" ||
+          blockName === "ciwi_switcher" ||
+          blockName.replace(/\s+/g, "_") === "ciwi_switcher");
+      if (!matchesHandle && !matchesSchemaName) continue;
       return block.status === "active" ? "active" : "inactive";
     }
   }

@@ -47,6 +47,23 @@ describe("resolveThemeEmbedStatus", () => {
     );
   });
 
+  it("returns active when Shopify reports the schema name Ciwi_Switcher", () => {
+    const bySchemaName = {
+      ...themeExtension,
+      activations: [
+        {
+          ...themeExtension.activations[0],
+          handle: "Ciwi_Switcher",
+          name: "Ciwi_Switcher",
+        },
+      ],
+    };
+    assert.equal(
+      resolveThemeEmbedStatus([bySchemaName], CIWI_SWITCHER_EMBED_HANDLE),
+      "active",
+    );
+  });
+
   it("returns unknown for a malformed payload", () => {
     assert.equal(resolveThemeEmbedStatus(null, CIWI_SWITCHER_EMBED_HANDLE), "unknown");
     assert.equal(resolveThemeEmbedStatus({}, CIWI_SWITCHER_EMBED_HANDLE), "unknown");

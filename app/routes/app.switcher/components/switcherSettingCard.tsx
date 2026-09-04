@@ -6,26 +6,28 @@ import { useTranslation } from "react-i18next";
 import useReport from "scripts/eventReport";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
-
-type SwitcherActivationStatus = "completed" | "uncompleted";
+import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
+import {
+  CIWI_SWITCHER_EMBED_HANDLE,
+  buildSwitcherThemeEditorUrl,
+} from "~/lib/themeAppExtensions";
 
 interface SwitcherSettingCardProps {
   visible: boolean;
-  loading: boolean;
-  status: SwitcherActivationStatus;
   shop: string;
   ciwiSwitcherId: string;
 }
 
 const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
   visible,
-  loading,
-  status,
   shop,
   ciwiSwitcherId,
 }) => {
   const [dismissed, setDismissed] = useState(false);
-  const blockUrl = `https://${shop}/admin/themes/current/editor?context=apps&activateAppId=${ciwiSwitcherId}/ciwi_I18n_Switcher`;
+  const status = useThemeAppExtensionStatus(CIWI_SWITCHER_EMBED_HANDLE);
+  const loading = status === "loading";
+  const isCompleted = status === "active";
+  const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
 
   const { t } = useTranslation();
   const { reportClick } = useReport();
@@ -41,10 +43,12 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
 
   const handleOpenThemeEditor = () => {
     reportClick("switcher_guide_click_theme");
+    if (themeEditorUrl) {
+      window.open(themeEditorUrl, "_blank", "noopener,noreferrer");
+    }
   };
 
   const shouldShow = visible && !dismissed;
-  const isCompleted = status === "completed";
 
   return (
     <AppSectionCard
@@ -59,9 +63,11 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
           }}
         >
           <span>{t("Activate Switcher")}</span>
-          <AppStatusBadge tone={isCompleted ? "success" : "critical"}>
-            {t(isCompleted ? "Completed" : "Uncompleted")}
-          </AppStatusBadge>
+          {loading ? null : (
+            <AppStatusBadge tone={isCompleted ? "success" : "caution"}>
+              {t(isCompleted ? "Completed" : "Uncompleted")}
+            </AppStatusBadge>
+          )}
         </div>
       }
       description={t(
@@ -82,11 +88,9 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
               justifyContent: "flex-end",
             }}
           >
-            <a href={blockUrl} target="_blank" rel="noreferrer">
-              <Button type="primary" onClick={handleOpenThemeEditor}>
-                {t("Activate plugin")}
-              </Button>
-            </a>
+            <Button type="primary" onClick={handleOpenThemeEditor}>
+              {t("Activate plugin")}
+            </Button>
           </div>
           <p
             style={{
