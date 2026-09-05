@@ -21,6 +21,10 @@ export const appColors = {
   text: "var(--app-color-text)",
   textSecondary: "var(--app-color-text-secondary)",
   textTertiary: "var(--app-color-text-tertiary)",
+  textInfo: "var(--app-color-text-info)",
+  textSuccess: "var(--app-color-text-success)",
+  textCaution: "var(--app-color-text-caution)",
+  textCritical: "var(--app-color-text-critical)",
 } as const;
 
 export const appAccents = {

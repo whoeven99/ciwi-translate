@@ -1,4 +1,3 @@
-import { TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import { Space, Select, Typography, Flex } from "antd";
 import Button from "~/ui/components/AppButton";
@@ -29,6 +28,9 @@ import { shouldRevalidateManageTranslation } from "~/lib/routeShouldRevalidate";
 import { onTranslationStatsUpdated } from "~/lib/translationStatsSync";
 import { sameTranslationLocale } from "~/server/translateV4/locale";
 import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import {
   type ClientLogTrace,
@@ -225,6 +227,7 @@ const Index = () => {
   const { searchTerm } = useLoaderData<typeof loader>();
 
   const { t } = useTranslation();
+  const homeBackAction = useAppHomeBackAction();
 
   const { reportClick } = useReport();
 
@@ -552,7 +555,7 @@ const Index = () => {
 
   return (
     <Page>
-      <TitleBar title={t("Manage Translation")} />
+      <AppSubpageTitleBar title={t("Manage Translation")} />
       <ScrollNotice
         text={t(
           "Welcome to our app! If you have any questions, feel free to email us at support@ciwi.ai, and we will respond as soon as possible.",
@@ -566,7 +569,10 @@ const Index = () => {
               size="middle"
               style={{ display: "flex" }}
             >
-              <AppPageHeader title={t("Manage Translation")} />
+              <AppPageHeader
+                title={t("Manage Translation")}
+                backAction={homeBackAction}
+              />
               <AppSectionCard bodyPadding="16px">
                 <div className="manage-header">
                   <div className="manage-header-left">

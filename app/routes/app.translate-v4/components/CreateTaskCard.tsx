@@ -566,7 +566,7 @@ function checkboxCardStyle(selected: boolean): CSSProperties {
     borderRadius: 12,
     border: "none",
     background: selected ? "rgba(46, 125, 246, 0.10)" : v4Colors.cardSubdued,
-    color: selected ? v4Colors.primary : v4Colors.text,
+    color: selected ? v4Colors.info : v4Colors.text,
     fontSize: 13,
     fontWeight: selected ? 600 : 500,
     lineHeight: 1.35,

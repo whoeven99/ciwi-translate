@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useLocation, useNavigate, useSearchParams } from "@remix-run/react";
-import { TitleBar } from "@shopify/app-bridge-react";
-import { BlockStack, Button, Page, Text } from "@shopify/polaris";
+import { BlockStack, Page } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
 import { message } from "~/ui/message";
+import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import { authenticate } from "~/shopify.server";
 import type { RootState } from "~/store";
 import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
@@ -99,6 +102,7 @@ export default function TranslateV4MvpCustomRoute() {
   const { t } = useTranslation();
   const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const homeBackAction = useAppHomeBackAction();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const plan = useSelector((state: RootState) => state.userConfig.plan);
@@ -380,26 +384,14 @@ export default function TranslateV4MvpCustomRoute() {
 
   return (
     <Page>
-      <TitleBar title={t("v4Mvp.customPage.title")} />
+      <AppSubpageTitleBar title={t("v4Mvp.customPage.title")} />
       <div style={v4ContentStyle}>
         <BlockStack gap="500">
-          <BlockStack gap="200">
-            <div>
-              <Button
-                variant="plain"
-                size="slim"
-                onClick={() => navigate("/app/translate-v4-mvp")}
-              >
-                {t("v4.back")}
-              </Button>
-            </div>
-            <Text as="h1" variant="headingLg">
-              {t("v4Mvp.customPage.title")}
-            </Text>
-            <Text as="p" tone="subdued" variant="bodyMd">
-              {t("v4Mvp.customPage.subtitle")}
-            </Text>
-          </BlockStack>
+          <AppPageHeader
+            title={t("v4Mvp.customPage.title")}
+            description={t("v4Mvp.customPage.subtitle")}
+            backAction={homeBackAction}
+          />
 
           <CreateTaskCard
             targetOptions={targetOptions}

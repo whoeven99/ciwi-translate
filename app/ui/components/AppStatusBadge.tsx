@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { appColors } from "~/ui/tokens";
 
 type AppStatusTone = "neutral" | "info" | "success" | "caution" | "critical";
 
@@ -10,29 +11,29 @@ interface AppStatusBadgeProps {
 
 const toneStyles: Record<AppStatusTone, CSSProperties> = {
   neutral: {
-    background: "var(--p-color-bg-surface-secondary)",
-    color: "var(--app-color-text-secondary)",
-    border: "1px solid var(--app-color-border-secondary)",
+    background: appColors.surfaceSecondary,
+    color: appColors.text,
+    border: `1px solid ${appColors.borderSecondary}`,
   },
   info: {
-    background: "var(--p-color-bg-surface-info)",
-    color: "var(--p-color-text-info)",
-    border: "1px solid rgba(84, 103, 255, 0.18)",
+    background: appColors.surfaceInfo,
+    color: appColors.textInfo,
+    border: "1px solid transparent",
   },
   success: {
-    background: "var(--p-color-bg-surface-success)",
-    color: "var(--p-color-text-success)",
-    border: "1px solid rgba(29, 154, 127, 0.18)",
+    background: appColors.surfaceSuccess,
+    color: appColors.textSuccess,
+    border: "1px solid transparent",
   },
   caution: {
-    background: "var(--p-color-bg-surface-caution)",
-    color: "var(--p-color-text-caution)",
-    border: "1px solid rgba(200, 139, 36, 0.2)",
+    background: appColors.surfaceCaution,
+    color: appColors.textCaution,
+    border: "1px solid transparent",
   },
   critical: {
-    background: "var(--p-color-bg-surface-critical)",
-    color: "var(--p-color-text-critical)",
-    border: "1px solid rgba(208, 77, 95, 0.2)",
+    background: appColors.surfaceCritical,
+    color: appColors.textCritical,
+    border: "1px solid transparent",
   },
 };
 

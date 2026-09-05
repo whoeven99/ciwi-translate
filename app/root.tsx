@@ -576,6 +576,7 @@ export const Head = createHead(() => (
       rel="stylesheet"
       href="https://cdn.shopify.com/static/fonts/inter/v4/styles.css"
     />
+    <script src="https://cdn.shopify.com/shopifycloud/polaris-1.js" />
     <Meta />
     <Links />
   </>

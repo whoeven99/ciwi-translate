@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Button } from "@shopify/polaris";
 import { useFetcher, useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { v4Colors } from "../v4Styles";
 import {
   AI_MODEL_OPTIONS,
@@ -94,24 +95,8 @@ export function CreateTaskConfirmModal({
   useEffect(() => {
     if (!open) {
       resetDetailed();
-      return;
     }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !creating && !detailedRunning) {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open, creating, onClose, resetDetailed, detailedRunning]);
+  }, [open, resetDetailed]);
 
   useEffect(() => {
     if (!open) return;
@@ -302,8 +287,6 @@ export function CreateTaskConfirmModal({
         : isTrialOffer
           ? t("v4.createTask.confirmViewPlans")
         : null;
-  const showTrialTextLink =
-    isTrialOffer && !canStartPartial && secondaryActionLabel != null;
 
   const buildReturnPathForPlan = () => {
     if (typeof window === "undefined") return undefined;
@@ -452,34 +435,33 @@ export function CreateTaskConfirmModal({
     });
   };
 
-  if (!open) return null;
+  const actionsBusy = creating || planFetcher.state === "submitting";
 
   return (
-    <div
-      aria-modal="true"
-      role="dialog"
-      style={overlayStyle}
-      onClick={() => {
-        if (!creating && !detailedRunning) onClose();
+    <AppSModal
+      open={open}
+      heading={scenarioMeta.title}
+      onClose={onClose}
+      size="large"
+      primaryAction={{
+        content: primaryActionLabel,
+        onAction: handlePrimaryAction,
+        loading: actionsBusy,
+        disabled: detailedRunning,
       }}
+      secondaryActions={
+        secondaryActionLabel
+          ? [
+              {
+                content: secondaryActionLabel,
+                onAction: handleSecondaryAction,
+                disabled: creating,
+              },
+            ]
+          : []
+      }
     >
-      <div style={panelStyle} onClick={(event) => event.stopPropagation()}>
-        <div style={headerStyle}>
-          <div style={headerCopyStyle}>
-            <div style={titleStyle}>{scenarioMeta.title}</div>
-          </div>
-          <button
-            type="button"
-            aria-label={t("Close")}
-            onClick={onClose}
-            disabled={creating || detailedRunning}
-            style={closeButtonStyle}
-          >
-            ×
-          </button>
-        </div>
-
-        <div style={bodyStyle}>
+      <div style={bodyStyle}>
           <section style={estimateSectionStyle}>
             <div style={estimateSectionTitleStyle}>
               {t("v4.createTask.confirmEstimatePanelTitle")}
@@ -574,55 +556,7 @@ export function CreateTaskConfirmModal({
             </InfoCard>
           ) : null}
         </div>
-
-        <div
-          style={{
-            ...footerStyle,
-            flexDirection: showTrialTextLink ? "column" : "row",
-            alignItems: "center",
-          }}
-        >
-          <div
-            style={{
-              ...primaryButtonStyle,
-              width: showTrialTextLink ? 240 : undefined,
-            }}
-          >
-            <Button
-              fullWidth
-              size="large"
-              variant="primary"
-              onClick={handlePrimaryAction}
-              loading={creating || planFetcher.state === "submitting"}
-            >
-              {primaryActionLabel}
-            </Button>
-          </div>
-          {showTrialTextLink ? (
-            <button
-              type="button"
-              onClick={handleSecondaryAction}
-              disabled={creating}
-              style={footerTextLinkStyle}
-            >
-              {secondaryActionLabel}
-            </button>
-          ) : secondaryActionLabel ? (
-            <div style={secondaryButtonStyle}>
-              <Button
-                fullWidth
-                size="large"
-                variant="secondary"
-                onClick={handleSecondaryAction}
-                disabled={creating}
-              >
-                {secondaryActionLabel}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
+    </AppSModal>
   );
 }
 
@@ -838,85 +772,10 @@ function summarizeCompactLine(items: string[], t: TranslateFn): string {
   });
 }
 
-const overlayStyle = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 2147483100,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 28,
-  background: "rgba(15, 23, 42, 0.36)",
-  backdropFilter: "blur(8px)",
-} as const;
-
-const panelStyle = {
-  width: "min(520px, calc(100vw - 32px))",
-  maxHeight: "min(820px, calc(100vh - 32px))",
-  overflow: "hidden",
-  borderRadius: 28,
-  border: `1px solid ${v4Colors.cardBorder}`,
-  background: v4Colors.cardBg,
-  boxShadow: "0 24px 80px rgba(15, 23, 42, 0.18)",
-  display: "flex",
-  flexDirection: "column",
-} as const;
-
-const headerStyle = {
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: 16,
-  padding: "28px 28px 10px",
-} as const;
-
-const headerCopyStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 10,
-  minWidth: 0,
-} as const;
-
 const bodyStyle = {
   display: "flex",
   flexDirection: "column",
   gap: 16,
-  padding: "0 28px",
-  overflowY: "auto",
-} as const;
-
-const footerStyle = {
-  display: "flex",
-  justifyContent: "center",
-  gap: 0,
-  padding: "22px 28px 28px",
-  background: v4Colors.cardBg,
-  flexWrap: "wrap",
-} as const;
-
-const titleStyle = {
-  margin: 0,
-  fontSize: 28,
-  fontWeight: 700,
-  lineHeight: 1.15,
-  color: v4Colors.text,
-} as const;
-
-const closeButtonStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 36,
-  height: 36,
-  padding: 0,
-  border: "none",
-  borderRadius: 999,
-  background: "rgba(15, 23, 42, 0.04)",
-  color: v4Colors.textMuted,
-  fontSize: 22,
-  lineHeight: 1,
-  cursor: "pointer",
-  flexShrink: 0,
 } as const;
 
 const cardStyle = {
@@ -1103,27 +962,4 @@ const offerFeatureNoteStyle = {
   fontSize: 12,
   fontWeight: 500,
   lineHeight: "18px",
-} as const;
-
-const primaryButtonStyle = {
-  minWidth: 184,
-  minHeight: 48,
-  paddingInline: 18,
-} as const;
-
-const secondaryButtonStyle = {
-  minWidth: 184,
-  minHeight: 48,
-  paddingInline: 18,
-} as const;
-
-const footerTextLinkStyle = {
-  border: "none",
-  background: "transparent",
-  padding: 0,
-  color: v4Colors.textMuted,
-  fontSize: 13,
-  fontWeight: 600,
-  lineHeight: "20px",
-  cursor: "pointer",
 } as const;

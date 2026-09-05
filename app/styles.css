@@ -17,34 +17,39 @@
   --app-color-text: var(--p-color-text);
   --app-color-text-secondary: var(--p-color-text-secondary);
   --app-color-text-tertiary: var(--p-color-text-tertiary);
+  /* 着色文案必须走 Polaris 语义 text token（WCAG AA ≥4.5:1），不要用 accent fill 当字色 */
+  --app-color-text-info: var(--p-color-text-info);
+  --app-color-text-success: var(--p-color-text-success);
+  --app-color-text-caution: var(--p-color-text-caution);
+  --app-color-text-critical: var(--p-color-text-critical);
   --app-color-brand: var(--app-accent-primary);
   --app-color-brand-on-fill: #ffffff;
-  --app-accent-primary: #5467ff;
-  --app-accent-primary-hover: #4254e8;
+  --app-accent-primary: #4254e8;
+  --app-accent-primary-hover: #3540c4;
   --app-accent-primary-deep: #2d3572;
-  --app-accent-primary-soft: rgba(84, 103, 255, 0.12);
-  --app-accent-primary-muted: rgba(84, 103, 255, 0.08);
-  --app-accent-growth: #1d9a7f;
-  --app-accent-growth-soft: rgba(29, 154, 127, 0.12);
-  --app-accent-utility: #c88b24;
-  --app-accent-utility-soft: rgba(200, 139, 36, 0.14);
-  --app-accent-critical: #d04d5f;
-  --app-accent-critical-soft: rgba(208, 77, 95, 0.12);
+  --app-accent-primary-soft: rgba(66, 84, 232, 0.12);
+  --app-accent-primary-muted: rgba(66, 84, 232, 0.08);
+  --app-accent-growth: #146c59;
+  --app-accent-growth-soft: rgba(20, 108, 89, 0.12);
+  --app-accent-utility: #7f5817;
+  --app-accent-utility-soft: rgba(127, 88, 23, 0.14);
+  --app-accent-critical: #a13c4a;
+  --app-accent-critical-soft: rgba(161, 60, 74, 0.12);
   --app-surface-brand-soft: linear-gradient(
       180deg,
-      rgba(84, 103, 255, 0.08) 0%,
+      rgba(66, 84, 232, 0.08) 0%,
       rgba(255, 255, 255, 0.96) 100%
     ),
     var(--app-color-surface);
   --app-surface-growth-soft: linear-gradient(
       180deg,
-      rgba(29, 154, 127, 0.08) 0%,
+      rgba(20, 108, 89, 0.08) 0%,
       rgba(255, 255, 255, 0.96) 100%
     ),
     var(--app-color-surface);
   --app-surface-utility-soft: linear-gradient(
       180deg,
-      rgba(200, 139, 36, 0.08) 0%,
+      rgba(127, 88, 23, 0.08) 0%,
       rgba(255, 255, 255, 0.96) 100%
     ),
     var(--app-color-surface);
@@ -81,9 +86,6 @@ body {
   color: var(--app-color-text);
   font-size: var(--app-font-size-body);
   line-height: 1.5;
-  /* 覆盖 Polaris 原生品牌色，统一为紫色 */
-  --p-color-bg-fill-brand: #5467ff;
-  --p-color-text-brand-on-bg-fill: #ffffff;
 }
 
 .app-button.ant-btn {
@@ -130,16 +132,21 @@ body {
 }
 
 .app-button.ant-btn-primary {
-  background: var(--app-accent-primary);
-  border-color: var(--app-accent-primary);
-  color: var(--app-color-brand-on-fill);
+  background: var(--p-color-bg-fill-brand);
+  border-color: var(--p-color-bg-fill-brand);
+  color: var(--p-color-text-brand-on-bg-fill, var(--app-color-brand-on-fill));
 }
 
-.app-button.ant-btn-primary:not(:disabled):hover,
+.app-button.ant-btn-primary:not(:disabled):hover {
+  background: var(--p-color-bg-fill-brand-hover);
+  border-color: var(--p-color-bg-fill-brand-hover);
+  color: var(--p-color-text-brand-on-bg-fill, var(--app-color-brand-on-fill));
+}
+
 .app-button.ant-btn-primary:not(:disabled):active {
-  background: var(--app-accent-primary-hover);
-  border-color: var(--app-accent-primary-hover);
-  color: var(--app-color-brand-on-fill);
+  background: var(--p-color-bg-fill-brand-active);
+  border-color: var(--p-color-bg-fill-brand-active);
+  color: var(--p-color-text-brand-on-bg-fill, var(--app-color-brand-on-fill));
 }
 
 .app-button.ant-btn-text,
@@ -239,7 +246,7 @@ body {
 }
 
 .app-metric-block__label {
-  color: var(--app-color-text-tertiary);
+  color: var(--app-color-text-secondary);
   font-size: var(--app-font-size-caption);
   line-height: 16px;
   margin-bottom: 8px;
@@ -433,20 +440,13 @@ body {
    ========================================================================= */
 
 .v4-page {
-  --v4-accent-primary: #6366f1;
-  --v4-accent-primary-hover: #4f46e5;
-  --v4-accent-primary-deep: #4338ca;
-  --v4-accent-primary-soft: rgba(99, 102, 241, 0.12);
-  --v4-accent-primary-muted: rgba(99, 102, 241, 0.08);
+  /* 靛蓝同时用于字色（Tab / link），须 ≥4.5:1；#6366f1 对白底约 4.47 不达标 */
+  --v4-accent-primary: #4f46e5;
+  --v4-accent-primary-hover: #4338ca;
+  --v4-accent-primary-deep: #3730a3;
+  --v4-accent-primary-soft: rgba(79, 70, 229, 0.12);
+  --v4-accent-primary-muted: rgba(79, 70, 229, 0.08);
   --v4-ring-track: #eef2ff;
-  /* Polaris Primary 按钮与圆环共用 v4 靛蓝，避免仍走全局 #5467ff */
-  --p-color-bg-fill-brand: var(--v4-accent-primary);
-  --p-color-bg-fill-brand-hover: var(--v4-accent-primary-hover);
-  --p-color-bg-fill-brand-active: var(--v4-accent-primary-deep);
-  --p-color-border-brand: var(--v4-accent-primary);
-  --p-color-border-brand-hover: var(--v4-accent-primary-hover);
-  --p-color-text-brand: var(--v4-accent-primary);
-  --p-color-text-brand-hover: var(--v4-accent-primary-hover);
 }
 
 .v4-page .ant-tabs-ink-bar {
@@ -476,14 +476,20 @@ body {
   padding-inline: 16px;
   border-radius: 10px;
   font-weight: 600;
-  color: var(--app-color-brand-on-fill) !important;
-  background: var(--v4-accent-primary, var(--app-accent-primary)) !important;
-  border-color: var(--v4-accent-primary, var(--app-accent-primary)) !important;
+  color: var(--p-color-text-brand-on-bg-fill, var(--app-color-brand-on-fill)) !important;
+  background: var(--p-color-bg-fill-brand) !important;
+  border-color: var(--p-color-bg-fill-brand) !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .v4-create-task-card__submit.ant-btn-primary:not(:disabled):hover {
-  color: var(--app-color-brand-on-fill) !important;
-  background: var(--v4-accent-primary-hover, var(--app-accent-primary-hover)) !important;
-  border-color: var(--v4-accent-primary-hover, var(--app-accent-primary-hover)) !important;
+  color: var(--p-color-text-brand-on-bg-fill, var(--app-color-brand-on-fill)) !important;
+  background: var(--p-color-bg-fill-brand-hover) !important;
+  border-color: var(--p-color-bg-fill-brand-hover) !important;
+}
+
+.v4-create-task-card__submit.ant-btn-primary:not(:disabled):active {
+  color: var(--p-color-text-brand-on-bg-fill, var(--app-color-brand-on-fill)) !important;
+  background: var(--p-color-bg-fill-brand-active) !important;
+  border-color: var(--p-color-bg-fill-brand-active) !important;
 }

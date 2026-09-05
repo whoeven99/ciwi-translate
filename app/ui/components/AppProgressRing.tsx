@@ -92,13 +92,13 @@ export default function AppProgressRing({
       >
         <span
           style={{
-            fontSize: size >= 120 ? 28 : size >= 80 ? 22 : 12,
+            fontSize: size >= 120 ? 28 : size >= 80 ? 22 : size >= 56 ? 16 : 12,
             fontWeight: 700,
             letterSpacing: "-0.03em",
             lineHeight: 1,
             color: appColors.text,
             fontFamily:
-              size < 80
+              size < 56
                 ? "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
                 : undefined,
           }}

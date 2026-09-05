@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { TitleBar } from "@shopify/app-bridge-react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
-import { BlockStack, Button, Page, Text } from "@shopify/polaris";
+import { useLoaderData, useSearchParams } from "@remix-run/react";
+import { BlockStack, Page, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import { message } from "~/ui/message";
 import { authenticate } from "~/shopify.server";
 import {
@@ -45,7 +47,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function AppTranslateV4History() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { shop, jobs: initialJobs } = useLoaderData<typeof loader>();
   const [jobs, setJobs] = useState<TranslationJobProgressSummary[]>(initialJobs);
@@ -61,6 +62,7 @@ export default function AppTranslateV4History() {
     }
     return value;
   }, [searchParams]);
+  const historyBackAction = useAppHomeBackAction(returnTo);
 
   const refreshList = useCallback(async () => {
     const res = await fetch(
@@ -157,25 +159,18 @@ export default function AppTranslateV4History() {
 
   return (
     <div style={v4PageStyle}>
-      <TitleBar
+      <AppSubpageTitleBar
         title={t("v4.tasks.historyPageTitle", { count: historyJobs.length })}
+        parentUrl={returnTo}
       />
       <Page>
         <div style={v4ContentStyle}>
           <BlockStack gap="200">
-            <div>
-              <Button
-                variant="plain"
-                size="slim"
-                onClick={() => navigate(returnTo)}
-              >
-                {t("v4.back")}
-              </Button>
-            </div>
             <AppPageHeader
               style={{ marginBottom: 18 }}
               title={t("v4.tasks.historyPageTitle", { count: historyJobs.length })}
               description={t("v4.tasks.historyHelper")}
+              backAction={historyBackAction}
             />
           </BlockStack>
 
