@@ -1249,7 +1249,7 @@ export default function TranslateV4MvpRoute() {
                       </Text>
                     ) : null}
                     <Button
-                      variant="primary"
+                      variant="secondary"
                       disabled={isCoverageInitializing}
                       onClick={() => setCoverageDetailOpen(true)}
                     >

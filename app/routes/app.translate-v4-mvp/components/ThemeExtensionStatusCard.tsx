@@ -110,13 +110,13 @@ function StatusCardActions({
       <InlineStack gap="200" wrap>
         {themeEditorUrl ? (
           <Button
-            variant="primary"
+            variant="secondary"
             onClick={() => openSwitcherThemeEditor(themeEditorUrl)}
           >
             {t("v4Mvp.themeExtension.disable")}
           </Button>
         ) : null}
-        <Button variant="primary" onClick={onManage}>
+        <Button variant="secondary" onClick={onManage}>
           {t("v4Mvp.themeExtension.manage")}
         </Button>
       </InlineStack>
@@ -126,7 +126,7 @@ function StatusCardActions({
   if (themeEditorUrl) {
     return (
       <Button
-        variant="primary"
+        variant="secondary"
         onClick={() => openSwitcherThemeEditor(themeEditorUrl)}
       >
         {t("v4Mvp.themeExtension.enable")}
@@ -135,7 +135,7 @@ function StatusCardActions({
   }
 
   return (
-    <Button variant="primary" onClick={onManage}>
+    <Button variant="secondary" onClick={onManage}>
       {t("v4Mvp.themeExtension.manage")}
     </Button>
   );
