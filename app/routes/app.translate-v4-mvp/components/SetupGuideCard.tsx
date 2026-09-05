@@ -93,29 +93,68 @@ const stepRowStyle: CSSProperties = {
   minWidth: 0,
 };
 
-const filledIconStyle: CSSProperties = {
+const taskStatusIconStyle: CSSProperties = {
   width: 20,
   height: 20,
-  borderRadius: 9999,
-  background: appColors.text,
-  color: appColors.surface,
-  fontSize: 11,
-  fontWeight: 700,
-  lineHeight: "20px",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
   flexShrink: 0,
+  display: "block",
 };
 
-const dashedIconStyle: CSSProperties = {
-  width: 20,
-  height: 20,
-  borderRadius: 9999,
-  border: `1.5px dashed ${appColors.textTertiary}`,
-  flexShrink: 0,
-  boxSizing: "border-box",
-};
+function polarPoint(cx: number, cy: number, r: number, deg: number) {
+  const rad = ((deg - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function buildDashedCirclePaths() {
+  const cx = 10;
+  const cy = 10;
+  const r = 7.25;
+  const sweep = 20;
+  return Array.from({ length: 8 }, (_, i) => {
+    const mid = i * 45;
+    const start = polarPoint(cx, cy, r, mid - sweep / 2);
+    const end = polarPoint(cx, cy, r, mid + sweep / 2);
+    return `M ${start.x.toFixed(3)} ${start.y.toFixed(3)} A ${r} ${r} 0 0 1 ${end.x.toFixed(3)} ${end.y.toFixed(3)}`;
+  });
+}
+
+const DASHED_CIRCLE_PATHS = buildDashedCirclePaths();
+
+function TaskStatusIcon({ complete }: { complete: boolean }) {
+  return (
+    <svg
+      style={taskStatusIconStyle}
+      viewBox="0 0 20 20"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {complete ? (
+        <>
+          <circle cx="10" cy="10" r="10" fill={appColors.text} />
+          <path
+            d="M5.6 10.3 L8.6 13.4 L14.5 6.8"
+            fill="none"
+            stroke={appColors.surface}
+            strokeWidth="2.15"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </>
+      ) : (
+        DASHED_CIRCLE_PATHS.map((d) => (
+          <path
+            key={d}
+            d={d}
+            fill="none"
+            stroke={appColors.textTertiary}
+            strokeWidth="2.35"
+            strokeLinecap="round"
+          />
+        ))
+      )}
+    </svg>
+  );
+}
 
 const stepMarkStyle = (done: boolean): CSSProperties => ({
   width: 16,
@@ -268,13 +307,7 @@ function TaskBlock({
         aria-controls={id}
         onClick={onToggle}
       >
-        {complete ? (
-          <span style={filledIconStyle} aria-hidden>
-            ✓
-          </span>
-        ) : (
-          <span style={dashedIconStyle} aria-hidden />
-        )}
+        <TaskStatusIcon complete={complete} />
         <Text as="span" variant="headingSm">
           {title}
         </Text>
