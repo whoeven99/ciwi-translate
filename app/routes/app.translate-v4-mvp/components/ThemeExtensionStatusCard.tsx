@@ -20,7 +20,7 @@ export function ThemeExtensionStatusCard({
   shop,
   ciwiSwitcherId,
   status,
-  bodyPadding = "20px 24px",
+  bodyPadding = "12px 16px",
 }: ThemeExtensionStatusCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();

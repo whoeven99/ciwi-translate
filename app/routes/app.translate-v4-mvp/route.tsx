@@ -1179,40 +1179,58 @@ export default function TranslateV4MvpRoute() {
           <div style={summaryHeroGridStyle}>
             <div style={summaryHeroItemStyle}>
               <AppSectionCard
+                title={t("v4Mvp.coverageCard.title")}
                 bodyPadding={HERO_CARD_PADDING}
                 style={summaryHeroCardShellStyle}
               >
-                <div style={summaryHeroLayoutStyle}>
-                  <div style={summaryProgressWrapStyle}>
-                    <AppProgressRing
-                      percent={
-                        isCoverageInitializing
-                          ? null
-                          : hasCoverageData
-                            ? coverage.overallPercent
-                            : null
-                      }
-                      size={96}
-                      loading={isCoverageInitializing || !hasCoverageData}
-                    />
+                <div style={summaryHeroBodyStyle}>
+                  <div style={summaryHeroLayoutStyle}>
+                    <div style={summaryProgressWrapStyle}>
+                      <AppProgressRing
+                        percent={
+                          isCoverageInitializing
+                            ? null
+                            : hasCoverageData
+                              ? coverage.overallPercent
+                              : null
+                        }
+                        size={80}
+                        loading={isCoverageInitializing || !hasCoverageData}
+                      />
+                    </div>
+
+                    <div style={summaryContentStyle}>
+                      <Text as="p" variant="bodyMd">
+                        {isCoverageInitializing
+                          ? t("v4Mvp.coverageCard.summaryComputing", {
+                              defaultValue:
+                                "Store translation status is being calculated...",
+                            })
+                          : t("v4Mvp.coverageCard.summary", {
+                              percent: hasCoverageData
+                                ? `${coverage.overallPercent ?? 0}%`
+                                : "—",
+                            })}
+                      </Text>
+                      {isCoverageInitializing ? (
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          {t("v4Mvp.coverageCard.descriptionComputing", {
+                            defaultValue:
+                              "We are scanning your store content and will show overall coverage once the first calculation finishes.",
+                          })}
+                        </Text>
+                      ) : hasCoverageData && coverage.totalItems > 0 ? (
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          {t("v4Mvp.overview.progress", {
+                            translated: coverage.translatedItems.toLocaleString(),
+                            total: coverage.totalItems.toLocaleString(),
+                          })}
+                        </Text>
+                      ) : null}
+                    </div>
                   </div>
 
-                  <div style={summaryContentStyle}>
-                    <Text as="h3" variant="bodySm" tone="subdued">
-                      {t("v4Mvp.coverageCard.title")}
-                    </Text>
-                    <Text as="p" variant="headingSm">
-                      {isCoverageInitializing
-                        ? t("v4Mvp.coverageCard.summaryComputing", {
-                            defaultValue:
-                              "Store translation status is being calculated...",
-                          })
-                        : t("v4Mvp.coverageCard.summary", {
-                            percent: hasCoverageData
-                              ? `${coverage.overallPercent ?? 0}%`
-                              : "—",
-                          })}
-                    </Text>
+                  <div style={summaryHeroFooterStyle}>
                     <InlineStack gap="150" blockAlign="center" wrap>
                       <AppStatusBadge
                         tone={
@@ -1233,21 +1251,6 @@ export default function TranslateV4MvpRoute() {
                         </Text>
                       ) : null}
                     </InlineStack>
-                    {isCoverageInitializing ? (
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {t("v4Mvp.coverageCard.descriptionComputing", {
-                          defaultValue:
-                            "We are scanning your store content and will show overall coverage once the first calculation finishes.",
-                        })}
-                      </Text>
-                    ) : hasCoverageData && coverage.totalItems > 0 ? (
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {t("v4Mvp.overview.progress", {
-                          translated: coverage.translatedItems.toLocaleString(),
-                          total: coverage.totalItems.toLocaleString(),
-                        })}
-                      </Text>
-                    ) : null}
                     <Button
                       variant="secondary"
                       disabled={isCoverageInitializing}
@@ -1752,7 +1755,7 @@ const coveragePercentWrapStyle = {
   textAlign: "right",
 } satisfies CSSProperties;
 
-const HERO_CARD_PADDING = "20px 24px";
+const HERO_CARD_PADDING = "12px 16px";
 
 const summaryHeroGridStyle = {
   display: "flex",
@@ -1778,6 +1781,14 @@ const summaryHeroCardShellStyle = {
   boxShadow: "var(--app-shadow-card)",
 } satisfies CSSProperties;
 
+const summaryHeroBodyStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+  flex: 1,
+  minHeight: 0,
+} satisfies CSSProperties;
+
 const videoPreviewLayerStyle = {
   display: "block",
   overflow: "hidden",
@@ -1786,7 +1797,7 @@ const videoPreviewLayerStyle = {
   textDecoration: "none",
   background: "#0f172a",
   flex: 1,
-  minHeight: "120px",
+  minHeight: "72px",
   height: "100%",
 } satisfies CSSProperties;
 
@@ -1794,19 +1805,15 @@ const summaryHeroLayoutStyle = {
   display: "flex",
   alignItems: "center",
   flexWrap: "wrap",
-  gap: "16px",
+  gap: "12px",
   width: "100%",
-  flex: 1,
-  minHeight: 0,
 } satisfies CSSProperties;
 
 const summaryContentStyle = {
   minWidth: 0,
-  flex: "1 1 160px",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "flex-start",
-  gap: "8px",
+  flex: "1 1 140px",
+  display: "grid",
+  gap: "4px",
 } satisfies CSSProperties;
 
 const summaryProgressWrapStyle = {
@@ -1816,11 +1823,20 @@ const summaryProgressWrapStyle = {
   flexShrink: 0,
 } satisfies CSSProperties;
 
+const summaryHeroFooterStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+  flexWrap: "wrap",
+  marginTop: "auto",
+} satisfies CSSProperties;
+
 const videoPreviewSurfaceStyle = {
   position: "relative",
   width: "100%",
   height: "100%",
-  minHeight: "120px",
+  minHeight: "72px",
   overflow: "hidden",
   background: "#0f172a",
 } satisfies CSSProperties;
@@ -1828,7 +1844,7 @@ const videoPreviewSurfaceStyle = {
 const videoPreviewImageStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "120px",
+  minHeight: "72px",
   display: "block",
   objectFit: "cover",
 } satisfies CSSProperties;
@@ -1882,7 +1898,7 @@ const videoPreviewCaptionTextStyle = {
 const videoPreviewFallbackStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "120px",
+  minHeight: "72px",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
