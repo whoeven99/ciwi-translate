@@ -1092,7 +1092,7 @@ create-task 编排成一条「店铺理解 → 推荐 → 试用/建首个任务
 
 BFS 4.2.2 首页 Setup Guide（Polaris 折叠清单）在 `/app/translate-v4-mvp`，与本全页引导
 相互独立。三项：批量翻译、术语表、第三方 App（主题 embed + Custom Liquid）。X 只藏本次访问，
-不写 `setupGuideDismissedAt`；三项都完成则整卡不再出现。批量翻译 / Liquid CTA 进
+不写 `setupGuideDismissedAt`；三项都完成则整卡不再出现。展开区为说明 + 未完成子步骤蓝链接（右侧 P0 留空）；批量翻译 / Liquid 链接进
 `/app/translate-v4-mvp-custom`；推荐卡片「立即翻译」仍走一键确认弹窗。
 
 Core files:
@@ -1368,7 +1368,7 @@ For "合入PR然后发布测试环境", the script will:
 | NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
 | 上下文保存栏离开拦截（BFS 4.1.5） | `app/hooks/useContextualSaveBar.ts`                   | `app/lib/saveBarNavigation.ts`、`app.switcher/route.tsx`、`AppSubpageTitleBar`                           |
 | 主题扩展状态 / BFS 4.2.3          | `app/lib/themeAppExtensions.ts`                       | mvp `ThemeExtensionStatusCard`、switcher `switcherSettingCard`、`shopify.app.extensions()`；打开主题编辑器用 `openSwitcherThemeEditor`（`_top`），不要用 Polaris `Button url`（会把 iframe 带到不可嵌入的 Admin） |
-| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`（Polaris `Collapsible`）、`shouldAutoDismissSetupGuide`、`app/server/setupGuide.server.ts`（glossary count）；X 仅本次访问；完成条件：v4 任务 / 术语表 / embed+CUSTOM_LIQUID；推荐卡片「立即翻译」仍一键确认 |
+| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`（Polaris `Collapsible`；展开区说明 + 子步骤蓝链接）、`shouldAutoDismissSetupGuide`、`app/server/setupGuide.server.ts`（glossary count）；X 仅本次访问；完成条件：v4 任务 / 术语表 / embed+CUSTOM_LIQUID；推荐卡片「立即翻译」仍一键确认 |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
 | Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslate.server.ts`, translation-core `syncTranslate.ts` / `llmTranslate.ts`, quota guard       |

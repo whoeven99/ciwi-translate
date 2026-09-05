@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { Badge, Button, Collapsible, Icon, Text } from "@shopify/polaris";
+import { Badge, Button, Collapsible, Icon, Link, Text } from "@shopify/polaris";
 import { CheckIcon, XIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
@@ -63,26 +63,31 @@ const taskHeaderButtonStyle: CSSProperties = {
   textAlign: "left",
 };
 
-const stepsBoxStyle: CSSProperties = {
+const expandedPanelStyle: CSSProperties = {
   marginLeft: 28,
   marginBottom: 8,
-  padding: "12px 16px",
+  padding: "16px",
   borderRadius: 8,
   background: appColors.surfaceSecondary,
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.2fr) minmax(80px, 0.8fr)",
+  gap: 16,
+  alignItems: "start",
+};
+
+const expandedMainStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 8,
+  minWidth: 0,
+};
+
+const expandedMediaStyle: CSSProperties = {
+  minHeight: 72,
 };
 
 const stepRowStyle: CSSProperties = {
   display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-};
-
-const stepLabelStyle: CSSProperties = {
-  display: "inline-flex",
   alignItems: "flex-start",
   gap: 8,
   minWidth: 0,
@@ -145,6 +150,14 @@ export function SetupGuideCard({
     setExpandedId((current) => (current === id ? null : id));
   };
 
+  const openThemeEditor = () => {
+    if (themeEditorUrl) {
+      openSwitcherThemeEditor(themeEditorUrl);
+      return;
+    }
+    navigate(APP_NAV_ITEMS.switcher);
+  };
+
   return (
     <div style={{ ...v4CardStyle, padding: "20px 24px" }}>
       <div style={cardBodyStyle}>
@@ -174,29 +187,18 @@ export function SetupGuideCard({
             complete={state.translate.complete}
             expanded={expandedId === "translate"}
             title={t("v4Mvp.setupGuide.translate.title")}
+            description={t("v4Mvp.setupGuide.translate.description")}
             onToggle={() => toggleTask("translate")}
           >
             <StepRow
               done={state.translate.steps.clickTranslate}
               label={t("v4Mvp.setupGuide.translate.step1")}
-              action={
-                state.translate.steps.clickTranslate ? null : (
-                  <Button size="slim" onClick={onStartTranslate}>
-                    {t("v4Mvp.setupGuide.translate.ctaTranslate")}
-                  </Button>
-                )
-              }
+              onActivate={onStartTranslate}
             />
             <StepRow
               done={state.translate.steps.configureTask}
               label={t("v4Mvp.setupGuide.translate.step2")}
-              action={
-                state.translate.steps.configureTask ? null : (
-                  <Button size="slim" onClick={onConfigureTask}>
-                    {t("v4Mvp.setupGuide.translate.ctaConfigure")}
-                  </Button>
-                )
-              }
+              onActivate={onConfigureTask}
             />
           </TaskBlock>
 
@@ -205,18 +207,13 @@ export function SetupGuideCard({
             complete={state.glossary.complete}
             expanded={expandedId === "glossary"}
             title={t("v4Mvp.setupGuide.glossary.title")}
+            description={t("v4Mvp.setupGuide.glossary.description")}
             onToggle={() => toggleTask("glossary")}
           >
             <StepRow
               done={state.glossary.steps.addRule}
               label={t("v4Mvp.setupGuide.glossary.step1")}
-              action={
-                state.glossary.steps.addRule ? null : (
-                  <Button size="slim" onClick={() => navigate(APP_NAV_ITEMS.glossary)}>
-                    {t("v4Mvp.setupGuide.glossary.ctaAdd")}
-                  </Button>
-                )
-              }
+              onActivate={() => navigate(APP_NAV_ITEMS.glossary)}
             />
           </TaskBlock>
 
@@ -225,36 +222,18 @@ export function SetupGuideCard({
             complete={state.thirdParty.complete}
             expanded={expandedId === "thirdParty"}
             title={t("v4Mvp.setupGuide.thirdParty.title")}
+            description={t("v4Mvp.setupGuide.thirdParty.description")}
             onToggle={() => toggleTask("thirdParty")}
           >
             <StepRow
               done={state.thirdParty.steps.themeEmbed}
               label={t("v4Mvp.setupGuide.thirdParty.step1")}
-              action={
-                <Button
-                  size="slim"
-                  onClick={() => {
-                    if (themeEditorUrl) {
-                      openSwitcherThemeEditor(themeEditorUrl);
-                      return;
-                    }
-                    navigate(APP_NAV_ITEMS.switcher);
-                  }}
-                >
-                  {t("v4Mvp.setupGuide.thirdParty.ctaTheme")}
-                </Button>
-              }
+              onActivate={openThemeEditor}
             />
             <StepRow
               done={state.thirdParty.steps.includeLiquid}
               label={t("v4Mvp.setupGuide.thirdParty.step2")}
-              action={
-                state.thirdParty.steps.includeLiquid ? null : (
-                  <Button size="slim" onClick={onOpenLiquid}>
-                    {t("v4Mvp.setupGuide.thirdParty.ctaLiquid")}
-                  </Button>
-                )
-              }
+              onActivate={onOpenLiquid}
             />
           </TaskBlock>
         </div>
@@ -268,6 +247,7 @@ function TaskBlock({
   complete,
   expanded,
   title,
+  description,
   onToggle,
   children,
 }: {
@@ -275,6 +255,7 @@ function TaskBlock({
   complete: boolean;
   expanded: boolean;
   title: string;
+  description: string;
   onToggle: () => void;
   children: ReactNode;
 }) {
@@ -299,7 +280,15 @@ function TaskBlock({
         </Text>
       </button>
       <Collapsible open={expanded} id={id}>
-        <div style={stepsBoxStyle}>{children}</div>
+        <div style={expandedPanelStyle}>
+          <div style={expandedMainStyle}>
+            <Text as="p" variant="bodyMd" tone="subdued">
+              {description}
+            </Text>
+            {children}
+          </div>
+          <div style={expandedMediaStyle} aria-hidden />
+        </div>
       </Collapsible>
     </div>
   );
@@ -308,23 +297,26 @@ function TaskBlock({
 function StepRow({
   done,
   label,
-  action,
+  onActivate,
 }: {
   done: boolean;
   label: string;
-  action: ReactNode;
+  onActivate: () => void;
 }) {
   return (
     <div style={stepRowStyle}>
-      <span style={stepLabelStyle}>
-        <span style={stepMarkStyle(done)} aria-hidden>
-          <Icon source={done ? CheckIcon : XIcon} />
-        </span>
-        <Text as="span" variant="bodyMd" tone={done ? "subdued" : undefined}>
+      <span style={stepMarkStyle(done)} aria-hidden>
+        <Icon source={done ? CheckIcon : XIcon} />
+      </span>
+      {done ? (
+        <Text as="span" variant="bodyMd" tone="subdued">
           {label}
         </Text>
-      </span>
-      {action}
+      ) : (
+        <Link onClick={onActivate} removeUnderline>
+          {label}
+        </Link>
+      )}
     </div>
   );
 }
