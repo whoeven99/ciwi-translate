@@ -1,7 +1,7 @@
 import { json, redirect, type LoaderFunctionArgs, type ActionFunctionArgs } from "@remix-run/node";
 import { useFetcher, useLoaderData, useRevalidator } from "@remix-run/react";
-import { Button as PolarisButton, Page } from "@shopify/polaris";
-import { ArrowLeftIcon } from "@shopify/polaris-icons";
+import { Page } from "@shopify/polaris";
+import AppPageHeader from "~/ui/components/AppPageHeader";
 import AppSubpageTitleBar, {
   useAppHomeBackAction,
 } from "~/ui/components/AppSubpageTitleBar";
@@ -58,7 +58,7 @@ import {
   type TerminologyStrategyView,
 } from "~/server/shopScan/artifacts.server";
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 type ProfileView = {
   shopName: string | null;
@@ -331,41 +331,47 @@ export default function ShopProfilePage() {
     <Page>
       <AppSubpageTitleBar title="店铺画像 (Shop Profile)" />
       <Flex vertical gap={20}>
-        {/* Header */}
-        <Flex justify="space-between" align="center">
-          <Flex align="center" gap={12}>
-            <PolarisButton
-              icon={ArrowLeftIcon}
-              accessibilityLabel={homeBackAction.accessibilityLabel}
-              onClick={homeBackAction.onAction}
-            />
-            <DashboardOutlined style={{ fontSize: 22, color: "var(--app-accent-primary)" }} />
-            <Title level={3} style={{ margin: 0 }}>
+        <AppPageHeader
+          title={
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <DashboardOutlined
+                style={{ fontSize: 22, color: "var(--app-accent-primary)" }}
+              />
               店铺画像扫描结果
-            </Title>
-            {scan && (
-              <Tag
-                style={{
-                  marginLeft: 4,
-                  color: STATUS_TONE[scan.status],
-                  borderColor: STATUS_TONE[scan.status],
-                  background: "transparent",
-                }}
-              >
-                {STATUS_LABEL[scan.status]}
-              </Tag>
-            )}
-          </Flex>
-          <Button
-            type="primary"
-            icon={<ReloadOutlined />}
-            loading={isRescanning}
-            disabled={!configured || isActive}
-            onClick={handleRescan}
-          >
-            {isActive ? "扫描进行中…" : "重新扫描"}
-          </Button>
-        </Flex>
+              {scan ? (
+                <Tag
+                  style={{
+                    margin: 0,
+                    color: STATUS_TONE[scan.status],
+                    borderColor: STATUS_TONE[scan.status],
+                    background: "transparent",
+                  }}
+                >
+                  {STATUS_LABEL[scan.status]}
+                </Tag>
+              ) : null}
+            </span>
+          }
+          backAction={homeBackAction}
+          extra={
+            <Button
+              type="primary"
+              icon={<ReloadOutlined />}
+              loading={isRescanning}
+              disabled={!configured || isActive}
+              onClick={handleRescan}
+            >
+              {isActive ? "扫描进行中…" : "重新扫描"}
+            </Button>
+          }
+        />
 
         {!configured ? (
           <Card style={{ boxShadow: "var(--app-shadow-card)" }}>

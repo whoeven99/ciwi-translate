@@ -10,14 +10,42 @@
 .lead {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--p-space-100);
   min-width: 0;
   flex: 1 1 12rem;
 }
 
 .backButtonWrap {
   flex-shrink: 0;
-  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  height: 30px;
+}
+
+/* Match Polaris Page Header BreadcrumbWrapper: transparent arrow, no fill. */
+.backButtonWrap :global(.Polaris-Button) {
+  --pc-button-bg: transparent;
+  --pc-button-box-shadow: none;
+  --pc-button-bg_hover: var(--p-color-bg-fill-tertiary-hover);
+  --pc-button-bg_active: var(--p-color-bg-fill-tertiary-active);
+  --pc-button-box-shadow_hover: none;
+  --pc-button-box-shadow_active: none;
+  background: transparent;
+  border-radius: var(--p-border-radius-200);
+  box-shadow: none;
+}
+
+.backButtonWrap :global(.Polaris-Button):is(:hover, :focus, :focus-visible) {
+  box-shadow: none !important;
+}
+
+.backButtonWrap :global(.Polaris-Button):is(:hover, :focus-visible) {
+  background: var(--p-color-bg-fill-tertiary-hover);
+}
+
+.backButtonWrap :global(.Polaris-Button):focus {
+  background: var(--p-color-bg-fill-tertiary-active);
+  box-shadow: var(--p-shadow-inset-200) !important;
 }
 
 .titleWrap {

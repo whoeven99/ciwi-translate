@@ -172,10 +172,11 @@ Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns
   are P1.
 - Sub-pages (NavMenu children, history, custom create-task, shop-profile) must offer a
   back control to the parent: `AppSubpageTitleBar` (App Bridge breadcrumb) plus
-  `AppPageHeader` `backAction` (Polaris arrow beside the in-page title). Parent of
-  sidebar pages is the app home (`getTranslatePagePath()` / `/app/translate-v4-mvp`).
-  Nested manage resource pages already use Polaris `Page` `backAction`. App home
-  (`translate-v4-mvp`) must not show a back button.
+  `AppPageHeader` `backAction` (Polaris arrow beside the in-page title; visual match
+  of `Page` Header BreadcrumbWrapper — transparent arrow, not a filled secondary
+  Button). Parent of sidebar pages is the app home (`getTranslatePagePath()` /
+  `/app/translate-v4-mvp`). Nested manage resource pages already use Polaris `Page`
+  `backAction`. App home (`translate-v4-mvp`) must not show a back button.
 - BFS 4.1.4 parent highlight is App Bridge URL-prefix matching. Nested pages must
   sit under their visible NavMenu href (`/app/manage_translation/product` keeps
   Manage Translation active). Do not point `rel="home"` at `/app`. Path table:
