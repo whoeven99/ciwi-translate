@@ -1181,6 +1181,7 @@ export default function TranslateV4MvpRoute() {
               <AppSectionCard
                 title={t("v4Mvp.coverageCard.title")}
                 bodyPadding={HERO_CARD_PADDING}
+                compact
                 style={summaryHeroCardShellStyle}
               >
                 <div style={summaryHeroBodyStyle}>
@@ -1194,7 +1195,7 @@ export default function TranslateV4MvpRoute() {
                               ? coverage.overallPercent
                               : null
                         }
-                        size={80}
+                        size={64}
                         loading={isCoverageInitializing || !hasCoverageData}
                       />
                     </div>
@@ -1253,6 +1254,7 @@ export default function TranslateV4MvpRoute() {
                     </InlineStack>
                     <Button
                       variant="secondary"
+                      size="slim"
                       disabled={isCoverageInitializing}
                       onClick={() => setCoverageDetailOpen(true)}
                     >
@@ -1269,6 +1271,7 @@ export default function TranslateV4MvpRoute() {
                 ciwiSwitcherId={ciwiSwitcherId}
                 status={embedStatus}
                 bodyPadding={HERO_CARD_PADDING}
+                compact
               />
             </div>
 
@@ -1276,6 +1279,7 @@ export default function TranslateV4MvpRoute() {
               <AppSectionCard
                 title={t("v4Mvp.videoCard.guideTitle")}
                 bodyPadding={HERO_CARD_PADDING}
+                compact
                 style={summaryHeroCardShellStyle}
               >
                 <a
@@ -1755,7 +1759,7 @@ const coveragePercentWrapStyle = {
   textAlign: "right",
 } satisfies CSSProperties;
 
-const HERO_CARD_PADDING = "12px 16px";
+const HERO_CARD_PADDING = "10px 16px";
 
 const summaryHeroGridStyle = {
   display: "flex",
@@ -1784,10 +1788,12 @@ const summaryHeroCardShellStyle = {
 const summaryHeroBodyStyle = {
   display: "flex",
   flexDirection: "column",
-  gap: "8px",
+  gap: "6px",
   flex: 1,
   minHeight: 0,
 } satisfies CSSProperties;
+
+const VIDEO_THUMB_HEIGHT = 80;
 
 const videoPreviewLayerStyle = {
   display: "block",
@@ -1797,15 +1803,16 @@ const videoPreviewLayerStyle = {
   textDecoration: "none",
   background: "#0f172a",
   flex: 1,
-  minHeight: "72px",
-  height: "100%",
+  height: VIDEO_THUMB_HEIGHT,
+  minHeight: VIDEO_THUMB_HEIGHT,
+  maxHeight: VIDEO_THUMB_HEIGHT,
 } satisfies CSSProperties;
 
 const summaryHeroLayoutStyle = {
   display: "flex",
   alignItems: "center",
-  flexWrap: "wrap",
-  gap: "12px",
+  flexWrap: "nowrap",
+  gap: "10px",
   width: "100%",
 } satisfies CSSProperties;
 
@@ -1829,14 +1836,14 @@ const summaryHeroFooterStyle = {
   justifyContent: "space-between",
   gap: "8px",
   flexWrap: "wrap",
-  marginTop: "auto",
 } satisfies CSSProperties;
 
 const videoPreviewSurfaceStyle = {
   position: "relative",
   width: "100%",
   height: "100%",
-  minHeight: "72px",
+  minHeight: VIDEO_THUMB_HEIGHT,
+  maxHeight: VIDEO_THUMB_HEIGHT,
   overflow: "hidden",
   background: "#0f172a",
 } satisfies CSSProperties;
@@ -1844,7 +1851,8 @@ const videoPreviewSurfaceStyle = {
 const videoPreviewImageStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "72px",
+  minHeight: VIDEO_THUMB_HEIGHT,
+  maxHeight: VIDEO_THUMB_HEIGHT,
   display: "block",
   objectFit: "cover",
 } satisfies CSSProperties;
@@ -1855,21 +1863,20 @@ const videoPreviewOverlayStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  paddingBottom: "8px",
+  paddingBottom: 0,
   background:
     "linear-gradient(180deg, rgba(15,23,42,0.08) 0%, rgba(15,23,42,0.24) 100%)",
 } satisfies CSSProperties;
 
 const videoPreviewPlayButtonStyle = {
-  width: "32px",
-  height: "32px",
+  width: "24px",
+  height: "24px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.9)",
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.16)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  transform: "translateY(-4px)",
 } satisfies CSSProperties;
 
 const videoPreviewPlayIconStyle = {
@@ -1898,7 +1905,7 @@ const videoPreviewCaptionTextStyle = {
 const videoPreviewFallbackStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "72px",
+  minHeight: VIDEO_THUMB_HEIGHT,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",

@@ -14,13 +14,15 @@ type ThemeExtensionStatusCardProps = {
   ciwiSwitcherId: string;
   status: ThemeEmbedLoadStatus;
   bodyPadding?: string;
+  compact?: boolean;
 };
 
 export function ThemeExtensionStatusCard({
   shop,
   ciwiSwitcherId,
   status,
-  bodyPadding = "12px 16px",
+  bodyPadding = "10px 16px",
+  compact = true,
 }: ThemeExtensionStatusCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -46,6 +48,7 @@ export function ThemeExtensionStatusCard({
       }
       description={description}
       bodyPadding={bodyPadding}
+      compact={compact}
       style={{
         height: "100%",
         flex: 1,
@@ -55,14 +58,12 @@ export function ThemeExtensionStatusCard({
       }}
     >
       {status === "loading" ? null : (
-        <div style={{ marginTop: "auto" }}>
-          <StatusCardActions
-            status={status}
-            themeEditorUrl={themeEditorUrl}
-            onManage={() => navigate(APP_NAV_ITEMS.switcher)}
-            t={t}
-          />
-        </div>
+        <StatusCardActions
+          status={status}
+          themeEditorUrl={themeEditorUrl}
+          onManage={() => navigate(APP_NAV_ITEMS.switcher)}
+          t={t}
+        />
       )}
     </AppSectionCard>
   );
@@ -111,12 +112,13 @@ function StatusCardActions({
         {themeEditorUrl ? (
           <Button
             variant="secondary"
+            size="slim"
             onClick={() => openSwitcherThemeEditor(themeEditorUrl)}
           >
             {t("v4Mvp.themeExtension.disable")}
           </Button>
         ) : null}
-        <Button variant="secondary" onClick={onManage}>
+        <Button variant="secondary" size="slim" onClick={onManage}>
           {t("v4Mvp.themeExtension.manage")}
         </Button>
       </InlineStack>
@@ -127,6 +129,7 @@ function StatusCardActions({
     return (
       <Button
         variant="secondary"
+        size="slim"
         onClick={() => openSwitcherThemeEditor(themeEditorUrl)}
       >
         {t("v4Mvp.themeExtension.enable")}
@@ -135,7 +138,7 @@ function StatusCardActions({
   }
 
   return (
-    <Button variant="secondary" onClick={onManage}>
+    <Button variant="secondary" size="slim" onClick={onManage}>
       {t("v4Mvp.themeExtension.manage")}
     </Button>
   );
