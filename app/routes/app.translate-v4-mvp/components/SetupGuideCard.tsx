@@ -1,10 +1,15 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Button, Icon, InlineStack, Text } from "@shopify/polaris";
+import { useEffect, useState } from "react";
+import { Badge, Button, Collapsible, Icon, Text } from "@shopify/polaris";
 import { CheckIcon, XIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { APP_NAV_ITEMS } from "~/lib/appNav";
-import type { SetupGuideState } from "~/lib/setupGuide";
+import {
+  firstIncompleteSetupGuideTask,
+  type SetupGuideState,
+  type SetupGuideTaskId,
+} from "~/lib/setupGuide";
 import { openSwitcherThemeEditor } from "~/lib/themeAppExtensions";
 import { appColors } from "~/ui/tokens";
 import { v4CardStyle } from "~/routes/app.translate-v4/v4Styles";
@@ -15,6 +20,7 @@ type SetupGuideCardProps = {
   onDismiss: () => void;
   onStartTranslate: () => void;
   onConfigureTask: () => void;
+  onOpenLiquid: () => void;
 };
 
 const cardBodyStyle: CSSProperties = {
@@ -38,34 +44,28 @@ const titleRowStyle: CSSProperties = {
   flexWrap: "wrap",
 };
 
-const progressBadgeStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  minHeight: 20,
-  padding: "0 8px",
-  borderRadius: 9999,
-  background: appColors.surfaceSecondary,
-  color: appColors.textSecondary,
-  fontSize: 12,
-  lineHeight: "16px",
-  fontWeight: 600,
-};
-
 const taskListStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  gap: 16,
+  gap: 4,
 };
 
-const taskTitleRowStyle: CSSProperties = {
+const taskHeaderButtonStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 8,
-  marginBottom: 8,
+  width: "100%",
+  margin: 0,
+  padding: "8px 0",
+  border: "none",
+  background: "transparent",
+  cursor: "pointer",
+  textAlign: "left",
 };
 
 const stepsBoxStyle: CSSProperties = {
   marginLeft: 28,
+  marginBottom: 8,
   padding: "12px 16px",
   borderRadius: 8,
   background: appColors.surfaceSecondary,
@@ -126,9 +126,24 @@ export function SetupGuideCard({
   onDismiss,
   onStartTranslate,
   onConfigureTask,
+  onOpenLiquid,
 }: SetupGuideCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [expandedId, setExpandedId] = useState<SetupGuideTaskId | null>(() =>
+    firstIncompleteSetupGuideTask(state),
+  );
+  const [userPicked, setUserPicked] = useState(false);
+
+  useEffect(() => {
+    if (userPicked) return;
+    setExpandedId(firstIncompleteSetupGuideTask(state));
+  }, [state, userPicked]);
+
+  const toggleTask = (id: SetupGuideTaskId) => {
+    setUserPicked(true);
+    setExpandedId((current) => (current === id ? null : id));
+  };
 
   return (
     <div style={{ ...v4CardStyle, padding: "20px 24px" }}>
@@ -138,12 +153,12 @@ export function SetupGuideCard({
             <Text as="h2" variant="headingMd">
               {t("v4Mvp.setupGuide.title")}
             </Text>
-            <span style={progressBadgeStyle}>
+            <Badge>
               {t("v4Mvp.setupGuide.progress", {
                 completed: state.completedCount,
                 total: state.totalCount,
               })}
-            </span>
+            </Badge>
           </div>
           <Button
             variant="plain"
@@ -154,128 +169,94 @@ export function SetupGuideCard({
         </div>
 
         <div style={taskListStyle}>
-          {state.translate.visible ? (
-            <TaskBlock
-              complete={state.translate.complete}
-              title={t("v4Mvp.setupGuide.translate.title")}
-            >
-              <StepRow
-                done={state.translate.steps.clickTranslate}
-                label={t("v4Mvp.setupGuide.translate.step1")}
-                action={
-                  state.translate.steps.clickTranslate ? null : (
-                    <Button size="slim" onClick={onStartTranslate}>
-                      {t("v4Mvp.setupGuide.translate.ctaTranslate")}
-                    </Button>
-                  )
-                }
-              />
-              <StepRow
-                done={state.translate.steps.configureTask}
-                label={t("v4Mvp.setupGuide.translate.step2")}
-                action={
-                  state.translate.steps.configureTask ? null : (
-                    <Button size="slim" onClick={onConfigureTask}>
-                      {t("v4Mvp.setupGuide.translate.ctaConfigure")}
-                    </Button>
-                  )
-                }
-              />
-            </TaskBlock>
-          ) : null}
-
           <TaskBlock
-            complete={state.switcher.complete}
-            title={t("v4Mvp.setupGuide.switcher.title")}
+            id="setup-guide-translate"
+            complete={state.translate.complete}
+            expanded={expandedId === "translate"}
+            title={t("v4Mvp.setupGuide.translate.title")}
+            onToggle={() => toggleTask("translate")}
           >
-            {state.switcher.enabled ? (
-              <InlineStack align="space-between" blockAlign="center" wrap>
-                <Text as="p" variant="bodyMd">
-                  {t("v4Mvp.setupGuide.switcher.enabled")}
-                </Text>
-                {themeEditorUrl ? (
-                  <Button
-                    size="slim"
-                    onClick={() => openSwitcherThemeEditor(themeEditorUrl)}
-                  >
-                    {t("v4Mvp.themeExtension.disable")}
+            <StepRow
+              done={state.translate.steps.clickTranslate}
+              label={t("v4Mvp.setupGuide.translate.step1")}
+              action={
+                state.translate.steps.clickTranslate ? null : (
+                  <Button size="slim" onClick={onStartTranslate}>
+                    {t("v4Mvp.setupGuide.translate.ctaTranslate")}
                   </Button>
-                ) : (
-                  <Button size="slim" onClick={() => navigate(APP_NAV_ITEMS.switcher)}>
-                    {t("v4Mvp.themeExtension.manage")}
+                )
+              }
+            />
+            <StepRow
+              done={state.translate.steps.configureTask}
+              label={t("v4Mvp.setupGuide.translate.step2")}
+              action={
+                state.translate.steps.configureTask ? null : (
+                  <Button size="slim" onClick={onConfigureTask}>
+                    {t("v4Mvp.setupGuide.translate.ctaConfigure")}
                   </Button>
-                )}
-              </InlineStack>
-            ) : (
-              <>
-                <StepRow
-                  done={state.switcher.steps.currency}
-                  label={t("v4Mvp.setupGuide.switcher.step1")}
-                  action={
-                    state.switcher.steps.currency ? null : (
-                      <Button size="slim" onClick={() => navigate(APP_NAV_ITEMS.currency)}>
-                        {t("v4Mvp.setupGuide.switcher.ctaCurrency")}
-                      </Button>
-                    )
-                  }
-                />
-                <StepRow
-                  done={state.switcher.steps.themeEmbed}
-                  label={t("v4Mvp.setupGuide.switcher.step2")}
-                  action={
-                    <Button
-                      size="slim"
-                      onClick={() => {
-                        if (themeEditorUrl) {
-                          openSwitcherThemeEditor(themeEditorUrl);
-                          return;
-                        }
-                        navigate(APP_NAV_ITEMS.switcher);
-                      }}
-                    >
-                      {t("v4Mvp.setupGuide.switcher.ctaTheme")}
-                    </Button>
-                  }
-                />
-                <StepRow
-                  done={state.switcher.steps.ipOpen}
-                  label={t("v4Mvp.setupGuide.switcher.step3")}
-                  action={
-                    state.switcher.steps.ipOpen ? null : (
-                      <Button size="slim" onClick={() => navigate(APP_NAV_ITEMS.switcher)}>
-                        {t("v4Mvp.setupGuide.switcher.ctaIp")}
-                      </Button>
-                    )
-                  }
-                />
-              </>
-            )}
+                )
+              }
+            />
           </TaskBlock>
 
-          {state.autoTranslate.visible ? (
-            <TaskBlock
-              complete={state.autoTranslate.complete}
-              title={t("v4Mvp.setupGuide.auto.title")}
-            >
-              <Text as="p" tone="subdued" variant="bodySm">
-                {t("v4Mvp.setupGuide.auto.description")}
-              </Text>
-              <StepRow
-                done={false}
-                label={t("v4Mvp.setupGuide.auto.step1")}
-                action={
-                  <Button size="slim" onClick={() => navigate(APP_NAV_ITEMS.language)}>
-                    {t("v4Mvp.setupGuide.auto.ctaLanguage")}
+          <TaskBlock
+            id="setup-guide-glossary"
+            complete={state.glossary.complete}
+            expanded={expandedId === "glossary"}
+            title={t("v4Mvp.setupGuide.glossary.title")}
+            onToggle={() => toggleTask("glossary")}
+          >
+            <StepRow
+              done={state.glossary.steps.addRule}
+              label={t("v4Mvp.setupGuide.glossary.step1")}
+              action={
+                state.glossary.steps.addRule ? null : (
+                  <Button size="slim" onClick={() => navigate(APP_NAV_ITEMS.glossary)}>
+                    {t("v4Mvp.setupGuide.glossary.ctaAdd")}
                   </Button>
-                }
-              />
-              <StepRow
-                done={false}
-                label={t("v4Mvp.setupGuide.auto.step2")}
-                action={null}
-              />
-            </TaskBlock>
-          ) : null}
+                )
+              }
+            />
+          </TaskBlock>
+
+          <TaskBlock
+            id="setup-guide-third-party"
+            complete={state.thirdParty.complete}
+            expanded={expandedId === "thirdParty"}
+            title={t("v4Mvp.setupGuide.thirdParty.title")}
+            onToggle={() => toggleTask("thirdParty")}
+          >
+            <StepRow
+              done={state.thirdParty.steps.themeEmbed}
+              label={t("v4Mvp.setupGuide.thirdParty.step1")}
+              action={
+                <Button
+                  size="slim"
+                  onClick={() => {
+                    if (themeEditorUrl) {
+                      openSwitcherThemeEditor(themeEditorUrl);
+                      return;
+                    }
+                    navigate(APP_NAV_ITEMS.switcher);
+                  }}
+                >
+                  {t("v4Mvp.setupGuide.thirdParty.ctaTheme")}
+                </Button>
+              }
+            />
+            <StepRow
+              done={state.thirdParty.steps.includeLiquid}
+              label={t("v4Mvp.setupGuide.thirdParty.step2")}
+              action={
+                state.thirdParty.steps.includeLiquid ? null : (
+                  <Button size="slim" onClick={onOpenLiquid}>
+                    {t("v4Mvp.setupGuide.thirdParty.ctaLiquid")}
+                  </Button>
+                )
+              }
+            />
+          </TaskBlock>
         </div>
       </div>
     </div>
@@ -283,17 +264,29 @@ export function SetupGuideCard({
 }
 
 function TaskBlock({
+  id,
   complete,
+  expanded,
   title,
+  onToggle,
   children,
 }: {
+  id: string;
   complete: boolean;
+  expanded: boolean;
   title: string;
+  onToggle: () => void;
   children: ReactNode;
 }) {
   return (
     <div>
-      <div style={taskTitleRowStyle}>
+      <button
+        type="button"
+        style={taskHeaderButtonStyle}
+        aria-expanded={expanded}
+        aria-controls={id}
+        onClick={onToggle}
+      >
         {complete ? (
           <span style={filledIconStyle} aria-hidden>
             ✓
@@ -301,11 +294,13 @@ function TaskBlock({
         ) : (
           <span style={dashedIconStyle} aria-hidden />
         )}
-        <Text as="h3" variant="headingSm">
+        <Text as="span" variant="headingSm">
           {title}
         </Text>
-      </div>
-      <div style={stepsBoxStyle}>{children}</div>
+      </button>
+      <Collapsible open={expanded} id={id}>
+        <div style={stepsBoxStyle}>{children}</div>
+      </Collapsible>
     </div>
   );
 }
@@ -325,7 +320,7 @@ function StepRow({
         <span style={stepMarkStyle(done)} aria-hidden>
           <Icon source={done ? CheckIcon : XIcon} />
         </span>
-        <Text as="span" variant="bodyMd" tone={done ? undefined : "subdued"}>
+        <Text as="span" variant="bodyMd" tone={done ? "subdued" : undefined}>
           {label}
         </Text>
       </span>

@@ -6,8 +6,8 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
-import { useFetcher, useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
+import { json, type LoaderFunctionArgs } from "@remix-run/node";
+import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { useSelector } from "react-redux";
 import {
@@ -74,10 +74,8 @@ import {
   CIWI_SWITCHER_EMBED_HANDLE,
   buildSwitcherThemeEditorUrl,
 } from "~/lib/themeAppExtensions";
-import {
-  dismissSetupGuide,
-  loadSetupGuideSnapshot,
-} from "~/server/setupGuide.server";
+import { loadSetupGuideSnapshot } from "~/server/setupGuide.server";
+import { CUSTOM_LIQUID_MODULE } from "~/lib/jobModulesWithLiquid";
 import { ThemeExtensionStatusCard } from "./components/ThemeExtensionStatusCard";
 import { SetupGuideCard } from "./components/SetupGuideCard";
 
@@ -155,22 +153,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ciwiSwitcherId: process.env.SHOPIFY_CIWI_SWITCHER_ID ?? "",
     setupGuide,
   });
-};
-
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const formData = await request.formData();
-  if (String(formData.get("intent")) !== "dismissSetupGuide") {
-    return json({ ok: false, error: "unknown intent" }, { status: 400 });
-  }
-
-  try {
-    await dismissSetupGuide(session.shop);
-    return json({ ok: true });
-  } catch (err) {
-    console.error("[setup-guide] dismiss failed:", err);
-    return json({ ok: false }, { status: 500 });
-  }
 };
 
 async function readJsonResponse<T = unknown>(res: Response): Promise<T> {
@@ -313,9 +295,11 @@ function getCoverageRating(
 function buildCustomTranslationPath({
   targets,
   modules,
+  includeLiquid,
 }: {
   targets: string[];
   modules: string[];
+  includeLiquid?: boolean;
 }) {
   const params = new URLSearchParams();
   if (targets.length > 0) {
@@ -323,6 +307,9 @@ function buildCustomTranslationPath({
   }
   if (modules.length > 0) {
     params.set("modules", modules.join(","));
+  }
+  if (includeLiquid) {
+    params.set("includeLiquid", "true");
   }
   const query = params.toString();
   return query
@@ -393,7 +380,6 @@ export default function TranslateV4MvpRoute() {
   const { shop, locales, primaryLocale, ciwiSwitcherId, setupGuide } =
     useLoaderData<typeof loader>();
   const navigate = useNavigate();
-  const fetcher = useFetcher<{ ok?: boolean }>();
   const [searchParams] = useSearchParams();
   const initialWorkbenchTabParam = searchParams.get("tab");
   const plan = useSelector((state: RootState) => state.userConfig.plan);
@@ -423,12 +409,11 @@ export default function TranslateV4MvpRoute() {
     null,
   );
   const [creating, setCreating] = useState(false);
-  const [guideDismissed, setGuideDismissed] = useState(setupGuide.dismissed);
+  const [guideDismissed, setGuideDismissed] = useState(false);
   const [hasOpenedCreateFlow, setHasOpenedCreateFlow] = useState(false);
   const embedStatus = useThemeAppExtensionStatus(CIWI_SWITCHER_EMBED_HANDLE);
   const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
-  const autoDismissedGuideRef = useRef(setupGuide.dismissed);
   const planType = plan?.type?.trim() || null;
 
   const customTargets = useMemo(
@@ -695,44 +680,48 @@ export default function TranslateV4MvpRoute() {
       ? initializationRecommendations
       : visibleRecommendations;
   const hasV4Job = !jobsLoading && jobs.length > 0;
-  const hasAutoTranslate =
-    !coverageLoading && coverage.locales.some((row) => row.autoTranslate);
+  const hasIncludeLiquidJob = jobs.some((job) =>
+    job.modules.includes(CUSTOM_LIQUID_MODULE),
+  );
   const setupGuideState = useMemo(
     () =>
       buildSetupGuideState({
         hasV4Job,
         hasOpenedCreateFlow,
-        hasCurrency: setupGuide.hasCurrency,
-        ipOpen: setupGuide.ipOpen,
+        hasGlossary: setupGuide.hasGlossary,
         embedStatus,
-        hasAutoTranslate,
+        hasIncludeLiquidJob,
       }),
     [
       embedStatus,
-      hasAutoTranslate,
+      hasIncludeLiquidJob,
       hasOpenedCreateFlow,
       hasV4Job,
-      setupGuide.hasCurrency,
-      setupGuide.ipOpen,
+      setupGuide.hasGlossary,
     ],
   );
+  const hideSetupGuide =
+    guideDismissed ||
+    (!jobsLoading && shouldAutoDismissSetupGuide(setupGuideState));
   const handleDismissSetupGuide = useCallback(() => {
     setGuideDismissed(true);
-    fetcher.submit({ intent: "dismissSetupGuide" }, { method: "post", preventScrollReset: true });
-  }, [fetcher]);
-
-  useEffect(() => {
-    if (guideDismissed || autoDismissedGuideRef.current) return;
-    if (!shouldAutoDismissSetupGuide(setupGuideState)) return;
-    autoDismissedGuideRef.current = true;
-    handleDismissSetupGuide();
-  }, [guideDismissed, handleDismissSetupGuide, setupGuideState]);
+  }, []);
   const handleSetupGuideOpenCustom = useCallback(() => {
     setHasOpenedCreateFlow(true);
     navigate(
       buildCustomTranslationPath({
         targets: customTargets,
         modules: customModules,
+      }),
+    );
+  }, [customModules, customTargets, navigate]);
+  const handleSetupGuideOpenLiquid = useCallback(() => {
+    setHasOpenedCreateFlow(true);
+    navigate(
+      buildCustomTranslationPath({
+        targets: customTargets,
+        modules: customModules,
+        includeLiquid: true,
       }),
     );
   }, [customModules, customTargets, navigate]);
@@ -1166,13 +1155,14 @@ export default function TranslateV4MvpRoute() {
             planType={planType}
           />
 
-          {guideDismissed ? null : (
+          {hideSetupGuide ? null : (
             <SetupGuideCard
               state={setupGuideState}
               themeEditorUrl={themeEditorUrl}
               onDismiss={handleDismissSetupGuide}
               onStartTranslate={handleSetupGuideOpenCustom}
               onConfigureTask={handleSetupGuideOpenCustom}
+              onOpenLiquid={handleSetupGuideOpenLiquid}
             />
           )}
 

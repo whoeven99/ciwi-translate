@@ -1,12 +1,14 @@
 import type { ThemeEmbedLoadStatus } from "./themeAppExtensions";
 
+export const SETUP_GUIDE_TASK_IDS = ["translate", "glossary", "thirdParty"] as const;
+export type SetupGuideTaskId = (typeof SETUP_GUIDE_TASK_IDS)[number];
+
 export type SetupGuideInput = {
   hasV4Job: boolean;
   hasOpenedCreateFlow: boolean;
-  hasCurrency: boolean;
-  ipOpen: boolean;
+  hasGlossary: boolean;
   embedStatus: ThemeEmbedLoadStatus;
-  hasAutoTranslate: boolean;
+  hasIncludeLiquidJob: boolean;
 };
 
 export type SetupGuideState = {
@@ -14,58 +16,56 @@ export type SetupGuideState = {
   totalCount: 3;
   translate: {
     complete: boolean;
-    visible: boolean;
     steps: {
       clickTranslate: boolean;
       configureTask: boolean;
     };
   };
-  switcher: {
+  glossary: {
     complete: boolean;
-    visible: true;
-    enabled: boolean;
     steps: {
-      currency: boolean;
-      themeEmbed: boolean;
-      ipOpen: boolean;
+      addRule: boolean;
     };
   };
-  autoTranslate: {
+  thirdParty: {
     complete: boolean;
-    visible: boolean;
+    steps: {
+      themeEmbed: boolean;
+      includeLiquid: boolean;
+    };
   };
 };
 
 export function buildSetupGuideState(input: SetupGuideInput): SetupGuideState {
   const translateComplete = input.hasV4Job;
-  const switcherEnabled = input.embedStatus === "active";
-  const autoComplete = input.hasAutoTranslate;
+  const glossaryComplete = input.hasGlossary;
+  const themeEmbed = input.embedStatus === "active";
+  const includeLiquid = input.hasIncludeLiquidJob;
+  const thirdPartyComplete = themeEmbed && includeLiquid;
 
   return {
     completedCount:
-      Number(translateComplete) + Number(switcherEnabled) + Number(autoComplete),
+      Number(translateComplete) + Number(glossaryComplete) + Number(thirdPartyComplete),
     totalCount: 3,
     translate: {
       complete: translateComplete,
-      visible: !translateComplete,
       steps: {
         clickTranslate: translateComplete || input.hasOpenedCreateFlow,
         configureTask: translateComplete,
       },
     },
-    switcher: {
-      complete: switcherEnabled,
-      visible: true,
-      enabled: switcherEnabled,
+    glossary: {
+      complete: glossaryComplete,
       steps: {
-        currency: input.hasCurrency,
-        themeEmbed: switcherEnabled,
-        ipOpen: input.ipOpen,
+        addRule: glossaryComplete,
       },
     },
-    autoTranslate: {
-      complete: autoComplete,
-      visible: !autoComplete,
+    thirdParty: {
+      complete: thirdPartyComplete,
+      steps: {
+        themeEmbed,
+        includeLiquid,
+      },
     },
   };
 }
@@ -73,7 +73,13 @@ export function buildSetupGuideState(input: SetupGuideInput): SetupGuideState {
 export function shouldAutoDismissSetupGuide(state: SetupGuideState): boolean {
   return (
     state.translate.complete &&
-    state.switcher.enabled &&
-    state.autoTranslate.complete
+    state.glossary.complete &&
+    state.thirdParty.complete
   );
+}
+
+export function firstIncompleteSetupGuideTask(state: SetupGuideState): SetupGuideTaskId {
+  if (!state.translate.complete) return "translate";
+  if (!state.glossary.complete) return "glossary";
+  return "thirdParty";
 }
