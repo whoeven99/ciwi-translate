@@ -58,12 +58,56 @@ export function toLiquidTableRow(item: LiquidDoShape): LiquidTableRow {
   };
 }
 
-export async function listLiquidDo(shop: string): Promise<LiquidDoShape[]> {
+const DEFAULT_LIST_PAGE_SIZE = 10;
+const MAX_LIST_PAGE_SIZE = 50;
+const MAX_QUERY_LENGTH = 200;
+
+export type ListLiquidPageInput = {
+  shop: string;
+  languageCode: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type ListLiquidPageResult = {
+  rows: LiquidDoShape[];
+  hasNext: boolean;
+};
+
+/** Prisma SQLite `contains` → LIKE '%q%' 且无 ESCAPE；去掉通配符以免放大匹配。 */
+function neutralizeLikeWildcards(q: string): string {
+  return q.replace(/[%_]/g, "");
+}
+
+export async function listLiquidPage(
+  input: ListLiquidPageInput,
+): Promise<ListLiquidPageResult> {
+  const languageCode = input.languageCode.trim();
+  const page = Math.max(1, Math.floor(Number(input.page) || 1));
+  const pageSize = Math.min(
+    MAX_LIST_PAGE_SIZE,
+    Math.max(1, Math.floor(Number(input.pageSize) || DEFAULT_LIST_PAGE_SIZE)),
+  );
+  const q = neutralizeLikeWildcards(
+    (input.q ?? "").trim().slice(0, MAX_QUERY_LENGTH),
+  );
+
   const rows = await prisma.liquidRule.findMany({
-    where: { shop },
+    where: {
+      shop: input.shop,
+      languageCode,
+      ...(q ? { beforeTranslation: { contains: q } } : {}),
+    },
     orderBy: { createdAt: "desc" },
+    skip: (page - 1) * pageSize,
+    take: pageSize + 1,
   });
-  return rows.map(toDo);
+  const hasNext = rows.length > pageSize;
+  return {
+    rows: rows.slice(0, pageSize).map(toDo),
+    hasNext,
+  };
 }
 
 export type LiquidInput = {

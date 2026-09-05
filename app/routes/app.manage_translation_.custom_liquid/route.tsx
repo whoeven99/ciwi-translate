@@ -1,14 +1,14 @@
 import {
   Alert,
-  Card,
   Checkbox,
-  Divider,
   Flex,
+  Input,
   Layout,
   Space,
   Spin,
   Table,
 } from "antd";
+import { SearchOutlined } from "@ant-design/icons";
 import Button from "~/ui/components/AppButton";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
@@ -49,6 +49,15 @@ type FieldRecord = {
   type: string;
 };
 
+type ConfirmItem = {
+  id: string;
+  value: string;
+  sourceText: string;
+  languageCode: string;
+};
+
+const SEARCH_DEBOUNCE_MS = 300;
+
 const Index = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -67,6 +76,9 @@ const Index = () => {
   const [dataSource, setDataSource] = useState<LiquidTableRow[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [hasNext, setHasNext] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [loadingItems, setLoadingItems] = useState<string[]>([]);
   const [successTranslatedKey, setSuccessTranslatedKey] = useState<string[]>(
@@ -75,9 +87,7 @@ const Index = () => {
   const [translatedValues, setTranslatedValues] = useState<
     Record<string, string>
   >({});
-  const [confirmData, setConfirmData] = useState<
-    { id: string; value: string }[]
-  >([]);
+  const [confirmData, setConfirmData] = useState<ConfirmItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [languageOptions, setLanguageOptions] = useState<
     { label: string; value: string }[]
@@ -133,16 +143,43 @@ const Index = () => {
   }, [languageOptions, selectedLanguage, navigate]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(searchInput.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedRowKeys([]);
+  }, [debouncedQuery]);
+
+  useEffect(() => {
+    if (!selectedLanguage) {
+      if (!languageOptions.length) {
+        setLoading(true);
+        return;
+      }
+      setLoading(false);
+      setDataSource([]);
+      setHasNext(false);
+      return;
+    }
+    const controller = new AbortController();
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       const data = await selectLiquidCompat({
-        migrated,
-        shop: globalStore?.shop || "",
+        languageCode: selectedLanguage,
+        ...(debouncedQuery ? { q: debouncedQuery } : {}),
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+        signal: controller.signal,
       });
-      if (cancelled) return;
+      if (cancelled || data.aborted) return;
       if (data.success) {
         setDataSource(data.response ?? []);
+        setHasNext(Boolean(data.hasNext));
         setPageAlert("");
       } else {
         setPageAlert(
@@ -158,17 +195,13 @@ const Index = () => {
     void load();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [t]);
-
-  const languageRows = useMemo(
-    () => dataSource.filter((row) => row.languageCode === selectedLanguage),
-    [dataSource, selectedLanguage],
-  );
+  }, [selectedLanguage, languageOptions.length, debouncedQuery, currentPage, t]);
 
   const resourceData = useMemo<FieldRecord[]>(
     () =>
-      languageRows.map((row) => ({
+      dataSource.map((row) => ({
         key: row.key,
         resource: t("value"),
         default_language: row.sourceText,
@@ -176,17 +209,10 @@ const Index = () => {
         shopifyKey: "custom_liquid",
         type: "MULTI_LINE_TEXT_FIELD",
       })),
-    [languageRows, t],
+    [dataSource, t],
   );
 
-  const pagedData = useMemo(
-    () =>
-      resourceData.slice(
-        (currentPage - 1) * PAGE_SIZE,
-        currentPage * PAGE_SIZE,
-      ),
-    [resourceData, currentPage],
-  );
+  const pagedData = resourceData;
 
   useEffect(() => {
     setCurrentPage(1);
@@ -199,13 +225,13 @@ const Index = () => {
   useEffect(() => {
     setTranslatedValues((prev) => {
       const next = { ...prev };
-      for (const row of languageRows) {
+      for (const row of dataSource) {
         if (confirmData.some((item) => item.id === row.key)) continue;
         next[row.key] = row.targetText ?? "";
       }
       return next;
     });
-  }, [languageRows, confirmData]);
+  }, [dataSource, confirmData]);
 
   useEffect(() => {
     if (confirmData.length > 0) {
@@ -216,24 +242,23 @@ const Index = () => {
   }, [confirmData]);
 
   const hasSelected = selectedRowKeys.length > 0;
-  const currentPageKeys = pagedData.map((item) => item.key);
-  const allCurrentPageSelected =
-    currentPageKeys.length > 0 &&
-    currentPageKeys.every((key) => selectedRowKeys.includes(key));
-  const someCurrentPageSelected = currentPageKeys.some((key) =>
-    selectedRowKeys.includes(key),
-  );
 
   const handleInputChange = (record: FieldRecord, value: string) => {
     setTranslatedValues((prev) => ({ ...prev, [record.key]: value }));
     setConfirmData((prev) => {
       const index = prev.findIndex((item) => item.id === record.key);
+      const nextItem: ConfirmItem = {
+        id: record.key,
+        value,
+        sourceText: record.default_language,
+        languageCode: selectedLanguage,
+      };
       if (index !== -1) {
         const next = [...prev];
-        next[index] = { ...next[index], value };
+        next[index] = nextItem;
         return next;
       }
-      return [...prev, { id: record.key, value }];
+      return [...prev, nextItem];
     });
   };
 
@@ -258,6 +283,7 @@ const Index = () => {
   };
 
   const handleDelete = async () => {
+    if (!selectedRowKeys.length) return;
     setPageAlert("");
     const data = await deleteLiquidCompat({
       migrated,
@@ -287,15 +313,13 @@ const Index = () => {
     setPageAlert("");
     try {
       for (const item of confirmData) {
-        const row = dataSource.find((entry) => entry.key === item.id);
-        if (!row) continue;
         const data = await insertLiquidCompat({
           migrated,
           id: item.id,
           shop: globalStore?.shop || "",
-          sourceText: row.sourceText,
+          sourceText: item.sourceText,
           targetText: item.value,
-          languageCode: row.languageCode,
+          languageCode: item.languageCode,
         });
         if (!data.success) {
           setPageAlert(
@@ -330,7 +354,7 @@ const Index = () => {
     setSuccessTranslatedKey([]);
     setTranslatedValues(
       Object.fromEntries(
-        languageRows.map((row) => [row.key, row.targetText ?? ""]),
+        dataSource.map((row) => [row.key, row.targetText ?? ""]),
       ),
     );
   };
@@ -453,7 +477,7 @@ const Index = () => {
   };
 
   const hasPrevious = currentPage > 1;
-  const hasNext = currentPage * PAGE_SIZE < resourceData.length;
+  const hasNextPage = hasNext;
 
   return (
     <Page
@@ -471,11 +495,18 @@ const Index = () => {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "8px",
-          justifyContent: "flex-end",
           marginBottom: "15px",
+          gap: "8px",
         }}
       >
+        <Input
+          placeholder={t("Search...")}
+          prefix={<SearchOutlined />}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          allowClear
+          style={{ flex: 1 }}
+        />
         <div style={{ width: "160px" }}>
           <Select
             label=""
@@ -492,6 +523,9 @@ const Index = () => {
             onChange={handleItemChange}
           />
         </div>
+        <Button type="primary" onClick={() => setCreateOpen(true)}>
+          {t("Create rule")}
+        </Button>
       </div>
       {pageAlert ? (
         <Alert
@@ -503,23 +537,6 @@ const Index = () => {
           style={{ marginBottom: 12 }}
         />
       ) : null}
-      <Flex
-        align="center"
-        justify="space-between"
-        style={{ width: "100%", marginBottom: 12 }}
-      >
-        <Flex align="center" gap="middle">
-          <Button onClick={handleDelete} disabled={!hasSelected || loading}>
-            {t("Delete")}
-          </Button>
-          {hasSelected
-            ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
-            : null}
-        </Flex>
-        <Button type="primary" onClick={() => setCreateOpen(true)}>
-          {t("Create rule")}
-        </Button>
-      </Flex>
       <Layout
         style={{
           overflow: "auto",
@@ -548,48 +565,36 @@ const Index = () => {
               overflow: "auto",
             }}
           >
-            {isMobile ? (
+            <Flex
+              align="center"
+              gap="middle"
+              style={{ width: "100%", marginBottom: 12 }}
+            >
+              <Button
+                onClick={handleDelete}
+                disabled={!hasSelected || loading}
+              >
+                {t("Delete")}
+              </Button>
+              {hasSelected
+                ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
+                : null}
+            </Flex>
+            {pagedData.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "48px 16px",
+                  color: "var(--p-color-text-secondary)",
+                }}
+              >
+                {t("customLiquid.noMatchingRules")}
+              </div>
+            ) : isMobile ? (
               <Space direction="vertical" style={{ width: "100%" }}>
-                <Card
-                  title={
-                    <Checkbox
-                      checked={allCurrentPageSelected}
-                      indeterminate={
-                        someCurrentPageSelected && !allCurrentPageSelected
-                      }
-                      onChange={(e) =>
-                        setSelectedRowKeys(
-                          e.target.checked
-                            ? [
-                                ...selectedRowKeys.filter(
-                                  (key) => !currentPageKeys.includes(key),
-                                ),
-                                ...currentPageKeys,
-                              ]
-                            : selectedRowKeys.filter(
-                                (key) => !currentPageKeys.includes(key),
-                              ),
-                        )
-                      }
-                    >
-                      {t("Resource")}
-                    </Checkbox>
-                  }
-                >
-                  <Space direction="vertical" style={{ width: "100%" }}>
-                    {pagedData.map((item) => (
-                      <Space
-                        key={item.key}
-                        direction="vertical"
-                        size="small"
-                        style={{ width: "100%" }}
-                      >
-                        {renderManageField(item, true)}
-                        <Divider style={{ margin: "8px 0" }} />
-                      </Space>
-                    ))}
-                  </Space>
-                </Card>
+                {pagedData.map((item) => (
+                  <div key={item.key}>{renderManageField(item, true)}</div>
+                ))}
               </Space>
             ) : (
               <Table
@@ -597,6 +602,7 @@ const Index = () => {
                 dataSource={pagedData}
                 pagination={false}
                 rowKey="key"
+                locale={{ emptyText: t("customLiquid.noMatchingRules") }}
               />
             )}
             <div
@@ -606,11 +612,11 @@ const Index = () => {
                 padding: "12px 0",
               }}
             >
-              {(hasPrevious || hasNext) && (
+              {(hasPrevious || hasNextPage) && (
                 <Pagination
                   hasPrevious={hasPrevious}
                   onPrevious={() => setCurrentPage((page) => page - 1)}
-                  hasNext={hasNext}
+                  hasNext={hasNextPage}
                   onNext={() => setCurrentPage((page) => page + 1)}
                 />
               )}
@@ -620,13 +626,17 @@ const Index = () => {
       </Layout>
       <UpdateCustomTransModal
         migrated={migrated}
-        dataSource={dataSource}
         languageCode={selectedLanguage}
         title={t("Create rule")}
         open={createOpen}
         setIsModalHide={() => setCreateOpen(false)}
         handleUpdateDataSource={(row) => {
-          setDataSource((prev) => [row, ...prev]);
+          setDataSource((prev) =>
+            [row, ...prev.filter((item) => item.key !== row.key)].slice(
+              0,
+              PAGE_SIZE,
+            ),
+          );
           setTranslatedValues((prev) => ({
             ...prev,
             [row.key]: row.targetText,

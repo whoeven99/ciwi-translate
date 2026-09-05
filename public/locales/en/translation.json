@@ -172,6 +172,8 @@
   "Currency Switcher": "Currency only",
   "Current plan: ": "Current plan:",
   "Custom Liquid": "Custom Liquid",
+  "customLiquid.noMatchingRules": "No matching rules",
+  "customLiquid.searchPlaceholder": "Search source text",
   "Customers can switch languages and currencies when visiting the site. ": "Customers can switch languages and currencies when visiting the site. ",
   "Customize Redirects by Region": "Customize Redirects by Region",
   "Dashboard": "Dashboard",
