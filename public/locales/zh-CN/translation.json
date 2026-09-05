@@ -1264,6 +1264,7 @@
   "v4Mvp.themeExtension.disable": "在主题中停用",
   "v4Mvp.themeExtension.enable": "在主题中启用",
   "v4Mvp.themeExtension.manage": "管理切换器",
+  "v4Mvp.themeExtension.themeEditorHint": "主题编辑器会打开「应用嵌入」。启用 Ciwi Switcher，然后点击保存。",
   "v4Mvp.themeExtension.title": "店面语言切换器",
   "v4Mvp.time.fast": "约 5 分钟",
   "v4Mvp.time.long": "约 15-30 分钟",

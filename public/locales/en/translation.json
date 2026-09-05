@@ -1264,6 +1264,7 @@
   "v4Mvp.themeExtension.disable": "Disable in theme",
   "v4Mvp.themeExtension.enable": "Enable in theme",
   "v4Mvp.themeExtension.manage": "Manage switcher",
+  "v4Mvp.themeExtension.themeEditorHint": "Theme editor opens App embeds. Enable Ciwi Switcher, then click Save.",
   "v4Mvp.themeExtension.title": "Storefront language switcher",
   "v4Mvp.time.fast": "About 5 min",
   "v4Mvp.time.long": "About 15-30 min",
