@@ -63,11 +63,18 @@ export default function AppSectionCard({
         boxShadow: "var(--app-shadow-card)",
         background: "var(--app-color-surface)",
         borderRadius: "var(--app-radius-lg)",
+        display: "flex",
+        flexDirection: "column",
         ...style,
       }}
       styles={{
         body: {
           padding: bodyPadding,
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          flex: 1,
+          minHeight: 0,
         },
       }}
     >
@@ -76,6 +83,9 @@ export default function AppSectionCard({
           display: "flex",
           flexDirection: "column",
           gap: hasHeader ? "var(--app-space-300)" : 0,
+          flex: 1,
+          minHeight: 0,
+          height: "100%",
         }}
       >
         {hasHeader ? (

@@ -13,12 +13,14 @@ type ThemeExtensionStatusCardProps = {
   shop: string;
   ciwiSwitcherId: string;
   status: ThemeEmbedLoadStatus;
+  bodyPadding?: string;
 };
 
 export function ThemeExtensionStatusCard({
   shop,
   ciwiSwitcherId,
   status,
+  bodyPadding = "20px 24px",
 }: ThemeExtensionStatusCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -43,10 +45,12 @@ export function ThemeExtensionStatusCard({
         </span>
       }
       description={description}
-      bodyPadding="12px 16px"
+      bodyPadding={bodyPadding}
       style={{
         height: "100%",
         flex: 1,
+        display: "flex",
+        flexDirection: "column",
         boxShadow: "var(--app-shadow-card)",
       }}
     >
@@ -105,11 +109,16 @@ function StatusCardActions({
     return (
       <InlineStack gap="200" wrap>
         {themeEditorUrl ? (
-          <Button onClick={() => openSwitcherThemeEditor(themeEditorUrl)}>
+          <Button
+            variant="primary"
+            onClick={() => openSwitcherThemeEditor(themeEditorUrl)}
+          >
             {t("v4Mvp.themeExtension.disable")}
           </Button>
         ) : null}
-        <Button onClick={onManage}>{t("v4Mvp.themeExtension.manage")}</Button>
+        <Button variant="primary" onClick={onManage}>
+          {t("v4Mvp.themeExtension.manage")}
+        </Button>
       </InlineStack>
     );
   }

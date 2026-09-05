@@ -1179,60 +1179,40 @@ export default function TranslateV4MvpRoute() {
           <div style={summaryHeroGridStyle}>
             <div style={summaryHeroItemStyle}>
               <AppSectionCard
-                title={t("v4Mvp.coverageCard.title")}
                 bodyPadding={HERO_CARD_PADDING}
                 style={summaryHeroCardShellStyle}
               >
-                <div style={summaryHeroBodyStyle}>
-                  <div style={summaryHeroLayoutStyle}>
-                    <div style={summaryProgressWrapStyle}>
-                      <AppProgressRing
-                        percent={
-                          isCoverageInitializing
-                            ? null
-                            : hasCoverageData
-                              ? coverage.overallPercent
-                              : null
-                        }
-                        size={80}
-                        loading={isCoverageInitializing || !hasCoverageData}
-                      />
-                    </div>
-
-                    <div style={summaryContentStyle}>
-                      <BlockStack gap="100">
-                        <Text as="p" variant="bodyMd">
-                          {isCoverageInitializing
-                            ? t("v4Mvp.coverageCard.summaryComputing", {
-                                defaultValue:
-                                  "Store translation status is being calculated...",
-                              })
-                            : t("v4Mvp.coverageCard.summary", {
-                                percent: hasCoverageData
-                                  ? `${coverage.overallPercent ?? 0}%`
-                                  : "—",
-                              })}
-                        </Text>
-                        {isCoverageInitializing ? (
-                          <Text as="p" tone="subdued" variant="bodySm">
-                            {t("v4Mvp.coverageCard.descriptionComputing", {
-                              defaultValue:
-                                "We are scanning your store content and will show overall coverage once the first calculation finishes.",
-                            })}
-                          </Text>
-                        ) : hasCoverageData && coverage.totalItems > 0 ? (
-                          <Text as="p" tone="subdued" variant="bodySm">
-                            {t("v4Mvp.overview.progress", {
-                              translated: coverage.translatedItems.toLocaleString(),
-                              total: coverage.totalItems.toLocaleString(),
-                            })}
-                          </Text>
-                        ) : null}
-                      </BlockStack>
-                    </div>
+                <div style={summaryHeroLayoutStyle}>
+                  <div style={summaryProgressWrapStyle}>
+                    <AppProgressRing
+                      percent={
+                        isCoverageInitializing
+                          ? null
+                          : hasCoverageData
+                            ? coverage.overallPercent
+                            : null
+                      }
+                      size={96}
+                      loading={isCoverageInitializing || !hasCoverageData}
+                    />
                   </div>
 
-                  <div style={summaryHeroFooterStyle}>
+                  <div style={summaryContentStyle}>
+                    <Text as="h3" variant="bodySm" tone="subdued">
+                      {t("v4Mvp.coverageCard.title")}
+                    </Text>
+                    <Text as="p" variant="headingSm">
+                      {isCoverageInitializing
+                        ? t("v4Mvp.coverageCard.summaryComputing", {
+                            defaultValue:
+                              "Store translation status is being calculated...",
+                          })
+                        : t("v4Mvp.coverageCard.summary", {
+                            percent: hasCoverageData
+                              ? `${coverage.overallPercent ?? 0}%`
+                              : "—",
+                          })}
+                    </Text>
                     <InlineStack gap="150" blockAlign="center" wrap>
                       <AppStatusBadge
                         tone={
@@ -1253,6 +1233,21 @@ export default function TranslateV4MvpRoute() {
                         </Text>
                       ) : null}
                     </InlineStack>
+                    {isCoverageInitializing ? (
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        {t("v4Mvp.coverageCard.descriptionComputing", {
+                          defaultValue:
+                            "We are scanning your store content and will show overall coverage once the first calculation finishes.",
+                        })}
+                      </Text>
+                    ) : hasCoverageData && coverage.totalItems > 0 ? (
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        {t("v4Mvp.overview.progress", {
+                          translated: coverage.translatedItems.toLocaleString(),
+                          total: coverage.totalItems.toLocaleString(),
+                        })}
+                      </Text>
+                    ) : null}
                     <Button
                       variant="primary"
                       disabled={isCoverageInitializing}
@@ -1270,6 +1265,7 @@ export default function TranslateV4MvpRoute() {
                 shop={shop}
                 ciwiSwitcherId={ciwiSwitcherId}
                 status={embedStatus}
+                bodyPadding={HERO_CARD_PADDING}
               />
             </div>
 
@@ -1756,7 +1752,7 @@ const coveragePercentWrapStyle = {
   textAlign: "right",
 } satisfies CSSProperties;
 
-const HERO_CARD_PADDING = "12px 16px";
+const HERO_CARD_PADDING = "20px 24px";
 
 const summaryHeroGridStyle = {
   display: "flex",
@@ -1777,15 +1773,9 @@ const summaryHeroItemStyle = {
 const summaryHeroCardShellStyle = {
   height: "100%",
   flex: 1,
-  boxShadow: "var(--app-shadow-card)",
-} satisfies CSSProperties;
-
-const summaryHeroBodyStyle = {
   display: "flex",
   flexDirection: "column",
-  gap: "8px",
-  flex: 1,
-  minHeight: 0,
+  boxShadow: "var(--app-shadow-card)",
 } satisfies CSSProperties;
 
 const videoPreviewLayerStyle = {
@@ -1796,7 +1786,7 @@ const videoPreviewLayerStyle = {
   textDecoration: "none",
   background: "#0f172a",
   flex: 1,
-  minHeight: "80px",
+  minHeight: "120px",
   height: "100%",
 } satisfies CSSProperties;
 
@@ -1804,15 +1794,19 @@ const summaryHeroLayoutStyle = {
   display: "flex",
   alignItems: "center",
   flexWrap: "wrap",
-  gap: "12px",
+  gap: "16px",
   width: "100%",
+  flex: 1,
+  minHeight: 0,
 } satisfies CSSProperties;
 
 const summaryContentStyle = {
   minWidth: 0,
-  flex: "1 1 140px",
-  display: "grid",
-  gap: "4px",
+  flex: "1 1 160px",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-start",
+  gap: "8px",
 } satisfies CSSProperties;
 
 const summaryProgressWrapStyle = {
@@ -1822,20 +1816,11 @@ const summaryProgressWrapStyle = {
   flexShrink: 0,
 } satisfies CSSProperties;
 
-const summaryHeroFooterStyle = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: "8px",
-  flexWrap: "wrap",
-  marginTop: "auto",
-} satisfies CSSProperties;
-
 const videoPreviewSurfaceStyle = {
   position: "relative",
   width: "100%",
   height: "100%",
-  minHeight: "80px",
+  minHeight: "120px",
   overflow: "hidden",
   background: "#0f172a",
 } satisfies CSSProperties;
@@ -1843,8 +1828,7 @@ const videoPreviewSurfaceStyle = {
 const videoPreviewImageStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "80px",
-  maxHeight: "112px",
+  minHeight: "120px",
   display: "block",
   objectFit: "cover",
 } satisfies CSSProperties;
@@ -1898,7 +1882,7 @@ const videoPreviewCaptionTextStyle = {
 const videoPreviewFallbackStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "80px",
+  minHeight: "120px",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
