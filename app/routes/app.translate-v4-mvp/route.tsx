@@ -1793,19 +1793,25 @@ const summaryHeroBodyStyle = {
   minHeight: 0,
 } satisfies CSSProperties;
 
-const VIDEO_THUMB_HEIGHT = 80;
+const summaryHeroFooterStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+  flexWrap: "wrap",
+  marginTop: "auto",
+} satisfies CSSProperties;
 
 const videoPreviewLayerStyle = {
   display: "block",
+  position: "relative",
   overflow: "hidden",
   borderRadius: "var(--app-radius-md)",
   color: "inherit",
   textDecoration: "none",
   background: "#0f172a",
-  flex: 1,
-  height: VIDEO_THUMB_HEIGHT,
-  minHeight: VIDEO_THUMB_HEIGHT,
-  maxHeight: VIDEO_THUMB_HEIGHT,
+  width: "100%",
+  aspectRatio: "16 / 9",
 } satisfies CSSProperties;
 
 const summaryHeroLayoutStyle = {
@@ -1830,20 +1836,9 @@ const summaryProgressWrapStyle = {
   flexShrink: 0,
 } satisfies CSSProperties;
 
-const summaryHeroFooterStyle = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: "8px",
-  flexWrap: "wrap",
-} satisfies CSSProperties;
-
 const videoPreviewSurfaceStyle = {
-  position: "relative",
-  width: "100%",
-  height: "100%",
-  minHeight: VIDEO_THUMB_HEIGHT,
-  maxHeight: VIDEO_THUMB_HEIGHT,
+  position: "absolute",
+  inset: 0,
   overflow: "hidden",
   background: "#0f172a",
 } satisfies CSSProperties;
@@ -1851,8 +1846,6 @@ const videoPreviewSurfaceStyle = {
 const videoPreviewImageStyle = {
   width: "100%",
   height: "100%",
-  minHeight: VIDEO_THUMB_HEIGHT,
-  maxHeight: VIDEO_THUMB_HEIGHT,
   display: "block",
   objectFit: "cover",
 } satisfies CSSProperties;
@@ -1869,8 +1862,8 @@ const videoPreviewOverlayStyle = {
 } satisfies CSSProperties;
 
 const videoPreviewPlayButtonStyle = {
-  width: "24px",
-  height: "24px",
+  width: "32px",
+  height: "32px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.9)",
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.16)",
@@ -1905,7 +1898,6 @@ const videoPreviewCaptionTextStyle = {
 const videoPreviewFallbackStyle = {
   width: "100%",
   height: "100%",
-  minHeight: VIDEO_THUMB_HEIGHT,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",

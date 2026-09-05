@@ -58,12 +58,14 @@ export function ThemeExtensionStatusCard({
       }}
     >
       {status === "loading" ? null : (
-        <StatusCardActions
-          status={status}
-          themeEditorUrl={themeEditorUrl}
-          onManage={() => navigate(APP_NAV_ITEMS.switcher)}
-          t={t}
-        />
+        <div style={statusCardFooterStyle}>
+          <StatusCardActions
+            status={status}
+            themeEditorUrl={themeEditorUrl}
+            onManage={() => navigate(APP_NAV_ITEMS.switcher)}
+            t={t}
+          />
+        </div>
       )}
     </AppSectionCard>
   );
@@ -94,6 +96,12 @@ function descriptionForStatus(
   if (status === "unknown") return t("v4Mvp.themeExtension.descriptionUnknown");
   return t("v4Mvp.themeExtension.descriptionInactive");
 }
+
+const statusCardFooterStyle = {
+  marginTop: "auto",
+  display: "flex",
+  justifyContent: "flex-end",
+} as const;
 
 function StatusCardActions({
   status,
