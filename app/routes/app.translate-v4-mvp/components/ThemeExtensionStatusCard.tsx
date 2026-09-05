@@ -43,20 +43,21 @@ export function ThemeExtensionStatusCard({
         </span>
       }
       description={description}
-      extra={
-        status === "loading" ? null : (
-          <StatusCardActions
-            status={status}
-            themeEditorUrl={themeEditorUrl}
-            onManage={() => navigate(APP_NAV_ITEMS.switcher)}
-            t={t}
-          />
-        )
-      }
       bodyPadding="20px 24px"
-      style={{ boxShadow: "var(--app-shadow-card)" }}
+      style={{
+        height: "100%",
+        flex: 1,
+        boxShadow: "var(--app-shadow-card)",
+      }}
     >
-      {null}
+      {status === "loading" ? null : (
+        <StatusCardActions
+          status={status}
+          themeEditorUrl={themeEditorUrl}
+          onManage={() => navigate(APP_NAV_ITEMS.switcher)}
+          t={t}
+        />
+      )}
     </AppSectionCard>
   );
 }

@@ -1176,12 +1176,6 @@ export default function TranslateV4MvpRoute() {
             />
           )}
 
-          <ThemeExtensionStatusCard
-            shop={shop}
-            ciwiSwitcherId={ciwiSwitcherId}
-            status={embedStatus}
-          />
-
           <div style={summaryHeroGridStyle}>
             <div style={summaryHeroCardStyle}>
               <div style={summaryHeroLayoutStyle}>
@@ -1243,18 +1237,26 @@ export default function TranslateV4MvpRoute() {
                         })}
                       </Text>
                     ) : null}
+                    <div style={summaryButtonWrapStyle}>
+                      <Button
+                        variant="secondary"
+                        disabled={isCoverageInitializing}
+                        onClick={() => setCoverageDetailOpen(true)}
+                      >
+                        {t("v4Mvp.coverageCard.viewDetails")}
+                      </Button>
+                    </div>
                   </BlockStack>
-                  <div style={summaryButtonWrapStyle}>
-                    <Button
-                      variant="secondary"
-                      disabled={isCoverageInitializing}
-                      onClick={() => setCoverageDetailOpen(true)}
-                    >
-                      {t("v4Mvp.coverageCard.viewDetails")}
-                    </Button>
-                  </div>
                 </div>
               </div>
+            </div>
+
+            <div style={themeExtensionHeroStyle}>
+              <ThemeExtensionStatusCard
+                shop={shop}
+                ciwiSwitcherId={ciwiSwitcherId}
+                status={embedStatus}
+              />
             </div>
 
             <a
@@ -1741,8 +1743,16 @@ const summaryHeroCardStyle = {
   boxShadow: "var(--app-shadow-card-strong)",
   display: "flex",
   alignItems: "center",
-  flex: "0.95 1 450px",
-  minWidth: "320px",
+  flex: "1.1 1 260px",
+  minWidth: "240px",
+} satisfies CSSProperties;
+
+const themeExtensionHeroStyle = {
+  flex: "1 1 220px",
+  minWidth: "220px",
+  display: "flex",
+  flexDirection: "column",
+  alignSelf: "stretch",
 } satisfies CSSProperties;
 
 const videoPreviewLayerStyle = {
@@ -1753,11 +1763,10 @@ const videoPreviewLayerStyle = {
   textDecoration: "none",
   background: "#0f172a",
   boxShadow: "var(--app-shadow-card-strong)",
-  flex: "1.35 1 10px",
+  flex: "1 1 180px",
   minWidth: "150px",
   minHeight: "100%",
   display: "block",
-  width: "322px",
 } satisfies CSSProperties;
 
 const summaryHeroLayoutStyle = {
@@ -1785,8 +1794,7 @@ const summaryProgressWrapStyle = {
 const summaryButtonWrapStyle = {
   display: "flex",
   alignItems: "center",
-  flexShrink: 0,
-  marginLeft: "auto",
+  paddingTop: "8px",
 } satisfies CSSProperties;
 
 function summaryProgressLabelStyle(accent: string): CSSProperties {
