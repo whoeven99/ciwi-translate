@@ -43,7 +43,7 @@ export function ThemeExtensionStatusCard({
         </span>
       }
       description={description}
-      bodyPadding="20px 24px"
+      bodyPadding="12px 16px"
       style={{
         height: "100%",
         flex: 1,
@@ -51,12 +51,14 @@ export function ThemeExtensionStatusCard({
       }}
     >
       {status === "loading" ? null : (
-        <StatusCardActions
-          status={status}
-          themeEditorUrl={themeEditorUrl}
-          onManage={() => navigate(APP_NAV_ITEMS.switcher)}
-          t={t}
-        />
+        <div style={{ marginTop: "auto" }}>
+          <StatusCardActions
+            status={status}
+            themeEditorUrl={themeEditorUrl}
+            onManage={() => navigate(APP_NAV_ITEMS.switcher)}
+            t={t}
+          />
+        </div>
       )}
     </AppSectionCard>
   );

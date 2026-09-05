@@ -275,38 +275,38 @@ function coverageStatusBadgeTone(
 function getCoverageRating(
   percent: number | null,
   t: ReturnType<typeof useTranslation>["t"],
-) {
+): { label: string; tone: "info" | "success" | "caution" } {
   if (percent == null) {
     return {
       label: t("v4.coverage.notScanned"),
-      accent: appColors.textSecondary,
+      tone: "info",
     };
   }
 
   if (percent >= 100) {
     return {
       label: t("v4Mvp.coverageCard.ratingAmazing"),
-      accent: appColors.textSuccess,
+      tone: "success",
     };
   }
 
   if (percent >= 80) {
     return {
       label: t("v4Mvp.coverageCard.ratingExcellent"),
-      accent: appColors.textSuccess,
+      tone: "success",
     };
   }
 
   if (percent >= 60) {
     return {
       label: t("v4Mvp.coverageCard.ratingQualified"),
-      accent: appColors.textInfo,
+      tone: "info",
     };
   }
 
   return {
     label: t("v4.coverage.needsImprovement"),
-    accent: appColors.textCaution,
+    tone: "caution",
   };
 }
 
@@ -1177,81 +1177,95 @@ export default function TranslateV4MvpRoute() {
           )}
 
           <div style={summaryHeroGridStyle}>
-            <div style={summaryHeroCardStyle}>
-              <div style={summaryHeroLayoutStyle}>
-                <div style={summaryProgressWrapStyle}>
-                  <AppProgressRing
-                    percent={isCoverageInitializing ? null : hasCoverageData ? coverage.overallPercent : null}
-                    tone="primary"
-                    size={100}
-                    loading={isCoverageInitializing || !hasCoverageData}
-                  />
-                </div>
+            <div style={summaryHeroItemStyle}>
+              <AppSectionCard
+                title={t("v4Mvp.coverageCard.title")}
+                bodyPadding={HERO_CARD_PADDING}
+                style={summaryHeroCardShellStyle}
+              >
+                <div style={summaryHeroBodyStyle}>
+                  <div style={summaryHeroLayoutStyle}>
+                    <div style={summaryProgressWrapStyle}>
+                      <AppProgressRing
+                        percent={
+                          isCoverageInitializing
+                            ? null
+                            : hasCoverageData
+                              ? coverage.overallPercent
+                              : null
+                        }
+                        size={80}
+                        loading={isCoverageInitializing || !hasCoverageData}
+                      />
+                    </div>
 
-                <div style={summaryContentStyle}>
-                  <BlockStack gap="100">
-                    <Text as="p" tone="subdued" variant="bodyMd">
-                      {t("v4Mvp.coverageCard.title")}
-                    </Text>
-                    <Text as="p" variant="headingMd">
-                      {isCoverageInitializing
-                        ? t("v4Mvp.coverageCard.summaryComputing", {
-                            defaultValue: "Store translation status is being calculated...",
-                          })
-                        : t("v4Mvp.coverageCard.summary", {
-                            percent: hasCoverageData ? `${coverage.overallPercent ?? 0}%` : "—",
-                          })}
-                    </Text>
-                    <InlineStack gap="150" blockAlign="center" wrap={false}>
-                      <Text
-                        as="p"
-                        variant="headingMd"
-                        style={summaryProgressLabelStyle(coverageRating.accent)}
+                    <div style={summaryContentStyle}>
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodyMd">
+                          {isCoverageInitializing
+                            ? t("v4Mvp.coverageCard.summaryComputing", {
+                                defaultValue:
+                                  "Store translation status is being calculated...",
+                              })
+                            : t("v4Mvp.coverageCard.summary", {
+                                percent: hasCoverageData
+                                  ? `${coverage.overallPercent ?? 0}%`
+                                  : "—",
+                              })}
+                        </Text>
+                        {isCoverageInitializing ? (
+                          <Text as="p" tone="subdued" variant="bodySm">
+                            {t("v4Mvp.coverageCard.descriptionComputing", {
+                              defaultValue:
+                                "We are scanning your store content and will show overall coverage once the first calculation finishes.",
+                            })}
+                          </Text>
+                        ) : hasCoverageData && coverage.totalItems > 0 ? (
+                          <Text as="p" tone="subdued" variant="bodySm">
+                            {t("v4Mvp.overview.progress", {
+                              translated: coverage.translatedItems.toLocaleString(),
+                              total: coverage.totalItems.toLocaleString(),
+                            })}
+                          </Text>
+                        ) : null}
+                      </BlockStack>
+                    </div>
+                  </div>
+
+                  <div style={summaryHeroFooterStyle}>
+                    <InlineStack gap="150" blockAlign="center" wrap>
+                      <AppStatusBadge
+                        tone={
+                          isCoverageInitializing ? "info" : coverageRating.tone
+                        }
                       >
                         {isCoverageInitializing
                           ? t("v4Mvp.coverageCard.statusComputing", {
                               defaultValue: "Calculating...",
                             })
                           : coverageRating.label}
-                      </Text>
-                      {coverage.languageCount > 0 ? (
+                      </AppStatusBadge>
+                      {!isCoverageInitializing && coverage.languageCount > 0 ? (
                         <Text as="span" tone="subdued" variant="bodySm">
-                          {`· ${t("v4Mvp.coverageCard.languageCount", {
+                          {t("v4Mvp.coverageCard.languageCount", {
                             total: coverage.languageCount,
-                          })}`}
+                          })}
                         </Text>
                       ) : null}
                     </InlineStack>
-                    {isCoverageInitializing ? (
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {t("v4Mvp.coverageCard.descriptionComputing", {
-                          defaultValue:
-                            "We are scanning your store content and will show overall coverage once the first calculation finishes.",
-                        })}
-                      </Text>
-                    ) : hasCoverageData && coverage.totalItems > 0 ? (
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {t("v4Mvp.overview.progress", {
-                          translated: coverage.translatedItems.toLocaleString(),
-                          total: coverage.totalItems.toLocaleString(),
-                        })}
-                      </Text>
-                    ) : null}
-                    <div style={summaryButtonWrapStyle}>
-                      <Button
-                        variant="secondary"
-                        disabled={isCoverageInitializing}
-                        onClick={() => setCoverageDetailOpen(true)}
-                      >
-                        {t("v4Mvp.coverageCard.viewDetails")}
-                      </Button>
-                    </div>
-                  </BlockStack>
+                    <Button
+                      variant="primary"
+                      disabled={isCoverageInitializing}
+                      onClick={() => setCoverageDetailOpen(true)}
+                    >
+                      {t("v4Mvp.coverageCard.viewDetails")}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              </AppSectionCard>
             </div>
 
-            <div style={themeExtensionHeroStyle}>
+            <div style={summaryHeroItemStyle}>
               <ThemeExtensionStatusCard
                 shop={shop}
                 ciwiSwitcherId={ciwiSwitcherId}
@@ -1259,38 +1273,52 @@ export default function TranslateV4MvpRoute() {
               />
             </div>
 
-            <a
-              href={SUMMARY_VIDEO_URL}
-              target="_blank"
-              rel="noreferrer"
-              style={videoPreviewLayerStyle}
-            >
-              <div style={videoPreviewSurfaceStyle}>
-                {summaryVideoThumbnailUrl ? (
-                  <img
-                    alt={t("v4Mvp.videoCard.title")}
-                    src={summaryVideoThumbnailUrl}
-                    style={videoPreviewImageStyle}
-                  />
-                ) : (
-                  <div style={videoPreviewFallbackStyle}>
-                    <Badge tone="attention">{t("v4Mvp.videoCard.unavailable")}</Badge>
-                  </div>
-                )}
+            <div style={summaryHeroItemStyle}>
+              <AppSectionCard
+                title={t("v4Mvp.videoCard.guideTitle")}
+                bodyPadding={HERO_CARD_PADDING}
+                style={summaryHeroCardShellStyle}
+              >
+                <a
+                  href={SUMMARY_VIDEO_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={videoPreviewLayerStyle}
+                >
+                  <div style={videoPreviewSurfaceStyle}>
+                    {summaryVideoThumbnailUrl ? (
+                      <img
+                        alt={t("v4Mvp.videoCard.guideTitle")}
+                        src={summaryVideoThumbnailUrl}
+                        style={videoPreviewImageStyle}
+                      />
+                    ) : (
+                      <div style={videoPreviewFallbackStyle}>
+                        <Badge tone="attention">
+                          {t("v4Mvp.videoCard.unavailable")}
+                        </Badge>
+                      </div>
+                    )}
 
-                <div style={videoPreviewOverlayStyle}>
-                  <div style={videoPreviewPlayButtonStyle}>
-                    <div style={videoPreviewPlayIconStyle} />
-                  </div>
-                </div>
+                    <div style={videoPreviewOverlayStyle}>
+                      <div style={videoPreviewPlayButtonStyle}>
+                        <div style={videoPreviewPlayIconStyle} />
+                      </div>
+                    </div>
 
-                <div style={videoPreviewCaptionStyle}>
-                  <Text as="p" variant="bodyMd" style={videoPreviewCaptionTextStyle}>
-                    {t("v4Mvp.videoCard.tutorialTitle")}
-                  </Text>
-                </div>
-              </div>
-            </a>
+                    <div style={videoPreviewCaptionStyle}>
+                      <Text
+                        as="p"
+                        variant="bodySm"
+                        style={videoPreviewCaptionTextStyle}
+                      >
+                        {t("v4Mvp.videoCard.tutorialTitle")}
+                      </Text>
+                    </div>
+                  </div>
+                </a>
+              </AppSectionCard>
+            </div>
           </div>
 
           <AppSectionCard
@@ -1728,58 +1756,61 @@ const coveragePercentWrapStyle = {
   textAlign: "right",
 } satisfies CSSProperties;
 
+const HERO_CARD_PADDING = "12px 16px";
+
 const summaryHeroGridStyle = {
   display: "flex",
   flexWrap: "wrap",
-  gap: "18px",
+  gap: "12px",
   alignItems: "stretch",
   width: "100%",
 } satisfies CSSProperties;
 
-const summaryHeroCardStyle = {
-  ...v4CardStyle,
-  padding: "20px 24px",
-  background: v4Colors.summaryBg,
-  boxShadow: "var(--app-shadow-card-strong)",
-  display: "flex",
-  alignItems: "center",
-  flex: "1.1 1 260px",
-  minWidth: "240px",
-} satisfies CSSProperties;
-
-const themeExtensionHeroStyle = {
+const summaryHeroItemStyle = {
   flex: "1 1 220px",
-  minWidth: "220px",
+  minWidth: "200px",
   display: "flex",
   flexDirection: "column",
   alignSelf: "stretch",
 } satisfies CSSProperties;
 
+const summaryHeroCardShellStyle = {
+  height: "100%",
+  flex: 1,
+  boxShadow: "var(--app-shadow-card)",
+} satisfies CSSProperties;
+
+const summaryHeroBodyStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+  flex: 1,
+  minHeight: 0,
+} satisfies CSSProperties;
+
 const videoPreviewLayerStyle = {
-  ...v4CardStyle,
-  padding: "0",
+  display: "block",
   overflow: "hidden",
+  borderRadius: "var(--app-radius-md)",
   color: "inherit",
   textDecoration: "none",
   background: "#0f172a",
-  boxShadow: "var(--app-shadow-card-strong)",
-  flex: "1 1 180px",
-  minWidth: "150px",
-  minHeight: "100%",
-  display: "block",
+  flex: 1,
+  minHeight: "80px",
+  height: "100%",
 } satisfies CSSProperties;
 
 const summaryHeroLayoutStyle = {
   display: "flex",
   alignItems: "center",
   flexWrap: "wrap",
-  gap: "20px",
+  gap: "12px",
   width: "100%",
 } satisfies CSSProperties;
 
 const summaryContentStyle = {
   minWidth: 0,
-  flex: "1 1 180px",
+  flex: "1 1 140px",
   display: "grid",
   gap: "4px",
 } satisfies CSSProperties;
@@ -1791,26 +1822,20 @@ const summaryProgressWrapStyle = {
   flexShrink: 0,
 } satisfies CSSProperties;
 
-const summaryButtonWrapStyle = {
+const summaryHeroFooterStyle = {
   display: "flex",
   alignItems: "center",
-  paddingTop: "8px",
+  justifyContent: "space-between",
+  gap: "8px",
+  flexWrap: "wrap",
+  marginTop: "auto",
 } satisfies CSSProperties;
-
-function summaryProgressLabelStyle(accent: string): CSSProperties {
-  return {
-    color: accent,
-    fontSize: "14px",
-    lineHeight: "18px",
-    fontWeight: 600,
-  };
-}
 
 const videoPreviewSurfaceStyle = {
   position: "relative",
   width: "100%",
   height: "100%",
-  minHeight: "100px",
+  minHeight: "80px",
   overflow: "hidden",
   background: "#0f172a",
 } satisfies CSSProperties;
@@ -1818,7 +1843,8 @@ const videoPreviewSurfaceStyle = {
 const videoPreviewImageStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "112px",
+  minHeight: "80px",
+  maxHeight: "112px",
   display: "block",
   objectFit: "cover",
 } satisfies CSSProperties;
@@ -1829,14 +1855,14 @@ const videoPreviewOverlayStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  paddingBottom: "10px",
+  paddingBottom: "8px",
   background:
     "linear-gradient(180deg, rgba(15,23,42,0.08) 0%, rgba(15,23,42,0.24) 100%)",
 } satisfies CSSProperties;
 
 const videoPreviewPlayButtonStyle = {
-  width: "42px",
-  height: "42px",
+  width: "32px",
+  height: "32px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.9)",
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.16)",
@@ -1849,16 +1875,16 @@ const videoPreviewPlayButtonStyle = {
 const videoPreviewPlayIconStyle = {
   width: 0,
   height: 0,
-  borderTop: "6px solid transparent",
-  borderBottom: "6px solid transparent",
-  borderLeft: `10px solid ${v4Colors.text}`,
+  borderTop: "5px solid transparent",
+  borderBottom: "5px solid transparent",
+  borderLeft: `8px solid ${v4Colors.text}`,
   marginLeft: "2px",
 } satisfies CSSProperties;
 
 const videoPreviewCaptionStyle = {
   position: "absolute",
   inset: "auto 0 0 0",
-  padding: "14px 16px 10px",
+  padding: "8px 12px 8px",
   background:
     "linear-gradient(180deg, rgba(15, 23, 42, 0) 0%, rgb(77 77 77 / 78%) 100%)",
 } satisfies CSSProperties;
@@ -1872,7 +1898,7 @@ const videoPreviewCaptionTextStyle = {
 const videoPreviewFallbackStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "112px",
+  minHeight: "80px",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
