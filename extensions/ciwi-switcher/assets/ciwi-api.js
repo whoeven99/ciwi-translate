@@ -44,7 +44,7 @@ async function parseJsonSafely(res) {
 
 async function fetchJson(url, options = {}) {
   const {
-    retryAttempts = 4,
+    retryAttempts = 1,
     retryDelayMs = 450,
     headers = {},
     ...fetchOptions

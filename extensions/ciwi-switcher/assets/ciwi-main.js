@@ -6,22 +6,16 @@ import {
   setStorageItem,
 } from "./ciwi-storage.js";
 import {
-  CiwiswitcherForm,
-  updateDisplayText,
-  syncCompactSwitcherLayout,
-  ProductImgTranslate,
-  CurrencySelectorTakeEffect,
-  LanguageSelectorTakeEffect,
-  HomeImageTranslate,
-  CustomLiquidTextTranslate,
-  CollectUntranslatedText,
-  tryApplyCachedCurrencyConversion,
-} from "./ciwi-ui.js";
-import {
   getManualLocalizationPreference,
   updateLocalization,
 } from "./ciwi-utils.js";
-import { getCiwiPageContext } from "./ciwi-page.js";
+import {
+  buildTranslationCacheKey,
+  getCiwiPageContext,
+} from "./ciwi-page.js";
+
+/** Filled after first paint via dynamic import("./ciwi-ui.js"). */
+let switcherUi = null;
 
 const resolveCiwiRuntimeVersionInfo = () => {
   const scriptUrl = import.meta?.url || "";
@@ -392,7 +386,7 @@ function renderStaticThemePreviewSwitcher({
     mainArrowIcon.style.opacity = "0.45";
   }
 
-  updateDisplayText(
+  switcherUi.updateDisplayText(
     isLanguageSelectorTakeEffect,
     isCurrencySelectorTakeEffect,
     ciwiBlock,
@@ -447,21 +441,6 @@ function scheduleAfterPaint(fn) {
   };
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(() => requestAnimationFrame(run));
-    return;
-  }
-  setTimeout(run, 0);
-}
-
-function scheduleIdle(fn, timeout = 2000) {
-  const run = () => {
-    try {
-      fn();
-    } catch (error) {
-      console.warn("[ciwi] idle", error);
-    }
-  };
-  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-    window.requestIdleCallback(run, { timeout });
     return;
   }
   setTimeout(run, 0);
@@ -766,7 +745,7 @@ function paintSwitcherChrome({
     selectorBox.style.backgroundColor = configData.backgroundColor;
     mainBox.style.backgroundColor = configData.backgroundColor;
     mainBox.style.border = `1px solid ${configData.optionBorderColor}`;
-    updateDisplayText(
+    switcherUi.updateDisplayText(
       configData.languageSelector,
       configData.currencySelector,
       ciwiBlock,
@@ -789,7 +768,7 @@ function paintSwitcherChrome({
     selectorBox.style.right = "0";
   }
 
-  syncCompactSwitcherLayout(ciwiBlock);
+  switcherUi.syncCompactSwitcherLayout(ciwiBlock);
 }
 
 function mountSwitcherFromConfig({
@@ -808,7 +787,7 @@ function mountSwitcherFromConfig({
   });
 
   const flags = getSelectorFlags(configData);
-  LanguageSelectorTakeEffect(
+  switcherUi.LanguageSelectorTakeEffect(
     flags.isLanguageSelectorTakeEffect,
     configData,
     ciwiBlock,
@@ -821,7 +800,7 @@ function mountSwitcherFromConfig({
       enabled: flags.isCurrencySelectorTakeEffect,
     });
   } else {
-    CurrencySelectorTakeEffect(
+    switcherUi.CurrencySelectorTakeEffect(
       blockId,
       flags.isCurrencySelectorTakeEffect,
       shop.value,
@@ -840,6 +819,42 @@ function mountSwitcherFromConfig({
   if (isInThemePreview) {
     disableCiwiInteractionsInThemePreview(ciwiBlock);
   }
+}
+
+function loadLiquidModule() {
+  return import("./ciwi-liquid.js");
+}
+
+function loadPictureModule() {
+  return import("./ciwi-picture.js");
+}
+
+function loadCollectModule() {
+  return import("./ciwi-collect.js");
+}
+
+function isPrimaryStorefrontLanguage(configData, ciwiBlock) {
+  const current = ciwiBlock.querySelector('input[name="language_code"]')?.value;
+  const primary = configData?.primaryLanguage;
+  if (!current || !primary) return false;
+  return normalizeLocaleCode(current) === normalizeLocaleCode(primary);
+}
+
+function peekLiquidTranslationCache(shopName, language) {
+  if (!shopName || !language) return null;
+  const cacheKey = buildTranslationCacheKey("liquid_translations", [
+    shopName,
+    language,
+  ]);
+  return getWithTTL(cacheKey);
+}
+
+function runLiquidReplace(blockId, shop, ciwiBlock, allowNetwork) {
+  return loadLiquidModule()
+    .then((mod) =>
+      mod.CustomLiquidTextTranslate(blockId, shop, ciwiBlock, { allowNetwork }),
+    )
+    .catch(() => {});
 }
 
 function ciwiOnload() {
@@ -868,14 +883,49 @@ function ciwiOnload() {
   let configData = unwrapSwitcherConfig(cachedPayload);
 
   let customLiquidReplacePromise = Promise.resolve();
-  if (!isInThemePreview) {
-    customLiquidReplacePromise = Promise.resolve(
-      CustomLiquidTextTranslate(blockId, shop, ciwiBlock),
-    ).catch(() => {});
-  }
+  let liquidHandled = false;
+  const languageCode =
+    ciwiBlock.querySelector('input[name="language_code"]')?.value || "";
+
+  const applyCachedLiquidIfAny = () => {
+    if (isInThemePreview || liquidHandled) return;
+    if (configData && isPrimaryStorefrontLanguage(configData, ciwiBlock)) {
+      liquidHandled = true;
+      return;
+    }
+    const cached = peekLiquidTranslationCache(shop.value, languageCode);
+    if (!cached) return;
+    liquidHandled = true;
+    const response = cached.response;
+    if (response && Object.keys(response).length > 0) {
+      customLiquidReplacePromise = runLiquidReplace(
+        blockId,
+        shop,
+        ciwiBlock,
+        false,
+      );
+    }
+  };
+
+  const fetchLiquidAfterPaintIfNeeded = () => {
+    if (isInThemePreview || liquidHandled) return;
+    if (configData && isPrimaryStorefrontLanguage(configData, ciwiBlock)) {
+      liquidHandled = true;
+      return;
+    }
+    liquidHandled = true;
+    customLiquidReplacePromise = runLiquidReplace(
+      blockId,
+      shop,
+      ciwiBlock,
+      true,
+    );
+  };
+
+  applyCachedLiquidIfAny();
 
   if (!isInThemePreview && configData) {
-    tryApplyCachedCurrencyConversion({
+    switcherUi.tryApplyCachedCurrencyConversion({
       shop: shop.value,
       ciwiBlock,
       marketCurrencyOpen: configData.marketCurrencyOpen !== false,
@@ -884,20 +934,25 @@ function ciwiOnload() {
 
   const runStorefrontTranslationTasks = () => {
     if (isInThemePreview) return;
-    const tasks = [];
-    if (pageContext.isProductPage) {
-      tasks.push(ProductImgTranslate(blockId, shop, ciwiBlock));
-    }
-    if (pageContext.isHomePage) {
-      tasks.push(HomeImageTranslate(blockId));
-    }
-    if (tasks.length > 0) {
-      Promise.allSettled(tasks).catch(() => {});
-    }
+    loadPictureModule()
+      .then((mod) => {
+        const tasks = [];
+        if (pageContext.isProductPage) {
+          tasks.push(mod.ProductImgTranslate(blockId, shop, ciwiBlock));
+        }
+        if (pageContext.isHomePage) {
+          tasks.push(mod.HomeImageTranslate(blockId));
+        }
+        if (tasks.length > 0) {
+          return Promise.allSettled(tasks);
+        }
+        return undefined;
+      })
+      .catch(() => {});
   };
 
   const scheduleStorefrontTranslationTasks = () => {
-    scheduleIdle(runStorefrontTranslationTasks, 2000);
+    setTimeout(runStorefrontTranslationTasks, 5500);
   };
 
   const scheduleAutoLiquidCollect = () => {
@@ -929,8 +984,13 @@ function ciwiOnload() {
     ) {
       return;
     }
-    const run = () =>
-      CollectUntranslatedText(shop, ciwiBlock, { primaryLanguage });
+    const run = () => {
+      loadCollectModule()
+        .then((mod) =>
+          mod.CollectUntranslatedText(shop, ciwiBlock, { primaryLanguage }),
+        )
+        .catch(() => {});
+    };
     const schedule = () => {
       if ("requestIdleCallback" in window) {
         window.requestIdleCallback(run, { timeout: 9000 });
@@ -938,8 +998,6 @@ function ciwiOnload() {
         setTimeout(run, 2000);
       }
     };
-    // 替换结束后固定再等 2s，抓晚注入第三方文案。countdown 补扫仍是 500ms / 1.5s，
-    // 不改其计时；有规则时与第一次补扫并行，实际开扫 = max(补扫, 2s)。
     const AUTO_LIQUID_COLLECT_AFTER_REPLACE_MS = 2000;
     Promise.resolve(customLiquidReplacePromise)
       .finally(() => {
@@ -1024,15 +1082,19 @@ function ciwiOnload() {
         languageSelect.value = nextLanguage;
       }
 
-      updateDisplayText(
+      switcherUi.updateDisplayText(
         configData.languageSelector,
         configData.currencySelector,
         ciwiBlock,
       );
       scheduleStorefrontTranslationTasks();
-      customLiquidReplacePromise = Promise.resolve(
-        CustomLiquidTextTranslate(blockId, shop, ciwiBlock),
-      ).catch(() => {});
+      liquidHandled = true;
+      customLiquidReplacePromise = runLiquidReplace(
+        blockId,
+        shop,
+        ciwiBlock,
+        true,
+      );
       scheduleAutoLiquidCollect();
     };
 
@@ -1057,9 +1119,16 @@ function ciwiOnload() {
         isInThemePreview,
       });
       if (isInThemePreview) return;
+      fetchLiquidAfterPaintIfNeeded();
       scheduleAutoLiquidCollect();
       setupRuntimeLanguageSync();
-      scheduleIdle(refreshCurrenciesInBackground, 2000);
+      startAutoLocalization({
+        configData,
+        ciwiBlock,
+        shop,
+        isInThemePreview,
+      });
+      setTimeout(refreshCurrenciesInBackground, 6000);
     };
     if (isInThemePreview || !afterPaint) {
       mount();
@@ -1068,55 +1137,68 @@ function ciwiOnload() {
     scheduleAfterPaint(mount);
   };
 
-  startAutoLocalization({
-    configData,
-    ciwiBlock,
-    shop,
-    isInThemePreview,
-  });
-
   if (configData) {
-    mountWhenReady({ afterPaint: true });
-  }
-
-  if (!isInThemePreview) {
-    scheduleStorefrontTranslationTasks();
-  }
-
-  if (configData) {
-    if (!isInThemePreview) refreshConfigInBackground();
+    mountWhenReady({ afterPaint: false });
+    if (!isInThemePreview) {
+      scheduleStorefrontTranslationTasks();
+      setTimeout(refreshConfigInBackground, 6000);
+    }
     return;
   }
 
-  API.fetchSwitcherConfig({ shop: shop.value })
-    .then((fresh) => {
-      if (fresh) {
-        setWithTTL(configKey, fresh, 1000 * 60 * 60, configTtlOptions);
-      }
-      configData = unwrapSwitcherConfig(fresh) || configData;
-      if (!configData) return;
-      startAutoLocalization({
-        configData,
-        ciwiBlock,
-        shop,
-        isInThemePreview,
-      });
-      mountWhenReady({ afterPaint: false });
-    })
-    .catch(() => {});
+  const loadConfigAfterPaint = () => {
+    API.fetchSwitcherConfig({ shop: shop.value })
+      .then((fresh) => {
+        if (fresh) {
+          setWithTTL(configKey, fresh, 1000 * 60 * 60, configTtlOptions);
+        }
+        configData = unwrapSwitcherConfig(fresh) || configData;
+        if (!configData) {
+          fetchLiquidAfterPaintIfNeeded();
+          return;
+        }
+        mountWhenReady({ afterPaint: false });
+        if (!isInThemePreview) {
+          scheduleStorefrontTranslationTasks();
+        }
+      })
+      .catch(() => {});
+  };
+
+  loadConfigAfterPaint();
 }
 
 logCiwiRuntimeVersion();
 
-if (!customElements.get("ciwiswitcher-form")) {
-  customElements.define("ciwiswitcher-form", CiwiswitcherForm);
+function startSwitcherRuntime() {
+  import("./ciwi-ui.js")
+    .then((ui) => {
+      switcherUi = ui;
+      if (!customElements.get("ciwiswitcher-form")) {
+        customElements.define("ciwiswitcher-form", ui.CiwiswitcherForm);
+      }
+      ciwiOnload();
+    })
+    .catch((error) => {
+      console.warn("[ciwi] failed to load switcher ui", error);
+    });
 }
 
-// 尽早初始化：DOM 就绪即可运行，无需等待整页所有图片/字体等资源（原 window load）。
-// 三个数据脚本在 liquid 中改用 defer，保证在 DOMContentLoaded 前按序加载完，
-// 因此此处运行时 window.countryCurMap 等已就绪。
+function bootCiwi() {
+  const isPreview =
+    document.querySelector('input[name="ciwi_request_design_mode"]')?.value ===
+      "1" ||
+    document.querySelector('input[name="ciwi_request_visual_preview_mode"]')
+      ?.value === "1";
+  if (isPreview) {
+    startSwitcherRuntime();
+    return;
+  }
+  scheduleAfterPaint(startSwitcherRuntime);
+}
+
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", ciwiOnload);
+  document.addEventListener("DOMContentLoaded", bootCiwi);
 } else {
-  ciwiOnload();
+  bootCiwi();
 }

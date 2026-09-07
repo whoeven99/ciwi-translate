@@ -495,3 +495,24 @@ export function getManualLocalizationPreference(shop) {
     return null;
   }
 }
+
+let currencyFormatConfigPromise = null;
+
+/** Load currency-format-config.js on demand (not on the LCP critical path). */
+export function ensureCurrencyFormatConfig() {
+  if (typeof window !== "undefined" && window.currencyFormatConfig) {
+    return Promise.resolve();
+  }
+  if (currencyFormatConfigPromise) return currencyFormatConfigPromise;
+  const url = document.getElementById("ciwiCurrencyFormatUrl")?.value;
+  if (!url) return Promise.resolve();
+  currencyFormatConfigPromise = new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+  });
+  return currencyFormatConfigPromise;
+}

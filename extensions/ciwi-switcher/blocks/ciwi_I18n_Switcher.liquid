@@ -3,7 +3,15 @@
 {% if request.design_mode or request.visual_preview_mode %}
   {% assign ciwi_is_theme_preview = true %}
 {% endif %}
-<link rel="stylesheet" href="{{ 'switcher.css' | asset_url }}">
+<link
+  rel="stylesheet"
+  href="{{ 'switcher.css' | asset_url }}"
+  media="print"
+  onload="this.onload=null;this.media='all'"
+>
+<noscript>
+  <link rel="stylesheet" href="{{ 'switcher.css' | asset_url }}">
+</noscript>
 
 <div dir="{% if language_iso == 'ar' or language_iso == 'fa' or language_iso == 'ur' or language_iso == 'he' %}rtl{% else %}ltr{% endif %}">
   <ciwiswitcher-form>
@@ -159,6 +167,7 @@
       <input type="hidden" name="ciwi_request_design_mode" value="{% if request.design_mode %}1{% else %}0{% endif %}">
       <input type="hidden" name="ciwi_request_visual_preview_mode" value="{% if request.visual_preview_mode %}1{% else %}0{% endif %}">
       <input type="hidden" id="ciwiLocaleDataUrl" value="{{ 'language-locale-data.js' | asset_url }}">
+      <input type="hidden" id="ciwiCurrencyFormatUrl" value="{{ 'currency-format-config.js' | asset_url }}">
     {% endform %}
   </ciwiswitcher-form>
   <ciwiswitcher-form>
@@ -186,17 +195,10 @@
   </ciwiswitcher-form>
 
   {% comment %}
-    数据脚本改用 defer（原为 async）：defer 保证在 DOMContentLoaded 之前按文档顺序执行完，
-    与 type=module 的 ciwi-main.js 一起在 DCL 前就绪，避免 main 读取 window.countryCurMap 等出现竞态。
-    这样 ciwi-main 可以在 DOMContentLoaded 启动，而不必等待整页 load。
+    关键路径只加载 ciwi-main.js（module，等价 defer）。
+    currency-format-config 按需注入；country-cur-map 店面无读取方，不再 eager 加载。
+    Custom Liquid / 图片 / 采集由 main 动态 import。
   {% endcomment %}
-  {% comment %}
-    language-locale-data.js（约 24KB，仅用于国旗）改为按需加载：
-    不在此处 eager 加载，由 ciwi-main 在浏览器空闲或用户首次接触切换器时
-    通过 #ciwiLocaleDataUrl 动态注入，避免每页关键路径都下载它。
-  {% endcomment %}
-  <script src="{{ 'currency-format-config.js' | asset_url }}" defer></script>
-  <script src="{{ 'country-cur-map.js' | asset_url }}" defer></script>
   <script type="module" src="{{ 'ciwi-main.js' | asset_url }}"></script>
   <script>
     window.__JS_EXECUTED__ = true;

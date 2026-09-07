@@ -1340,13 +1340,14 @@ artifacts and should be cleaned up. No runtime code depends on them.
 
 - Liquid block: `extensions/ciwi-switcher/blocks/ciwi_I18n_Switcher.liquid`.
 - API caller: `extensions/ciwi-switcher/assets/ciwi-api.js`.
-- UI/render: `assets/ciwi-ui.js`, `ciwi-main.js`, `ciwi-page.js`.
+- UI/render: `assets/ciwi-ui.js`, `ciwi-main.js`, `ciwi-page.js`, `ciwi-liquid.js`, `ciwi-picture.js`, `ciwi-collect.js`, `ciwi-text.js`.
 - Storage: `assets/ciwi-storage.js`.
-- Styling: `assets/switcher.css`.
+- Styling: `assets/switcher.css`（`media=print` + `onload` 非阻塞）。
 - Boot（`ciwi-main.js` `ciwiOnload`）：DCL 后**不** `await` 配置/IP。
-  A 立刻：Custom Liquid 替换、有汇率缓存则换价、IP/浏览器语言请求发出（跳转不挡 UI）。
-  B 主题首屏后（双 `rAF`）：Switcher 控件；主题预览仍立刻画。
-  C idle：图片翻译、采集、配置/货币后台刷新。语言同步靠 `lang` / `pageshow` / `popstate`，不轮询。
+  A 立刻：不解析 `ciwi-ui` / Liquid / 图片 / 采集。有 Liquid 缓存则在首屏后替换（无缓存不打 App Proxy）。
+  B 主题首屏后（双 `rAF`）：动态 `import ciwi-ui.js`，再画 Switcher、拉配置、IP/浏览器语言、无缓存时再拉 Liquid。主题预览仍立刻加载。
+  C idle（`setTimeout` ≥5.5s，避免 `requestIdleCallback` 一空闲就跑进 0–5s TBT）：图片翻译、采集、配置/货币后台刷新。主语言页跳过 Liquid/采集。语言同步靠 `lang` / `pageshow` / `popstate`，不轮询。
+  `ciwi-liquid.js` / `ciwi-picture.js` / `ciwi-collect.js` 动态 `import`，不进首屏解析。
 
 Check deploy configs when changing extensions:
 
