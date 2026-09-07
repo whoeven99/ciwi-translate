@@ -243,8 +243,9 @@ compatibility; client helpers live in `app/utils/clientLog.ts`。对
 见 Operations Debugging → LCP）。
 - `app/routes/publishAction.tsx`: publish/unpublish Shopify locales.
 - `app/routes/_index/route.tsx` and `app/routes/app._index/route.tsx`: root entry
-and embedded `/app` redirect/landing behavior.
-- `app/routes/invite/route.tsx`: standalone invite page.
+and embedded `/app` redirect/landing behavior. `/` with `shop` goes to `/app`;
+without `shop` 302s to the App Store listing (no extra login form).
+- `app/routes/invite/route.tsx`: 302 to the same App Store listing (no email signup).
 
 
 
