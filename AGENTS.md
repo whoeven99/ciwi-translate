@@ -210,6 +210,8 @@ sweeps moved plan names, modal copy, and worker notice text into locale keys.
 - `app/routes/app.tsx`: app shell loader/action, navigation, app bootstrap.
   NavMenu `rel="home"` 指向 `getTranslatePagePath()`（`/app/translate-v4-mvp`），不要用 `/app`（BFS 4.1.4：`/app` 是所有嵌入路由的前缀，会抢走子页高亮）。可见导航 href / 子路径前缀见 `app/lib/appNav.ts`。
 - `app/routes/auth.$.tsx`, `app/routes/auth.login/route.tsx`: Shopify auth.
+  Production `/auth/login` without `shop` 302s to the App Store listing (no extra
+  login screen). Local `shopify app dev` still shows the shop-domain form.
 - `app/routes/webhooks.tsx`: Shopify webhook topic handling. Billing and uninstall
 logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
 `cleanupBillingOnUninstall` (local `cancelSubscription`; SHOP_REDACT only
