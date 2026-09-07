@@ -1166,12 +1166,14 @@ export default function TranslateV4MvpRoute() {
             />
           )}
 
-          <div style={summaryHeroGridStyle}>
-            <div style={summaryHeroItemStyle}>
+          <div className="v4-summary-hero">
+            <div className="v4-summary-hero-grid">
+              <div className="v4-summary-hero-item">
               <AppSectionCard
                 title={t("v4Mvp.coverageCard.title")}
                 bodyPadding={HERO_CARD_PADDING}
                 compact
+                fill
                 style={summaryHeroCardShellStyle}
               >
                 <div style={summaryHeroBodyStyle}>
@@ -1255,7 +1257,7 @@ export default function TranslateV4MvpRoute() {
               </AppSectionCard>
             </div>
 
-            <div style={summaryHeroItemStyle}>
+            <div className="v4-summary-hero-item">
               <ThemeExtensionStatusCard
                 shop={shop}
                 ciwiSwitcherId={ciwiSwitcherId}
@@ -1265,11 +1267,12 @@ export default function TranslateV4MvpRoute() {
               />
             </div>
 
-            <div style={summaryHeroItemStyle}>
+            <div className="v4-summary-hero-item">
               <AppSectionCard
                 title={t("v4Mvp.videoCard.guideTitle")}
                 bodyPadding={HERO_CARD_PADDING}
                 compact
+                fill
                 style={summaryHeroCardShellStyle}
               >
                 <a
@@ -1311,6 +1314,7 @@ export default function TranslateV4MvpRoute() {
                   </div>
                 </a>
               </AppSectionCard>
+              </div>
             </div>
           </div>
 
@@ -1749,22 +1753,6 @@ const coveragePercentWrapStyle = {
 
 const HERO_CARD_PADDING = "10px 16px";
 
-const summaryHeroGridStyle = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "12px",
-  alignItems: "stretch",
-  width: "100%",
-} satisfies CSSProperties;
-
-const summaryHeroItemStyle = {
-  flex: "1 1 220px",
-  minWidth: "200px",
-  display: "flex",
-  flexDirection: "column",
-  alignSelf: "stretch",
-} satisfies CSSProperties;
-
 const summaryHeroCardShellStyle = {
   height: "100%",
   flex: 1,
@@ -1799,6 +1787,8 @@ const videoPreviewLayerStyle = {
   textDecoration: "none",
   background: "#0f172a",
   width: "100%",
+  flex: 1,
+  minHeight: 0,
   aspectRatio: "16 / 9",
 } satisfies CSSProperties;
 

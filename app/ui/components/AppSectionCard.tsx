@@ -11,6 +11,8 @@ interface AppSectionCardProps {
   style?: CSSProperties;
   /** 标题与内容更紧，给首页摘要卡用 */
   compact?: boolean;
+  /** 在等高校网格里撑满父级高度 */
+  fill?: boolean;
 }
 
 const headerRowStyle: CSSProperties = {
@@ -54,14 +56,21 @@ export default function AppSectionCard({
   className,
   style,
   compact = false,
+  fill = false,
 }: AppSectionCardProps) {
   const hasHeader = title || description || extra;
+  const rootClassName = [className, fill ? "app-section-card--fill" : null]
+    .filter(Boolean)
+    .join(" ") || undefined;
 
   return (
     <div
-      className={className}
+      className={rootClassName}
       style={{
         width: "100%",
+        ...(fill
+          ? { height: "100%", display: "flex", flexDirection: "column" }
+          : null),
         ...style,
       }}
     >
@@ -74,6 +83,7 @@ export default function AppSectionCard({
             flexDirection: "column",
             gap: hasHeader ? (compact ? 6 : "var(--app-space-300)") : 0,
             minHeight: 0,
+            flex: fill ? 1 : undefined,
           }}
         >
           {hasHeader ? (
@@ -96,7 +106,20 @@ export default function AppSectionCard({
               {extra ? <div>{extra}</div> : null}
             </div>
           ) : null}
-          {children}
+          {fill ? (
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              {children}
+            </div>
+          ) : (
+            children
+          )}
         </div>
       </Card>
     </div>

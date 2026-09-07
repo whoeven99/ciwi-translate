@@ -6,7 +6,6 @@ import {
   Switch,
   ColorPicker,
   Slider,
-  Popconfirm,
 } from "antd";
 import Button from "~/ui/components/AppButton";
 import { AppSModal } from "~/ui/components/AppSModal";
@@ -702,20 +701,13 @@ const Index = () => {
                 title={t("Auto adaptation settings")}
                 extra={
                   showPaidPlanHint ? (
-                    <Popconfirm
-                      title=""
-                      description={t(
-                        "This feature is available only with the paid plan.",
-                      )}
-                      trigger="hover"
-                      showCancel={false}
-                      okText={t("Upgrade")}
-                      onConfirm={goToPricing}
+                    <Button
+                      type="text"
+                      icon={<InfoCircleOutlined />}
+                      onClick={() => setShowWarnModal(true)}
                     >
-                      <Button type="text" icon={<InfoCircleOutlined />}>
-                        {t("Paid feature")}
-                      </Button>
-                    </Popconfirm>
+                      {t("Paid feature")}
+                    </Button>
                   ) : null
                 }
               >
@@ -1380,8 +1372,17 @@ const Index = () => {
           size="small"
           primaryAction={{
             content: t("Upgrade"),
-            onAction: goToPricing,
+            onAction: () => {
+              setShowWarnModal(false);
+              goToPricing();
+            },
           }}
+          secondaryActions={[
+            {
+              content: t("Cancel"),
+              onAction: () => setShowWarnModal(false),
+            },
+          ]}
         >
           <Text>{t("This feature is available only with the paid plan.")}</Text>
         </AppSModal>

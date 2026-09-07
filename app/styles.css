@@ -493,3 +493,49 @@ body {
   background: var(--p-color-bg-fill-brand-active) !important;
   border-color: var(--p-color-bg-fill-brand-active) !important;
 }
+
+.v4-summary-hero {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.v4-summary-hero-grid {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  align-items: stretch;
+  grid-template-columns: 1fr;
+}
+
+@container (min-width: 720px) {
+  .v4-summary-hero-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.v4-summary-hero-item {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+}
+
+.app-section-card--fill {
+  min-width: 0;
+}
+
+.app-section-card--fill > .Polaris-ShadowBevel,
+.app-section-card--fill .Polaris-ShadowBevel {
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-section-card--fill .Polaris-Box {
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
