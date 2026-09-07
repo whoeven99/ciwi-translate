@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { CSSProperties } from "react";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
 import { canPauseV4Job, isAutoV4TaskSource } from "~/server/translateV4/types";
-import { v4Colors, v4CardStyle } from "../v4Styles";
+import { v4Colors, v4CardStyle, v4ToneChip } from "../v4Styles";
 import { formatLocaleRoute } from "../localeDisplay";
 import { jobDisplayPercent } from "../jobStageUtils";
 import { ProgressRing, StatusTag, MiniStageTrack, V4Skeleton } from "./V4JobCardParts";
@@ -263,8 +263,8 @@ function JustCreatedBadge() {
         alignItems: "center",
         padding: "2px 8px",
         borderRadius: 999,
-        background: v4Colors.primarySoft,
-        color: v4Colors.primary,
+        background: v4ToneChip.info.background,
+        color: v4ToneChip.info.color,
         fontSize: 11,
         fontWeight: 700,
         lineHeight: 1.5,
@@ -299,8 +299,10 @@ function JobNoticeBar({
         marginTop: 12,
         padding: "10px 12px",
         borderRadius: 10,
-        background: isDanger ? v4Colors.dangerBg : v4Colors.warningBg,
-        border: `1px solid ${isDanger ? "#ffccc7" : "#ffe58f"}`,
+        background: isDanger
+          ? v4ToneChip.critical.background
+          : v4ToneChip.caution.background,
+        border: "1px solid transparent",
       }}
     >
       <div
@@ -320,14 +322,18 @@ function JobNoticeBar({
             marginTop: 6,
             borderRadius: "50%",
             flexShrink: 0,
-            background: isDanger ? v4Colors.danger : v4Colors.warning,
+            background: isDanger
+              ? v4ToneChip.critical.color
+              : v4ToneChip.caution.color,
           }}
         />
         <span
           style={{
             fontSize: 12,
             lineHeight: 1.5,
-            color: isDanger ? v4Colors.danger : v4Colors.warning,
+            color: isDanger
+              ? v4ToneChip.critical.color
+              : v4ToneChip.caution.color,
             overflowWrap: "anywhere",
           }}
         >

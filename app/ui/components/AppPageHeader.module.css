@@ -1,0 +1,87 @@
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--app-space-400);
+  flex-wrap: wrap;
+  padding: 2px 0;
+}
+
+.lead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--p-space-100);
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+
+.backButtonWrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  height: 30px;
+}
+
+/* Match Polaris Page Header BreadcrumbWrapper: transparent arrow, no fill. */
+.backButtonWrap :global(.Polaris-Button) {
+  --pc-button-bg: transparent;
+  --pc-button-box-shadow: none;
+  --pc-button-bg_hover: var(--p-color-bg-fill-tertiary-hover);
+  --pc-button-bg_active: var(--p-color-bg-fill-tertiary-active);
+  --pc-button-box-shadow_hover: none;
+  --pc-button-box-shadow_active: none;
+  background: transparent;
+  border-radius: var(--p-border-radius-200);
+  box-shadow: none;
+}
+
+.backButtonWrap :global(.Polaris-Button):is(:hover, :focus, :focus-visible) {
+  box-shadow: none !important;
+}
+
+.backButtonWrap :global(.Polaris-Button):is(:hover, :focus-visible) {
+  background: var(--p-color-bg-fill-tertiary-hover);
+}
+
+.backButtonWrap :global(.Polaris-Button):focus {
+  background: var(--p-color-bg-fill-tertiary-active);
+  box-shadow: var(--p-shadow-inset-200) !important;
+}
+
+.titleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  margin: 0;
+  color: var(--app-color-text);
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.description {
+  margin: 0;
+  color: var(--app-color-text-secondary);
+  font-size: var(--app-font-size-body-small);
+  line-height: 20px;
+  max-width: 760px;
+}
+
+.extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .extra {
+    flex: 1 1 100%;
+  }
+}

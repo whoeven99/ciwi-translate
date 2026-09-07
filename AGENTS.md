@@ -134,6 +134,17 @@ enough for repeated work, and not like a marketing landing page.
 - Polaris is the visual and semantic baseline. Ant Design is allowed for complex
 tables, charts, dense filters, modal interiors, and high-density business
 controls.
+- Primary action buttons must use native Polaris `--p-color-bg-fill-brand` /
+`--p-color-bg-fill-brand-hover` / `--p-color-bg-fill-brand-active` (Admin
+brand fill, currently dark). Do not override those tokens to Ciwi purple or
+v4 indigo. `--app-accent-primary` remains for links, chips, Switch, and
+progress rings. `AppButton type="primary"` and Polaris `variant="primary"`
+both consume the native tokens via `app/styles.css`.
+- **Text contrast (WCAG 2.1 AA / BFS 4.1.1):** body and chip/pill/badge copy
+must be ≥4.5:1 against its background. Tinted chips use Polaris
+`--p-color-text-{info,success,caution,critical}` on `--p-color-bg-surface-*`
+(`AppPill` / `AppStatusBadge` / `--app-color-text-*`). Do not put `--app-accent-*`
+fill hexes on `--app-accent-*-soft` as 12px text — those pairs fail AA.
 - **Dropdowns in the embedded app:** prefer Polaris `Select` for single-select
 and chip / `ChoiceList` / `Combobox` for multi-select. Avoid Ant Design
 `Select` on translate-v4 / create-task surfaces unless there is a strong
@@ -151,7 +162,25 @@ Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns
 - Ant Design theme values should be derived from Polaris-like tokens through
 `app/ui/theme.ts`; avoid creating a second visual system.
 - Prefer existing shared wrappers in `app/ui/components/*`, including
-`AppPageHeader`, `AppSectionCard`, `AppStatusBadge`, and `AppButton`.
+  `AppPageHeader`, `AppSubpageTitleBar`, `AppSectionCard`, `AppStatusBadge`,
+  `AppButton`, and `AppSModal`.
+- **BFS 4.1.6 modals:** merchant-facing overlays with a primary/secondary CTA
+  must use App Home `<s-modal>` via `AppSModal` (`heading` + `primary-action` /
+  `secondary-actions` slots). Do not put those CTAs in the modal body. Polaris
+  web components load from `polaris-1.js` in `app/root.tsx`. In-body actions
+  (e.g. Precise estimate) stay in children. Remaining Ant/Polaris React dialogs
+  are P1.
+- Sub-pages (NavMenu children, history, custom create-task, shop-profile) must offer a
+  back control to the parent: `AppSubpageTitleBar` (App Bridge breadcrumb) plus
+  `AppPageHeader` `backAction` (Polaris arrow beside the in-page title; visual match
+  of `Page` Header BreadcrumbWrapper — transparent arrow, not a filled secondary
+  Button). Parent of sidebar pages is the app home (`getTranslatePagePath()` /
+  `/app/translate-v4-mvp`). Nested manage resource pages already use Polaris `Page`
+  `backAction`. App home (`translate-v4-mvp`) must not show a back button.
+- BFS 4.1.4 parent highlight is App Bridge URL-prefix matching. Nested pages must
+  sit under their visible NavMenu href (`/app/manage_translation/product` keeps
+  Manage Translation active). Do not point `rel="home"` at `/app`. Path table:
+  `app/lib/appNav.ts`.
 - Avoid new hard-coded colors, ad hoc font sizes, one-off radius values, and
 large inline style blocks in route files.
 - Page patterns:
@@ -179,6 +208,7 @@ sweeps moved plan names, modal copy, and worker notice text into locale keys.
 ### App Shell, Auth, Webhooks
 
 - `app/routes/app.tsx`: app shell loader/action, navigation, app bootstrap.
+  NavMenu `rel="home"` 指向 `getTranslatePagePath()`（`/app/translate-v4-mvp`），不要用 `/app`（BFS 4.1.4：`/app` 是所有嵌入路由的前缀，会抢走子页高亮）。可见导航 href / 子路径前缀见 `app/lib/appNav.ts`。
 - `app/routes/auth.$.tsx`, `app/routes/auth.login/route.tsx`: Shopify auth.
 - `app/routes/webhooks.tsx`: Shopify webhook topic handling. Billing and uninstall
 logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
@@ -221,7 +251,7 @@ and embedded `/app` redirect/landing behavior.
 ### Main Pages
 
 - `/app`: `app/routes/app._index/route.tsx` 重定向到 `/app/translate-v4-mvp`（`getTranslatePagePath()` 同指向 MVP）。
-- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。
+- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：Polaris 折叠 Setup Guide（BFS 4.2.2；批量翻译 / 术语表 / 第三方 Liquid；X 只藏本次访问，三项都完成才不再出现）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。
 - `/app/translate-v4-mvp-custom`: `app/routes/app.translate-v4-mvp-custom/route.tsx`（自定义语言/模块建任务）。
 - `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（全量工作台保留；只展示进行中 /
 暂停 / 失败任务，见 `jobFilters.ts` `isCurrentV4Job`）。
@@ -867,8 +897,11 @@ Currency changes often touch admin, App Proxy, and extension JS.
 ### Switcher And Storefront App Proxy
 
 - Admin page: `app/routes/app.switcher/route.tsx`.
+- Contextual Save Bar (BFS 4.1.5): `app/hooks/useContextualSaveBar.ts` +
+  `app/lib/saveBarNavigation.ts`。dirty 时 `show`；Remix 离开 / 子页返回 /
+  Upgrade / manage 换语言与翻页先 `runAfterSaveBarLeave`；dirty 卸载不 `hide`。
 - Client helper: `app/routes/app.switcher/switcherClient.ts`.
-- UI component: `app/routes/app.switcher/components/switcherSettingCard.tsx`.
+- UI component: `app/routes/app.switcher/components/switcherSettingCard.tsx`（启用状态走 `shopify.app.extensions()`，与首页同一 hook）。
 - Server: `app/server/storefront/switcherAdmin.server.ts`,
 `switcherConfig.server.ts`, `switcherData.server.ts`, `auth.server.ts`,
 `response.server.ts`.
@@ -1018,6 +1051,10 @@ gets `302` from `authenticate.admin` on `/api/picture/upload`.
 - 页面共享行为：`app/utils/manageSave.ts`、`manageTranslationState.ts`、
 `manageTranslationErrors.ts`（保存提交 / 脏值状态 / 错误归一）。改一个 manage 页
 的保存或报错前，先看这三个是否已经有实现。
+- Contextual Save Bar (BFS 4.1.5)：资源编辑页用
+`useContextualSaveBar("save-bar", confirmData.length > 0)`；换语言 / 换模块 /
+翻页 / 返回走 `runAfterSaveBarLeave`（`app/lib/saveBarNavigation.ts`），不要在
+`leaveConfirmation` 之后立刻 `hide`。
 - Shopify translation helper: `app/server/shopify/translations.server.ts`.
 
 These pages are not the same UX as translation v4 jobs. Preserve existing
@@ -1066,6 +1103,11 @@ throttle status.
 首次安装用户的前置引导层：把 shop scan / locales / coverage / estimate / trial /
 create-task 编排成一条「店铺理解 → 推荐 → 试用/建首个任务」路径。全部数据复用现有
 能力，任一数据源失败都降级，不阻塞继续；可跳过，跳过/完成后不再打断。
+
+BFS 4.2.2 首页 Setup Guide（Polaris 折叠清单）在 `/app/translate-v4-mvp`，与本全页引导
+相互独立。三项：批量翻译、术语表、第三方 App（主题 embed + Custom Liquid）。X 只藏本次访问，
+不写 `setupGuideDismissedAt`；三项都完成则整卡不再出现。展开区为说明 + 未完成子步骤蓝链接（右侧 P0 留空）；批量翻译 / Liquid 链接进
+`/app/translate-v4-mvp-custom`；推荐卡片「立即翻译」仍走一键确认弹窗。
 
 Core files:
 
@@ -1122,6 +1164,7 @@ Common edits:
 Language:
 
 - Page: `app/routes/app.language/route.tsx`.
+- Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
 - Server: `app/server/translateV4/targetLocale.server.ts`,
 `shopLocales.server.ts`, `languageStatus.server.ts`（语言页 status 0..4，
@@ -1259,7 +1302,8 @@ units, source chars); written by Worker at job terminal states.
 written on deduct (App) or quota flush (Worker).
 - `SupportConversation`, `SupportMessage`: support chat.
 - `ShopOnboarding`: 首次翻译新手引导状态（status/skipped/completed/试用/建首任务来源、
- 推荐语言与模块快照、积分与耗时预估、来源 scan id）；独立于 `Account.isNew`。
+ 推荐语言与模块快照、积分与耗时预估、来源 scan id）；另含历史列 `setupGuideDismissedAt`
+（首页 Setup Guide 不再写入；三项完成后按完成态隐藏）。独立于 `Account.isNew`。
 - `UserPicture`: product/shop image translation metadata and translated image
 URLs used by admin pages and storefront App Proxy reads.
 
@@ -1339,6 +1383,10 @@ For "合入PR然后发布测试环境", the script will:
 
 | User asks about                  | First read                                            | Then read                                                                                               |
 | -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
+| 上下文保存栏离开拦截（BFS 4.1.5） | `app/hooks/useContextualSaveBar.ts`                   | `app/lib/saveBarNavigation.ts`、`app.switcher/route.tsx`、`AppSubpageTitleBar`                           |
+| 主题扩展状态 / BFS 4.2.3          | `app/lib/themeAppExtensions.ts`                       | mvp `ThemeExtensionStatusCard`、switcher `switcherSettingCard`、`shopify.app.extensions()`；打开主题编辑器用 `openSwitcherThemeEditor`（`_top`），不要用 Polaris `Button url`（会把 iframe 带到不可嵌入的 Admin） |
+| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`（Polaris `Collapsible`；展开区说明 + 子步骤蓝链接）、`shouldAutoDismissSetupGuide`、`app/server/setupGuide.server.ts`（glossary count）；X 仅本次访问；完成条件：v4 任务 / 术语表 / embed+CUSTOM_LIQUID；推荐卡片「立即翻译」仍一键确认 |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
 | Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslate.server.ts`, translation-core `syncTranslate.ts` / `llmTranslate.ts`, quota guard       |

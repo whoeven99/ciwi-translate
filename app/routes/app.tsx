@@ -73,6 +73,7 @@ import {
   stripBillingReturnParams,
 } from "~/utils/billingReturn";
 import { message } from "~/ui/message";
+import { APP_NAV_HOME, APP_NAV_ITEMS } from "~/lib/appNav";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -669,24 +670,20 @@ export default function App() {
           }}
         >
           <NavMenu>
-            <Link to="/app" rel="home">
+            <Link to={APP_NAV_HOME} rel="home">
               {t("v4.title")}
             </Link>
-            {isClient && (
-              <>
-                <Link to="/app/language">{t("Language")}</Link>
-                <Link to="/app/manage_translation">
-                  {t("Manage Translation")}
-                </Link>
-                <Link to="/app/currency">{t("Currency")}</Link>
-                <Link to="/app/switcher">{t("Switcher")}</Link>
-                <Link to="/app/glossary">{t("Glossary")}</Link>
-                {showShopProfilePage ? (
-                  <Link to="/app/shop-profile">{t("Shop Profile")}</Link>
-                ) : null}
-                <Link to="/app/pricing">{t("Pricing")}</Link>
-              </>
-            )}
+            <Link to={APP_NAV_ITEMS.language}>{t("Language")}</Link>
+            <Link to={APP_NAV_ITEMS.manageTranslation}>
+              {t("Manage Translation")}
+            </Link>
+            <Link to={APP_NAV_ITEMS.currency}>{t("Currency")}</Link>
+            <Link to={APP_NAV_ITEMS.switcher}>{t("Switcher")}</Link>
+            <Link to={APP_NAV_ITEMS.glossary}>{t("Glossary")}</Link>
+            {showShopProfilePage ? (
+              <Link to={APP_NAV_ITEMS.shopProfile}>{t("Shop Profile")}</Link>
+            ) : null}
+            <Link to={APP_NAV_ITEMS.pricing}>{t("Pricing")}</Link>
           </NavMenu>
           <Outlet />
         </Profiler>

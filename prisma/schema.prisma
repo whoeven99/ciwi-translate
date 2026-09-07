@@ -89,6 +89,7 @@ model ShopOnboarding {
   estimateCredits    Int? // 展示用积分预估（上限口径）
   estimateMinutes    Int? // 展示用耗时预估（分钟）
   sourceScanId       String? // 生成推荐所依据的 shop scan id
+  setupGuideDismissedAt DateTime? // 首页 Setup Guide 被关闭的时间（BFS 4.2.2）
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }

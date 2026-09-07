@@ -9,6 +9,8 @@ interface AppSectionCardProps {
   bodyPadding?: string;
   className?: string;
   style?: CSSProperties;
+  /** 标题与内容更紧，给首页摘要卡用 */
+  compact?: boolean;
 }
 
 const headerRowStyle: CSSProperties = {
@@ -38,7 +40,7 @@ const titleStyle: CSSProperties = {
 const descriptionStyle: CSSProperties = {
   margin: 0,
   color: "var(--app-color-text-secondary)",
-  fontSize: "var(--app-font-size-body-small)",
+  fontSize: "var(--app-font-size-body)",
   lineHeight: "20px",
   maxWidth: 720,
 };
@@ -51,6 +53,7 @@ export default function AppSectionCard({
   bodyPadding = "16px",
   className,
   style,
+  compact = false,
 }: AppSectionCardProps) {
   const hasHeader = title || description || extra;
 
@@ -63,11 +66,18 @@ export default function AppSectionCard({
         boxShadow: "var(--app-shadow-card)",
         background: "var(--app-color-surface)",
         borderRadius: "var(--app-radius-lg)",
+        display: "flex",
+        flexDirection: "column",
         ...style,
       }}
       styles={{
         body: {
           padding: bodyPadding,
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          flex: 1,
+          minHeight: 0,
         },
       }}
     >
@@ -75,14 +85,28 @@ export default function AppSectionCard({
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: hasHeader ? "var(--app-space-300)" : 0,
+          gap: hasHeader ? (compact ? 6 : "var(--app-space-300)") : 0,
+          flex: 1,
+          minHeight: 0,
+          height: "100%",
         }}
       >
         {hasHeader ? (
           <div style={headerRowStyle}>
-            <div style={titleWrapStyle}>
+            <div style={{ ...titleWrapStyle, gap: compact ? 2 : 6 }}>
               {title ? <h3 style={titleStyle}>{title}</h3> : null}
-              {description ? <p style={descriptionStyle}>{description}</p> : null}
+              {description ? (
+                <p
+                  style={{
+                    ...descriptionStyle,
+                    ...(compact
+                      ? { fontSize: 13, lineHeight: "18px" }
+                      : null),
+                  }}
+                >
+                  {description}
+                </p>
+              ) : null}
             </div>
             {extra ? <div>{extra}</div> : null}
           </div>

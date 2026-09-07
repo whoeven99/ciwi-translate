@@ -23,6 +23,8 @@ import { useSingleTranslateQuotaGate } from "~/hooks/useSingleTranslateQuotaGate
 import { useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
 import { SaveBar } from "@shopify/app-bridge-react";
+import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
+import { runAfterSaveBarLeave } from "~/lib/saveBarNavigation";
 import { Page, Pagination, Select } from "@shopify/polaris";
 import { globalStore } from "~/globalStore";
 import { useConsumableFetcherData } from "~/hooks/useConsumableFetcherData";
@@ -408,13 +410,7 @@ const Index = () => {
     setSuccessTranslatedKey([]);
   }, [confirmFetcher.data, consumeConfirmResponse, fetcher, t]);
 
-  useEffect(() => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.show("save-bar");
-    } else {
-      shopify.saveBar.hide("save-bar");
-    }
-  }, [confirmData]);
+  useContextualSaveBar("save-bar", confirmData.length > 0);
 
   const renderTranslateAction = (record: any) => {
     if (!record) return null;
@@ -627,10 +623,7 @@ const Index = () => {
   };
 
   const onPrevious = () => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       dataFetcher.submit(
         {
           startCursor: JSON.stringify({
@@ -643,7 +636,7 @@ const Index = () => {
           action: `/app/manage_translation/settings_category?language=${searchTerm}`,
         },
       ); // 提交表单请求
-    }
+    });
   };
 
   const refreshCurrentPageData = () => {
@@ -665,10 +658,7 @@ const Index = () => {
     );
   };
   const onNext = () => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       dataFetcher.submit(
         {
           endCursor: JSON.stringify({
@@ -681,23 +671,17 @@ const Index = () => {
           action: `/app/manage_translation/settings_category?language=${searchTerm}`,
         },
       ); // 提交表单请求
-    }
+    });
   };
 
   const handleMenuChange = (key: string) => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       setSelectedThemeKey(key);
-    }
+    });
   };
 
   const handleLanguageChange = (language: string) => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       setIsLoading(true);
       dataFetcher.submit(
         {
@@ -715,19 +699,16 @@ const Index = () => {
       navigate(
         `/app/manage_translation/settings_category?language=${language}`,
       );
-    }
+    });
   };
 
   const handleItemChange = (item: string) => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       setIsLoading(true);
       isManualChangeRef.current = true;
       setSelectedItem(item);
       navigate(`/app/manage_translation/${item}?language=${searchTerm}`);
-    }
+    });
   };
 
   const handleConfirm = () => {
@@ -748,19 +729,15 @@ const Index = () => {
   };
 
   const handleDiscard = () => {
-    shopify.saveBar.hide("save-bar");
     setThemesData([...themesData]); // 使用展开运算符创建新数组引用
     setConfirmData([]);
     setSuccessTranslatedKey([]);
   };
 
   const onCancel = () => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       navigate(`/app/manage_translation?language=${searchTerm}`); // 跳转�?/app/manage_translation
-    }
+    });
   };
 
   return (
@@ -779,7 +756,7 @@ const Index = () => {
         >
           {t("Save")}
         </button>
-        <button onClick={handleDiscard}>{t("Cancel")}</button>
+        <button onClick={handleDiscard}>{t("Discard")}</button>
       </SaveBar>
       <Layout
         style={{

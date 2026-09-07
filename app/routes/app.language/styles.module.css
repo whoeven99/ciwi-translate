@@ -20,10 +20,28 @@
 }
 
 .languageToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-300);
+  width: 100%;
+  margin-bottom: var(--app-space-400);
   padding: 14px 16px;
   border-radius: 14px;
   background: rgba(84, 103, 255, 0.06);
   border: 1px solid var(--app-color-border-secondary);
+}
+
+@media (max-width: 768px) {
+  .languageToolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .languageToolbar :global(.ant-btn) {
+    width: 100%;
+  }
 }
 
 .languageMobileCard {

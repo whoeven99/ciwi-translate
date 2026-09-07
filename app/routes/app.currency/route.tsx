@@ -1,4 +1,3 @@
-import { TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import {
   Flex,
@@ -29,6 +28,10 @@ import CurrencyEditModal from "./components/currencyEditModal";
 import { setTableData } from "~/store/modules/currencyDataTable";
 import { useTranslation } from "react-i18next";
 import ScrollNotice from "~/components/ScrollNotice";
+import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import useReport from "scripts/eventReport";
 import {
   deleteCurrency,
@@ -39,7 +42,7 @@ import {
   getTranslateV4ErrorMessage,
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export interface CurrencyDataType {
   key: React.Key;
@@ -217,6 +220,7 @@ const Index = () => {
   const { reportClick } = useReport();
   const dispatch = useDispatch();
   const { t } = useTranslation();
+  const homeBackAction = useAppHomeBackAction();
 
   const fetcher = useFetcher<any>();
   const initFetcher = useFetcher<any>();
@@ -495,28 +499,27 @@ const Index = () => {
 
   return (
     <Page>
-      <TitleBar title={t("Currency")}></TitleBar>
+      <AppSubpageTitleBar title={t("Currency")} />
       <ScrollNotice
         text={t(
           "Welcome to our app! If you have any questions, feel free to email us at support@ciwi.ai, and we will respond as soon as possible.",
         )}
       />
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-        <div>
-          <Title style={{ fontSize: "1.25rem", display: "inline" }}>
-            {t("Currency")}
-          </Title>
-          {defaultCurrency.code ? (
-            <div>
-              <Text type="secondary">
-                {t("Your store's default currency:")}
-              </Text>
-              <Text strong> {defaultCurrency.code}</Text>
-            </div>
-          ) : (
-            <Skeleton active paragraph={{ rows: 0 }} />
-          )}
-        </div>
+        <AppPageHeader
+          title={t("Currency")}
+          backAction={homeBackAction}
+          description={
+            defaultCurrency.code ? (
+              <>
+                {t("Your store's default currency:")}{" "}
+                <Text strong>{defaultCurrency.code}</Text>
+              </>
+            ) : (
+              <Skeleton active paragraph={{ rows: 0 }} />
+            )
+          }
+        />
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <Flex align="center" gap="middle">
             <Button

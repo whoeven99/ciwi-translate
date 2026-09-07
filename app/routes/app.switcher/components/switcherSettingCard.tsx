@@ -1,32 +1,38 @@
 import { CloseOutlined } from "@ant-design/icons";
-import { Space, Typography, Skeleton } from "antd";
+import { Skeleton } from "antd";
 import Button from "~/ui/components/AppButton";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useReport from "scripts/eventReport";
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
-const { Text } = Typography;
-
-type SwitcherActivationStatus = "completed" | "uncompleted";
+import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
+import {
+  CIWI_SWITCHER_EMBED_HANDLE,
+  buildSwitcherThemeEditorUrl,
+} from "~/lib/themeAppExtensions";
+import {
+  switcherThemeEmbedBadgeForStatus,
+  switcherThemeEmbedDescriptionForStatus,
+  switcherThemeEmbedTitle,
+} from "~/lib/switcherThemeEmbedUi";
+import { SwitcherThemeEmbedActions } from "~/ui/components/SwitcherThemeEmbedActions";
 
 interface SwitcherSettingCardProps {
   visible: boolean;
-  loading: boolean;
-  status: SwitcherActivationStatus;
   shop: string;
   ciwiSwitcherId: string;
 }
 
 const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
   visible,
-  loading,
-  status,
   shop,
   ciwiSwitcherId,
 }) => {
   const [dismissed, setDismissed] = useState(false);
-  const blockUrl = `https://${shop}/admin/themes/current/editor?context=apps&activateAppId=${ciwiSwitcherId}/ciwi_I18n_Switcher`;
+  const status = useThemeAppExtensionStatus(CIWI_SWITCHER_EMBED_HANDLE);
+  const loading = status === "loading";
+  const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
 
   const { t } = useTranslation();
   const { reportClick } = useReport();
@@ -45,7 +51,9 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
   };
 
   const shouldShow = visible && !dismissed;
-  const isCompleted = status === "completed";
+  const badge = switcherThemeEmbedBadgeForStatus(status, t);
+  const description = switcherThemeEmbedDescriptionForStatus(status, t);
+  const showThemeEditorHint = status === "inactive" || status === "unknown";
 
   return (
     <AppSectionCard
@@ -59,15 +67,13 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
             flexWrap: "wrap",
           }}
         >
-          <span>{t("Activate Switcher")}</span>
-          <AppStatusBadge tone={isCompleted ? "success" : "critical"}>
-            {t(isCompleted ? "Completed" : "Uncompleted")}
-          </AppStatusBadge>
+          <span>{switcherThemeEmbedTitle(t)}</span>
+          {loading ? null : (
+            <AppStatusBadge tone={badge.tone}>{badge.label}</AppStatusBadge>
+          )}
         </div>
       }
-      description={t(
-        "Activate the Switcher to automatically switch market, language, and currency by IP, and enable translation for third-party apps and image alt text.",
-      )}
+      description={description}
       extra={
         <Button type="text" onClick={handleClose}>
           <CloseOutlined />
@@ -76,25 +82,29 @@ const SwitcherSettingCard: React.FC<SwitcherSettingCardProps> = ({
     >
       {loading ? <Skeleton active paragraph={{ rows: 3 }} /> : null}
       {!loading ? (
-        <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-            }}
-          >
-            <a href={blockUrl} target="_blank" rel="noreferrer">
-              <Button type="primary" onClick={handleOpenThemeEditor}>
-                {t("Activate plugin")}
-              </Button>
-            </a>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <SwitcherThemeEmbedActions
+              status={status}
+              themeEditorUrl={themeEditorUrl}
+              showManage={false}
+              onOpenThemeEditor={handleOpenThemeEditor}
+              t={t}
+            />
           </div>
-          <Text style={{ color: "var(--app-color-text-secondary)" }}>
-            {t(
-              "Jump to the current Shopify theme editor and Shopify will open the Ciwi switcher app block for you. Then enable it and click Save.",
-            )}
-          </Text>
-        </Space>
+          {showThemeEditorHint ? (
+            <p
+              style={{
+                margin: 0,
+                color: "var(--app-color-text-secondary)",
+                fontSize: "var(--app-font-size-body)",
+                lineHeight: "20px",
+              }}
+            >
+              {t("v4Mvp.themeExtension.themeEditorHint")}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </AppSectionCard>
   );

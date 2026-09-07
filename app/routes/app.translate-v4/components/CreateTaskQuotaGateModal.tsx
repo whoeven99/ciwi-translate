@@ -1,11 +1,11 @@
 import { useFetcher, useNavigate } from "@remix-run/react";
-import { Modal, Space, Typography } from "antd";
+import { Space, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { v4CardStyle, v4Colors } from "../v4Styles";
-import Button from "~/ui/components/AppButton";
+import { v4CardStyle, v4Colors, v4ToneChip } from "../v4Styles";
+import { AppSModal } from "~/ui/components/AppSModal";
 
-const { Paragraph, Text, Title } = Typography;
+const { Paragraph, Text } = Typography;
 
 type Props = {
   open: boolean;
@@ -85,32 +85,39 @@ export function CreateTaskQuotaGateModal({ open, mode, onClose }: Props) {
   const nextStepLabel = t("v4.quotaGate.upgradePlan");
   const nextStepDescription = t("v4.quotaGate.upgradePlanDescription");
   const unlockKeys = isTrial ? trialUnlockKeys : pricingUnlockKeys;
+  const submitting = planFetcher.state === "submitting";
 
   return (
-    <Modal
+    <AppSModal
       open={open}
-      onCancel={onClose}
-      footer={null}
-      centered
-      width={560}
-      destroyOnClose
-      zIndex={10001}
-      getContainer={() => document.body}
-      styles={{
-        content: {
-          padding: 0,
-          overflow: "hidden",
-          borderRadius: 20,
-          border: `1px solid ${v4Colors.cardBorder}`,
-          background: v4Colors.cardBg,
-          boxShadow: "var(--app-shadow-card-strong)",
-        },
-        body: {
-          padding: 0,
-        },
-      }}
+      heading={title}
+      onClose={onClose}
+      size="base"
+      primaryAction={
+        isTrial
+          ? {
+              content: t("v4.quotaGate.freeTrial"),
+              onAction: handleTrialAction,
+              loading: pendingAction === "trial" && submitting,
+            }
+          : {
+              content: t("v4.quotaGate.viewPlans"),
+              onAction: handlePrimaryAction,
+              loading: pendingAction === "subscribe" && submitting,
+            }
+      }
+      secondaryActions={
+        isTrial
+          ? []
+          : [
+              {
+                content: t("v4.quotaGate.maybeLater"),
+                onAction: onClose,
+              },
+            ]
+      }
     >
-      <div style={{ padding: "24px 24px 20px" }}>
+      <div>
         <div
           style={{
             paddingBottom: 20,
@@ -125,8 +132,8 @@ export function CreateTaskQuotaGateModal({ open, mode, onClose }: Props) {
               alignItems: "center",
               padding: "4px 10px",
               borderRadius: 999,
-              background: v4Colors.primarySoft,
-              color: v4Colors.primary,
+              background: v4ToneChip.info.background,
+              color: v4ToneChip.info.color,
               fontSize: 12,
               lineHeight: "20px",
               marginBottom: 12,
@@ -134,9 +141,6 @@ export function CreateTaskQuotaGateModal({ open, mode, onClose }: Props) {
           >
             {t("v4.quotaGate.badge")}
           </Text>
-          <Title level={3} style={{ margin: 0, lineHeight: 1.25, color: v4Colors.text }}>
-            {title}
-          </Title>
           {description ? (
             <Paragraph
               style={{
@@ -180,6 +184,9 @@ export function CreateTaskQuotaGateModal({ open, mode, onClose }: Props) {
                     <Text style={{ color: v4Colors.text, lineHeight: "22px" }}>{t(key)}</Text>
                   </div>
                 ))}
+                <Text style={{ color: v4Colors.textMuted, fontSize: 12, lineHeight: "18px" }}>
+                  {t("v4.quotaGate.chargedAfter5Days")}
+                </Text>
               </Space>
             </div>
           ) : (
@@ -270,68 +277,9 @@ export function CreateTaskQuotaGateModal({ open, mode, onClose }: Props) {
               </div>
             </div>
           )}
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 12,
-              flexWrap: "wrap",
-              paddingTop: 4,
-            }}
-          >
-            {isTrial ? (
-              <Button
-                onClick={handleTrialAction}
-                loading={pendingAction === "trial" && planFetcher.state === "submitting"}
-                style={{
-                  minWidth: 220,
-                  height: "auto",
-                  paddingBlock: 8,
-                  borderColor: v4Colors.cardBorder,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    lineHeight: 1.25,
-                  }}
-                >
-                  <Text strong style={{ color: "inherit" }}>
-                    {t("v4.quotaGate.freeTrial")}
-                  </Text>
-                  <Text style={{ color: "inherit", opacity: 0.72, fontSize: 12 }}>
-                    {t("v4.quotaGate.chargedAfter5Days")}
-                  </Text>
-                </div>
-              </Button>
-            ) : (
-              <Button
-                onClick={onClose}
-                style={{
-                  minWidth: 108,
-                  borderColor: v4Colors.cardBorder,
-                }}
-              >
-                {t("v4.quotaGate.maybeLater")}
-              </Button>
-            )}
-            {!isTrial ? (
-              <Button
-                type="primary"
-                onClick={handlePrimaryAction}
-                loading={pendingAction === "subscribe" && planFetcher.state === "submitting"}
-                style={{ minWidth: 140 }}
-              >
-                {t("v4.quotaGate.viewPlans")}
-              </Button>
-            ) : null}
-          </div>
         </Space>
       </div>
-    </Modal>
+    </AppSModal>
   );
 }
 

@@ -68,6 +68,16 @@ import {
   buildTranslateV4TaskCreditsPurchaseContext,
 } from "~/utils/creditsPurchaseTaskContext";
 import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
+import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
+import { buildSetupGuideState, shouldAutoDismissSetupGuide } from "~/lib/setupGuide";
+import {
+  CIWI_SWITCHER_EMBED_HANDLE,
+  buildSwitcherThemeEditorUrl,
+} from "~/lib/themeAppExtensions";
+import { loadSetupGuideSnapshot } from "~/server/setupGuide.server";
+import { CUSTOM_LIQUID_MODULE } from "~/lib/jobModulesWithLiquid";
+import { ThemeExtensionStatusCard } from "./components/ThemeExtensionStatusCard";
+import { SetupGuideCard } from "./components/SetupGuideCard";
 
 const EMPTY_COVERAGE: CoverageSummary = {
   languageCount: 0,
@@ -134,10 +144,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.error("[translate-v4-mvp] load locales failed:", err);
   }
 
+  const setupGuide = await loadSetupGuideSnapshot(session.shop);
+
   return json({
     shop: session.shop,
     locales,
     primaryLocale,
+    ciwiSwitcherId: process.env.SHOPIFY_CIWI_SWITCHER_ID ?? "",
+    setupGuide,
   });
 };
 
@@ -243,49 +257,49 @@ function coverageStatusBadgeTone(
 function getCoverageRating(
   percent: number | null,
   t: ReturnType<typeof useTranslation>["t"],
-) {
+): { label: string; tone: "info" | "success" | "caution" } {
   if (percent == null) {
     return {
       label: t("v4.coverage.notScanned"),
-      accent: appColors.textTertiary,
+      tone: "info",
     };
   }
-
-  const accent = v4Colors.primary;
 
   if (percent >= 100) {
     return {
       label: t("v4Mvp.coverageCard.ratingAmazing"),
-      accent,
+      tone: "success",
     };
   }
 
   if (percent >= 80) {
     return {
       label: t("v4Mvp.coverageCard.ratingExcellent"),
-      accent,
+      tone: "success",
     };
   }
 
   if (percent >= 60) {
     return {
       label: t("v4Mvp.coverageCard.ratingQualified"),
-      accent,
+      tone: "info",
     };
   }
 
   return {
     label: t("v4.coverage.needsImprovement"),
-    accent,
+    tone: "caution",
   };
 }
 
 function buildCustomTranslationPath({
   targets,
   modules,
+  includeLiquid,
 }: {
   targets: string[];
   modules: string[];
+  includeLiquid?: boolean;
 }) {
   const params = new URLSearchParams();
   if (targets.length > 0) {
@@ -293,6 +307,9 @@ function buildCustomTranslationPath({
   }
   if (modules.length > 0) {
     params.set("modules", modules.join(","));
+  }
+  if (includeLiquid) {
+    params.set("includeLiquid", "true");
   }
   const query = params.toString();
   return query
@@ -360,7 +377,8 @@ function buildRecommendations(
 
 export default function TranslateV4MvpRoute() {
   const { t } = useTranslation();
-  const { shop, locales, primaryLocale } = useLoaderData<typeof loader>();
+  const { shop, locales, primaryLocale, ciwiSwitcherId, setupGuide } =
+    useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialWorkbenchTabParam = searchParams.get("tab");
@@ -391,6 +409,10 @@ export default function TranslateV4MvpRoute() {
     null,
   );
   const [creating, setCreating] = useState(false);
+  const [guideDismissed, setGuideDismissed] = useState(false);
+  const [hasOpenedCreateFlow, setHasOpenedCreateFlow] = useState(false);
+  const embedStatus = useThemeAppExtensionStatus(CIWI_SWITCHER_EMBED_HANDLE);
+  const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
   const planType = plan?.type?.trim() || null;
 
@@ -657,6 +679,52 @@ export default function TranslateV4MvpRoute() {
     isCoverageInitializing && visibleRecommendations.length === 0
       ? initializationRecommendations
       : visibleRecommendations;
+  const hasV4Job = !jobsLoading && jobs.length > 0;
+  const hasIncludeLiquidJob = jobs.some((job) =>
+    job.modules.includes(CUSTOM_LIQUID_MODULE),
+  );
+  const setupGuideState = useMemo(
+    () =>
+      buildSetupGuideState({
+        hasV4Job,
+        hasOpenedCreateFlow,
+        hasGlossary: setupGuide.hasGlossary,
+        embedStatus,
+        hasIncludeLiquidJob,
+      }),
+    [
+      embedStatus,
+      hasIncludeLiquidJob,
+      hasOpenedCreateFlow,
+      hasV4Job,
+      setupGuide.hasGlossary,
+    ],
+  );
+  const hideSetupGuide =
+    guideDismissed ||
+    (!jobsLoading && shouldAutoDismissSetupGuide(setupGuideState));
+  const handleDismissSetupGuide = useCallback(() => {
+    setGuideDismissed(true);
+  }, []);
+  const handleSetupGuideOpenCustom = useCallback(() => {
+    setHasOpenedCreateFlow(true);
+    navigate(
+      buildCustomTranslationPath({
+        targets: customTargets,
+        modules: customModules,
+      }),
+    );
+  }, [customModules, customTargets, navigate]);
+  const handleSetupGuideOpenLiquid = useCallback(() => {
+    setHasOpenedCreateFlow(true);
+    navigate(
+      buildCustomTranslationPath({
+        targets: customTargets,
+        modules: customModules,
+        includeLiquid: true,
+      }),
+    );
+  }, [customModules, customTargets, navigate]);
   const createConfirmScenario:
     | "ready"
     | "insufficient_paid"
@@ -833,6 +901,7 @@ export default function TranslateV4MvpRoute() {
   ]);
 
   const handleRecommendationTranslate = useCallback(async (item: Recommendation) => {
+    setHasOpenedCreateFlow(true);
     if (createQuotaGatePending) {
       message.info(
         t("Checking your trial eligibility. Please try again in a moment."),
@@ -1086,71 +1155,96 @@ export default function TranslateV4MvpRoute() {
             planType={planType}
           />
 
-          <div style={summaryHeroGridStyle}>
-            <div style={summaryHeroCardStyle}>
-              <div style={summaryHeroLayoutStyle}>
-                <div style={summaryProgressWrapStyle}>
-                  <AppProgressRing
-                    percent={isCoverageInitializing ? null : hasCoverageData ? coverage.overallPercent : null}
-                    tone="primary"
-                    size={100}
-                    loading={isCoverageInitializing || !hasCoverageData}
-                  />
-                </div>
+          {hideSetupGuide ? null : (
+            <SetupGuideCard
+              state={setupGuideState}
+              themeEditorUrl={themeEditorUrl}
+              onDismiss={handleDismissSetupGuide}
+              onStartTranslate={handleSetupGuideOpenCustom}
+              onConfigureTask={handleSetupGuideOpenCustom}
+              onOpenLiquid={handleSetupGuideOpenLiquid}
+            />
+          )}
 
-                <div style={summaryContentStyle}>
-                  <BlockStack gap="100">
-                    <Text as="p" tone="subdued" variant="bodyMd">
-                      {t("v4Mvp.coverageCard.title")}
-                    </Text>
-                    <Text as="p" variant="headingMd">
-                      {isCoverageInitializing
-                        ? t("v4Mvp.coverageCard.summaryComputing", {
-                            defaultValue: "Store translation status is being calculated...",
-                          })
-                        : t("v4Mvp.coverageCard.summary", {
-                            percent: hasCoverageData ? `${coverage.overallPercent ?? 0}%` : "—",
+          <div style={summaryHeroGridStyle}>
+            <div style={summaryHeroItemStyle}>
+              <AppSectionCard
+                title={t("v4Mvp.coverageCard.title")}
+                bodyPadding={HERO_CARD_PADDING}
+                compact
+                style={summaryHeroCardShellStyle}
+              >
+                <div style={summaryHeroBodyStyle}>
+                  <div style={summaryHeroLayoutStyle}>
+                    <div style={summaryProgressWrapStyle}>
+                      <AppProgressRing
+                        percent={
+                          isCoverageInitializing
+                            ? null
+                            : hasCoverageData
+                              ? coverage.overallPercent
+                              : null
+                        }
+                        size={64}
+                        loading={isCoverageInitializing || !hasCoverageData}
+                      />
+                    </div>
+
+                    <div style={summaryContentStyle}>
+                      <Text as="p" variant="bodyMd">
+                        {isCoverageInitializing
+                          ? t("v4Mvp.coverageCard.summaryComputing", {
+                              defaultValue:
+                                "Store translation status is being calculated...",
+                            })
+                          : t("v4Mvp.coverageCard.summary", {
+                              percent: hasCoverageData
+                                ? `${coverage.overallPercent ?? 0}%`
+                                : "—",
+                            })}
+                      </Text>
+                      {isCoverageInitializing ? (
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          {t("v4Mvp.coverageCard.descriptionComputing", {
+                            defaultValue:
+                              "We are scanning your store content and will show overall coverage once the first calculation finishes.",
                           })}
-                    </Text>
-                    <InlineStack gap="150" blockAlign="center" wrap={false}>
-                      <Text
-                        as="p"
-                        variant="headingMd"
-                        style={summaryProgressLabelStyle(coverageRating.accent)}
+                        </Text>
+                      ) : hasCoverageData && coverage.totalItems > 0 ? (
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          {t("v4Mvp.overview.progress", {
+                            translated: coverage.translatedItems.toLocaleString(),
+                            total: coverage.totalItems.toLocaleString(),
+                          })}
+                        </Text>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div style={summaryHeroFooterStyle}>
+                    <InlineStack gap="150" blockAlign="center" wrap>
+                      <AppStatusBadge
+                        tone={
+                          isCoverageInitializing ? "info" : coverageRating.tone
+                        }
                       >
                         {isCoverageInitializing
                           ? t("v4Mvp.coverageCard.statusComputing", {
                               defaultValue: "Calculating...",
                             })
                           : coverageRating.label}
-                      </Text>
-                      {coverage.languageCount > 0 ? (
+                      </AppStatusBadge>
+                      {!isCoverageInitializing && coverage.languageCount > 0 ? (
                         <Text as="span" tone="subdued" variant="bodySm">
-                          {`· ${t("v4Mvp.coverageCard.languageCount", {
+                          {t("v4Mvp.coverageCard.languageCount", {
                             total: coverage.languageCount,
-                          })}`}
+                          })}
                         </Text>
                       ) : null}
                     </InlineStack>
-                    {isCoverageInitializing ? (
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {t("v4Mvp.coverageCard.descriptionComputing", {
-                          defaultValue:
-                            "We are scanning your store content and will show overall coverage once the first calculation finishes.",
-                        })}
-                      </Text>
-                    ) : hasCoverageData && coverage.totalItems > 0 ? (
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {t("v4Mvp.overview.progress", {
-                          translated: coverage.translatedItems.toLocaleString(),
-                          total: coverage.totalItems.toLocaleString(),
-                        })}
-                      </Text>
-                    ) : null}
-                  </BlockStack>
-                  <div style={summaryButtonWrapStyle}>
                     <Button
                       variant="secondary"
+                      size="slim"
                       disabled={isCoverageInitializing}
                       onClick={() => setCoverageDetailOpen(true)}
                     >
@@ -1158,41 +1252,66 @@ export default function TranslateV4MvpRoute() {
                     </Button>
                   </div>
                 </div>
-              </div>
+              </AppSectionCard>
             </div>
 
-            <a
-              href={SUMMARY_VIDEO_URL}
-              target="_blank"
-              rel="noreferrer"
-              style={videoPreviewLayerStyle}
-            >
-              <div style={videoPreviewSurfaceStyle}>
-                {summaryVideoThumbnailUrl ? (
-                  <img
-                    alt={t("v4Mvp.videoCard.title")}
-                    src={summaryVideoThumbnailUrl}
-                    style={videoPreviewImageStyle}
-                  />
-                ) : (
-                  <div style={videoPreviewFallbackStyle}>
-                    <Badge tone="attention">{t("v4Mvp.videoCard.unavailable")}</Badge>
-                  </div>
-                )}
+            <div style={summaryHeroItemStyle}>
+              <ThemeExtensionStatusCard
+                shop={shop}
+                ciwiSwitcherId={ciwiSwitcherId}
+                status={embedStatus}
+                bodyPadding={HERO_CARD_PADDING}
+                compact
+              />
+            </div>
 
-                <div style={videoPreviewOverlayStyle}>
-                  <div style={videoPreviewPlayButtonStyle}>
-                    <div style={videoPreviewPlayIconStyle} />
-                  </div>
-                </div>
+            <div style={summaryHeroItemStyle}>
+              <AppSectionCard
+                title={t("v4Mvp.videoCard.guideTitle")}
+                bodyPadding={HERO_CARD_PADDING}
+                compact
+                style={summaryHeroCardShellStyle}
+              >
+                <a
+                  href={SUMMARY_VIDEO_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={videoPreviewLayerStyle}
+                >
+                  <div style={videoPreviewSurfaceStyle}>
+                    {summaryVideoThumbnailUrl ? (
+                      <img
+                        alt={t("v4Mvp.videoCard.guideTitle")}
+                        src={summaryVideoThumbnailUrl}
+                        style={videoPreviewImageStyle}
+                      />
+                    ) : (
+                      <div style={videoPreviewFallbackStyle}>
+                        <Badge tone="attention">
+                          {t("v4Mvp.videoCard.unavailable")}
+                        </Badge>
+                      </div>
+                    )}
 
-                <div style={videoPreviewCaptionStyle}>
-                  <Text as="p" variant="bodyMd" style={videoPreviewCaptionTextStyle}>
-                    {t("v4Mvp.videoCard.tutorialTitle")}
-                  </Text>
-                </div>
-              </div>
-            </a>
+                    <div style={videoPreviewOverlayStyle}>
+                      <div style={videoPreviewPlayButtonStyle}>
+                        <div style={videoPreviewPlayIconStyle} />
+                      </div>
+                    </div>
+
+                    <div style={videoPreviewCaptionStyle}>
+                      <Text
+                        as="p"
+                        variant="bodySm"
+                        style={videoPreviewCaptionTextStyle}
+                      >
+                        {t("v4Mvp.videoCard.tutorialTitle")}
+                      </Text>
+                    </div>
+                  </div>
+                </a>
+              </AppSectionCard>
+            </div>
           </div>
 
           <AppSectionCard
@@ -1535,13 +1654,7 @@ function RecommendationCard({
         </InlineStack>
         <div style={recommendationMetaListStyle}>
           {coveragePercent != null ? (
-            <AppPill
-              style={{
-                background: v4Colors.infoBg,
-                color: v4Colors.info,
-                border: "1px solid transparent",
-              }}
-            >
+            <AppPill tone="info">
               {t("v4Mvp.recommended.metaCoverage", { percent: coveragePercent })}
             </AppPill>
           ) : null}
@@ -1636,51 +1749,72 @@ const coveragePercentWrapStyle = {
   textAlign: "right",
 } satisfies CSSProperties;
 
+const HERO_CARD_PADDING = "10px 16px";
+
 const summaryHeroGridStyle = {
   display: "flex",
   flexWrap: "wrap",
-  gap: "18px",
+  gap: "12px",
   alignItems: "stretch",
   width: "100%",
 } satisfies CSSProperties;
 
-const summaryHeroCardStyle = {
-  ...v4CardStyle,
-  padding: "20px 24px",
-  background: v4Colors.summaryBg,
-  boxShadow: "var(--app-shadow-card-strong)",
+const summaryHeroItemStyle = {
+  flex: "1 1 220px",
+  minWidth: "200px",
+  display: "flex",
+  flexDirection: "column",
+  alignSelf: "stretch",
+} satisfies CSSProperties;
+
+const summaryHeroCardShellStyle = {
+  height: "100%",
+  flex: 1,
+  display: "flex",
+  flexDirection: "column",
+  boxShadow: "var(--app-shadow-card)",
+} satisfies CSSProperties;
+
+const summaryHeroBodyStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
+  flex: 1,
+  minHeight: 0,
+} satisfies CSSProperties;
+
+const summaryHeroFooterStyle = {
   display: "flex",
   alignItems: "center",
-  flex: "0.95 1 450px",
-  minWidth: "320px",
+  justifyContent: "space-between",
+  gap: "8px",
+  flexWrap: "wrap",
+  marginTop: "auto",
 } satisfies CSSProperties;
 
 const videoPreviewLayerStyle = {
-  ...v4CardStyle,
-  padding: "0",
+  display: "block",
+  position: "relative",
   overflow: "hidden",
+  borderRadius: "var(--app-radius-md)",
   color: "inherit",
   textDecoration: "none",
   background: "#0f172a",
-  boxShadow: "var(--app-shadow-card-strong)",
-  flex: "1.35 1 10px",
-  minWidth: "150px",
-  minHeight: "100%",
-  display: "block",
-  width: "322px",
+  width: "100%",
+  aspectRatio: "16 / 9",
 } satisfies CSSProperties;
 
 const summaryHeroLayoutStyle = {
   display: "flex",
   alignItems: "center",
-  flexWrap: "wrap",
-  gap: "20px",
+  flexWrap: "nowrap",
+  gap: "10px",
   width: "100%",
 } satisfies CSSProperties;
 
 const summaryContentStyle = {
   minWidth: 0,
-  flex: "1 1 180px",
+  flex: "1 1 140px",
   display: "grid",
   gap: "4px",
 } satisfies CSSProperties;
@@ -1692,27 +1826,9 @@ const summaryProgressWrapStyle = {
   flexShrink: 0,
 } satisfies CSSProperties;
 
-const summaryButtonWrapStyle = {
-  display: "flex",
-  alignItems: "center",
-  flexShrink: 0,
-  marginLeft: "auto",
-} satisfies CSSProperties;
-
-function summaryProgressLabelStyle(accent: string): CSSProperties {
-  return {
-    color: accent,
-    fontSize: "14px",
-    lineHeight: "18px",
-    fontWeight: 600,
-  };
-}
-
 const videoPreviewSurfaceStyle = {
-  position: "relative",
-  width: "100%",
-  height: "100%",
-  minHeight: "100px",
+  position: "absolute",
+  inset: 0,
   overflow: "hidden",
   background: "#0f172a",
 } satisfies CSSProperties;
@@ -1720,7 +1836,6 @@ const videoPreviewSurfaceStyle = {
 const videoPreviewImageStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "112px",
   display: "block",
   objectFit: "cover",
 } satisfies CSSProperties;
@@ -1731,36 +1846,35 @@ const videoPreviewOverlayStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  paddingBottom: "10px",
+  paddingBottom: 0,
   background:
     "linear-gradient(180deg, rgba(15,23,42,0.08) 0%, rgba(15,23,42,0.24) 100%)",
 } satisfies CSSProperties;
 
 const videoPreviewPlayButtonStyle = {
-  width: "42px",
-  height: "42px",
+  width: "32px",
+  height: "32px",
   borderRadius: "999px",
   background: "rgba(255,255,255,0.9)",
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.16)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  transform: "translateY(-4px)",
 } satisfies CSSProperties;
 
 const videoPreviewPlayIconStyle = {
   width: 0,
   height: 0,
-  borderTop: "6px solid transparent",
-  borderBottom: "6px solid transparent",
-  borderLeft: `10px solid ${v4Colors.text}`,
+  borderTop: "5px solid transparent",
+  borderBottom: "5px solid transparent",
+  borderLeft: `8px solid ${v4Colors.text}`,
   marginLeft: "2px",
 } satisfies CSSProperties;
 
 const videoPreviewCaptionStyle = {
   position: "absolute",
   inset: "auto 0 0 0",
-  padding: "14px 16px 10px",
+  padding: "8px 12px 8px",
   background:
     "linear-gradient(180deg, rgba(15, 23, 42, 0) 0%, rgb(77 77 77 / 78%) 100%)",
 } satisfies CSSProperties;
@@ -1774,7 +1888,6 @@ const videoPreviewCaptionTextStyle = {
 const videoPreviewFallbackStyle = {
   width: "100%",
   height: "100%",
-  minHeight: "112px",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -1838,10 +1951,10 @@ const recommendationStatusTextStyle = {
 function recommendationToneDotStyle(tone: RecommendationTone): CSSProperties {
   const color =
     tone === "success"
-      ? v4Colors.success
+      ? appColors.textSuccess
       : tone === "info"
-        ? v4Colors.info
-        : v4Colors.warning;
+        ? appColors.textInfo
+        : appColors.textCaution;
   return {
     width: "8px",
     height: "8px",

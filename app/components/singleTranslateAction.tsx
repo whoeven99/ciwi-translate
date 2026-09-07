@@ -7,7 +7,7 @@ import {
   DEFAULT_AI_MODEL,
 } from "~/routes/app.translate-v4/constants";
 import { getV4AiModelLabel } from "~/routes/app.translate-v4/v4I18n";
-import { V4ModalShell } from "~/components/V4ModalShell";
+import { AppSModal } from "~/ui/components/AppSModal";
 import Button, { type AppButtonProps } from "~/ui/components/AppButton";
 import { v4Colors } from "~/routes/app.translate-v4/v4Styles";
 
@@ -316,31 +316,32 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
       >
         {actionLabel}
       </Button>
-      {open ? (
-        <V4ModalShell open onClose={closeModal} width={560}>
-          <div style={{ padding: "24px 24px 20px" }}>
-            <div
-              style={{
-                paddingBottom: 20,
-                marginBottom: 20,
-                borderBottom: `1px solid ${v4Colors.divider}`,
-              }}
-            >
-              <Text strong style={{ display: "block", fontSize: 24, lineHeight: 1.3 }}>
-                {modalTitle}
-              </Text>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <AppSModal
+          open={open}
+          heading={modalTitle}
+          onClose={closeModal}
+          size="base"
+          primaryAction={{
+            content: primaryLabel,
+            onAction: handleSubmit,
+            loading,
+            disabled: quotaPrecheckPending,
+          }}
+          secondaryActions={[
+            {
+              content: t("Cancel"),
+              onAction: closeModal,
+              disabled: loading,
+            },
+          ]}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               <div
                 style={{
                   padding: "14px 16px",
                   borderRadius: 16,
                   border: `1px solid ${v4Colors.cardBorder}`,
-                  background:
-                    shortfallCredits && shortfallCredits > 0
-                      ? "rgba(239, 68, 68, 0.06)"
-                      : v4Colors.cardSubdued,
+                  background: v4Colors.cardSubdued,
                 }}
               >
                 <Text strong style={{ display: "block", marginBottom: 12 }}>
@@ -356,12 +357,10 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                   <StatItem
                     label={t("Estimated total")}
                     value={estimateLabel}
-                    critical={false}
                   />
                   <StatItem
                     label={t("Available now")}
                     value={remainingLabel}
-                    critical={false}
                   />
                   <StatItem
                     label={t("Need to top up")}
@@ -370,7 +369,6 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                         ? t("Estimating...")
                         : `${shortfallCredits.toLocaleString()} ${t("credits")}`
                     }
-                    critical={Boolean(shortfallCredits && shortfallCredits > 0)}
                   />
                 </div>
               </div>
@@ -400,31 +398,8 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                   onChange={(event) => setPrompt(event.target.value)}
                 />
               </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 12,
-                marginTop: 24,
-              }}
-            >
-              <Button type="default" onClick={closeModal} disabled={loading}>
-                {t("Cancel")}
-              </Button>
-              <Button
-                type="primary"
-                onClick={handleSubmit}
-                loading={loading}
-                disabled={quotaPrecheckPending}
-              >
-                {primaryLabel}
-              </Button>
-            </div>
           </div>
-        </V4ModalShell>
-      ) : null}
+        </AppSModal>
     </>
   );
 };
@@ -432,25 +407,16 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
 function StatItem({
   label,
   value,
-  critical,
 }: {
   label: string;
   value: string;
-  critical: boolean;
 }) {
   return (
     <div>
       <Text type="secondary" style={{ display: "block", fontSize: 12 }}>
         {label}
       </Text>
-      <Text
-        strong
-        style={{
-          display: "block",
-          marginTop: 4,
-          color: critical ? "#dc2626" : undefined,
-        }}
-      >
+      <Text strong style={{ display: "block", marginTop: 4 }}>
         {value}
       </Text>
     </div>
