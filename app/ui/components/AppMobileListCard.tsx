@@ -35,9 +35,13 @@ export default function AppMobileListCard({
   return (
     <div style={{ ...cardStyle, ...style }}>
       <BlockStack gap="200">
-        <Text as="h4" variant="headingSm">
-          {title}
-        </Text>
+        {typeof title === "string" ? (
+          <Text as="h4" variant="headingSm">
+            {title}
+          </Text>
+        ) : (
+          <div>{title}</div>
+        )}
         {rows.map((row) => (
           <InlineStack key={row.key} align="space-between" blockAlign="center">
             <Text as="span" variant="bodySm">

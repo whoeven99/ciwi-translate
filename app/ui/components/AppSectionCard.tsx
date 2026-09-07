@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Card } from "antd";
+import { Card } from "@shopify/polaris";
 
 interface AppSectionCardProps {
   title?: ReactNode;
@@ -58,61 +58,47 @@ export default function AppSectionCard({
   const hasHeader = title || description || extra;
 
   return (
-    <Card
+    <div
       className={className}
       style={{
         width: "100%",
-        border: "1px solid var(--app-color-border-secondary)",
-        boxShadow: "var(--app-shadow-card)",
-        background: "var(--app-color-surface)",
-        borderRadius: "var(--app-radius-lg)",
-        display: "flex",
-        flexDirection: "column",
         ...style,
       }}
-      styles={{
-        body: {
-          padding: bodyPadding,
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          flex: 1,
-          minHeight: 0,
-        },
-      }}
     >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: hasHeader ? (compact ? 6 : "var(--app-space-300)") : 0,
-          flex: 1,
-          minHeight: 0,
-          height: "100%",
-        }}
-      >
-        {hasHeader ? (
-          <div style={headerRowStyle}>
-            <div style={{ ...titleWrapStyle, gap: compact ? 2 : 6 }}>
-              {title ? <h3 style={titleStyle}>{title}</h3> : null}
-              {description ? (
-                <p
-                  style={{
-                    ...descriptionStyle,
-                    ...(compact
-                      ? { fontSize: 13, lineHeight: "18px" }
-                      : null),
-                  }}
-                >
-                  {description}
-                </p>
-              ) : null}
+      <Card padding="0">
+        <div
+          style={{
+            padding: bodyPadding,
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            gap: hasHeader ? (compact ? 6 : "var(--app-space-300)") : 0,
+            minHeight: 0,
+          }}
+        >
+          {hasHeader ? (
+            <div style={headerRowStyle}>
+              <div style={{ ...titleWrapStyle, gap: compact ? 2 : 6 }}>
+                {title ? <h3 style={titleStyle}>{title}</h3> : null}
+                {description ? (
+                  <p
+                    style={{
+                      ...descriptionStyle,
+                      ...(compact
+                        ? { fontSize: 13, lineHeight: "18px" }
+                        : null),
+                    }}
+                  >
+                    {description}
+                  </p>
+                ) : null}
+              </div>
+              {extra ? <div>{extra}</div> : null}
             </div>
-            {extra ? <div>{extra}</div> : null}
-          </div>
-        ) : null}
-        {children}
-      </div>
-    </Card>
+          ) : null}
+          {children}
+        </div>
+      </Card>
+    </div>
   );
 }

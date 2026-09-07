@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, InputNumber, Modal, Select, Space, Typography } from "antd";
-import Button from "~/ui/components/AppButton";
+import { Alert, InputNumber, Space, Typography } from "antd";
+import { Select as PolarisSelect } from "@shopify/polaris";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useFetcher } from "@remix-run/react";
-import { BaseOptionType, DefaultOptionType } from "antd/es/select";
 import { CurrencyDataType } from "../route";
 import { useDispatch, useSelector } from "react-redux";
 import { updateTableData } from "~/store/modules/currencyDataTable";
@@ -32,14 +32,14 @@ const CurrencyEditModal: React.FC<CurrencyEditModalProps> = ({
   const dispatch = useDispatch();
   const { t } = useTranslation();
 
-  const exRateColumns: (BaseOptionType | DefaultOptionType)[] = useMemo(
+  const exRateColumns = useMemo(
     () => [
       { value: "Auto", label: t("Auto") },
       { value: "Manual Rate", label: t("Manual Rate") },
     ],
-    [],
+    [t],
   );
-  const roundingColumns: (BaseOptionType | DefaultOptionType)[] = useMemo(
+  const roundingColumns = useMemo(
     () => [
       { value: "", label: t("Disable") },
       { value: "0", label: t("No decimal") },
@@ -50,7 +50,7 @@ const CurrencyEditModal: React.FC<CurrencyEditModalProps> = ({
       { value: "0.5", label: "0.50" },
       { value: "0.25", label: "0.25" },
     ],
-    [],
+    [t],
   );
 
   const [exRateSelectValue, setExRateSelectValue] = useState<string>();
@@ -231,41 +231,22 @@ const CurrencyEditModal: React.FC<CurrencyEditModalProps> = ({
   };
 
   return (
-    <Modal
-      title={title}
-      onCancel={handleCloseModal}
+    <AppSModal
       open={isVisible}
-      style={{
-        top: "40%",
+      heading={title}
+      onClose={handleCloseModal}
+      size="base"
+      primaryAction={{
+        content: t("Save"),
+        onAction: handleConfirm,
+        disabled: saveButtonDisable || updateFetcherLoading,
+        loading: updateFetcherLoading,
       }}
-      footer={[
-        <div
-          key={"footer_buttons"}
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            width: "100%",
-            gap: "12px", // 使用 gap 替代 marginRight
-          }}
-        >
-          <Button
-            key={"manage_cancel_button"}
-            onClick={handleCloseModal}
-            style={{ marginRight: "10px" }}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            key={"manage_confirm_button"}
-            type="primary"
-            disabled={saveButtonDisable || updateFetcherLoading}
-            loading={updateFetcherLoading}
-          >
-            {t("Save")}
-          </Button>
-        </div>,
+      secondaryActions={[
+        {
+          content: t("Cancel"),
+          onAction: handleCloseModal,
+        },
       ]}
     >
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
@@ -280,11 +261,11 @@ const CurrencyEditModal: React.FC<CurrencyEditModalProps> = ({
         ) : null}
         <div>
           <Title level={5}>{t("Exchange rate")}</Title>
-          <Select
-            defaultValue={selectedRow?.exchangeRate.toString()}
-            value={exRateSelectValue}
-            style={{ width: "100%" }}
+          <PolarisSelect
+            label={t("Exchange rate")}
+            labelHidden
             options={exRateColumns}
+            value={exRateSelectValue ?? ""}
             onChange={handleExRateSelectChange}
           />
           {exRateSelectValue === "Auto" && (
@@ -327,15 +308,15 @@ const CurrencyEditModal: React.FC<CurrencyEditModalProps> = ({
       </Space>
       <div>
         <Title level={5}>{t("Rounding")}</Title>
-        <Select
-          defaultValue={selectedRow?.rounding}
-          value={roundingSelectValue}
-          style={{ width: "100%" }}
+        <PolarisSelect
+          label={t("Rounding")}
+          labelHidden
           options={roundingColumns}
+          value={roundingSelectValue ?? ""}
           onChange={handleRoundingSelectChange}
         />
       </div>
-    </Modal>
+    </AppSModal>
   );
 };
 

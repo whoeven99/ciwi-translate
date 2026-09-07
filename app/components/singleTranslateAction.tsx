@@ -1,4 +1,5 @@
-import { Input, Select, Typography } from "antd";
+import { Input, Typography } from "antd";
+import { Select as PolarisSelect } from "@shopify/polaris";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
@@ -339,7 +340,7 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
               <div
                 style={{
                   padding: "14px 16px",
-                  borderRadius: 16,
+                  borderRadius: 8,
                   border: `1px solid ${v4Colors.cardBorder}`,
                   background: v4Colors.cardSubdued,
                 }}
@@ -377,12 +378,12 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                 <Text strong style={{ display: "block", marginBottom: 8 }}>
                   {t("v4.createTask.aiModel")}
                 </Text>
-                <Select
-                  style={{ width: "100%" }}
+                <PolarisSelect
+                  label={t("v4.createTask.aiModel")}
+                  labelHidden
                   options={aiModelOptions}
                   value={aiModel}
                   onChange={setAiModel}
-                  getPopupContainer={(node) => node.parentElement ?? document.body}
                 />
               </div>
 

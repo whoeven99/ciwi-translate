@@ -114,8 +114,9 @@ body {
   border-radius: 10px;
 }
 
-.app-button.ant-btn:not(:disabled):focus-visible {
-  box-shadow: 0 0 0 3px rgba(84, 103, 255, 0.18);
+.app-button:focus-visible,
+.app-button button:focus-visible {
+  box-shadow: 0 0 0 3px var(--p-color-border-focus, var(--app-accent-primary-soft));
 }
 
 .app-button.ant-btn-default {
@@ -440,13 +441,12 @@ body {
    ========================================================================= */
 
 .v4-page {
-  /* 靛蓝同时用于字色（Tab / link），须 ≥4.5:1；#6366f1 对白底约 4.47 不达标 */
-  --v4-accent-primary: #4f46e5;
-  --v4-accent-primary-hover: #4338ca;
-  --v4-accent-primary-deep: #3730a3;
-  --v4-accent-primary-soft: rgba(79, 70, 229, 0.12);
-  --v4-accent-primary-muted: rgba(79, 70, 229, 0.08);
-  --v4-ring-track: #eef2ff;
+  --v4-accent-primary: var(--p-color-text-link, var(--app-accent-primary));
+  --v4-accent-primary-hover: var(--p-color-text-link-hover, var(--app-accent-primary-hover));
+  --v4-accent-primary-deep: var(--app-accent-primary-deep);
+  --v4-accent-primary-soft: var(--app-accent-primary-soft);
+  --v4-accent-primary-muted: var(--app-accent-primary-muted);
+  --v4-ring-track: var(--p-color-border-secondary, var(--app-color-border-secondary));
 }
 
 .v4-page .ant-tabs-ink-bar {

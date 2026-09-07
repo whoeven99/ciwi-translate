@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Flex, Input, Modal, Space, Typography } from "antd";
-import Button from "~/ui/components/AppButton";
+import { Alert, Flex, Input, Space, Typography } from "antd";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
 import { globalStore } from "~/globalStore";
 import { insertLiquidCompat, type LiquidTableRow } from "../liquidClient";
@@ -105,23 +105,22 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
   };
 
   return (
-    <Modal
-      title={title}
+    <AppSModal
       open={open}
-      onCancel={handleCloseModal}
-      centered
-      footer={[
-        <Space key="updateCustomTransModal_footer">
-          <Button onClick={handleCloseModal}>{t("Cancel")}</Button>
-          <Button
-            onClick={handleConfirm}
-            type="primary"
-            disabled={confirmDisabled}
-            loading={submitting}
-          >
-            {t("Save")}
-          </Button>
-        </Space>,
+      heading={title}
+      onClose={handleCloseModal}
+      size="base"
+      primaryAction={{
+        content: t("Save"),
+        onAction: () => void handleConfirm(),
+        disabled: confirmDisabled,
+        loading: submitting,
+      }}
+      secondaryActions={[
+        {
+          content: t("Cancel"),
+          onAction: handleCloseModal,
+        },
       ]}
     >
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
@@ -162,7 +161,7 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
           />
         </Flex>
       </Space>
-    </Modal>
+    </AppSModal>
   );
 };
 

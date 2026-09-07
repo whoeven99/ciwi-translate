@@ -3,16 +3,15 @@ import {
   Space,
   Row,
   Col,
-  Card,
   Typography,
   Alert,
   Flex,
   Switch,
   Table,
   Collapse,
-  Modal,
 } from "antd";
 import Button from "~/ui/components/AppButton";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CollapseProps } from "antd";
@@ -1193,7 +1192,7 @@ const Index = () => {
                       width: "100%",
                     }}
                   >
-                    <Card
+                    <div
                       className={`pricing-plan-card ${
                         item.disabled
                           ? "pricing-plan-card--current"
@@ -1210,16 +1209,8 @@ const Index = () => {
                         flexDirection: "column",
                         position: "relative",
                         minWidth: "220px",
+                        padding: "20px",
                       }}
-                      styles={{
-                        body: {
-                          flex: 1,
-                          display: "flex",
-                          flexDirection: "column",
-                          padding: "20px",
-                        },
-                      }}
-                      loading={!plan.id}
                     >
                       <div
                         style={{
@@ -1330,7 +1321,7 @@ const Index = () => {
                           </div>
                         ))}
                       </div>
-                    </Card>
+                    </div>
                   </Col>
                 ))}
               </Row>
@@ -1392,13 +1383,23 @@ const Index = () => {
           </Space>
         </div>
       </div>
-      <Modal
-        title={t("Buy Credits")}
+      <AppSModal
         open={addCreditsModalOpen}
-        width={900}
-        centered
-        onCancel={() => setAddCreditsModalOpen(false)}
-        footer={null}
+        heading={t("Buy Credits")}
+        onClose={() => setAddCreditsModalOpen(false)}
+        size="large"
+        primaryAction={{
+          content: t("Buy now"),
+          onAction: handlePayForCredits,
+          disabled: !selectedOptionKey,
+          loading: buyButtonLoading,
+        }}
+        secondaryActions={[
+          {
+            content: t("Cancel"),
+            onAction: () => setAddCreditsModalOpen(false),
+          },
+        ]}
       >
         <Space direction="vertical" size="small" style={{ width: "100%" }}>
           <div
@@ -1423,43 +1424,68 @@ const Index = () => {
             </Text>
           </div>
           <Row gutter={[16, 16]}>
-            {creditOptions.map((option) => (
-              <Col key={option.key} xs={12} sm={12} md={6} lg={6} xl={6}>
-                <Card
-                  hoverable
-                  style={{
-                    textAlign: "center",
-                    borderColor: "transparent",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    height: "150px",
-                    background:
-                      JSON.stringify(selectedOptionKey) ===
-                      JSON.stringify(option.key)
+            {creditOptions.map((option) => {
+              const selected =
+                JSON.stringify(selectedOptionKey) ===
+                JSON.stringify(option.key);
+              return (
+                <Col key={option.key} xs={12} sm={12} md={6} lg={6} xl={6}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOption(option.key)}
+                    style={{
+                      width: "100%",
+                      textAlign: "center",
+                      border: selected
+                        ? "1px solid var(--p-color-border-emphasis, var(--app-color-border))"
+                        : "1px solid var(--app-color-border-secondary)",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      alignItems: "center",
+                      height: "150px",
+                      background: selected
                         ? "var(--app-color-surface-selected)"
                         : "var(--app-color-surface)",
-                    boxShadow: "var(--app-shadow-card)",
-                  }}
-                  onClick={() => setSelectedOption(option.key)}
-                >
-                  <Text
-                    style={{
-                      fontSize: "16px",
-                      fontWeight: 500,
-                      display: "block",
-                      marginBottom: "8px",
+                      boxShadow: "var(--app-shadow-card)",
                     }}
                   >
-                    {option.Credits.toLocaleString()} {t("Credits")}
-                  </Text>
-                  {(plan.type === "Premium" ||
-                    plan.type === "Pro" ||
-                    plan.type === "Basic") &&
-                  !plan?.isInFreePlanTime ? (
-                    <>
+                    <Text
+                      style={{
+                        fontSize: "16px",
+                        fontWeight: 500,
+                        display: "block",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      {option.Credits.toLocaleString()} {t("Credits")}
+                    </Text>
+                    {(plan.type === "Premium" ||
+                      plan.type === "Pro" ||
+                      plan.type === "Basic") &&
+                    !plan?.isInFreePlanTime ? (
+                      <>
+                        <Title
+                          level={3}
+                          style={{
+                            margin: 0,
+                            color: "var(--app-color-text)",
+                            fontWeight: 700,
+                          }}
+                        >
+                          ${option.price.currentPrice.toFixed(2)}
+                        </Title>
+                        <Text
+                          delete
+                          type="secondary"
+                          style={{ fontSize: "14px" }}
+                        >
+                          ${option.price.comparedPrice.toFixed(2)}
+                        </Text>
+                      </>
+                    ) : (
                       <Title
                         level={3}
                         style={{
@@ -1470,81 +1496,46 @@ const Index = () => {
                       >
                         ${option.price.currentPrice.toFixed(2)}
                       </Title>
-                      <Text
-                        delete
-                        type="secondary"
-                        style={{ fontSize: "14px" }}
-                      >
-                        ${option.price.comparedPrice.toFixed(2)}
-                      </Text>
-                    </>
-                  ) : (
-                    <Title
-                      level={3}
-                      style={{
-                        margin: 0,
-                        color: "var(--app-color-text)",
-                        fontWeight: 700,
-                      }}
-                    >
-                      ${option.price.currentPrice.toFixed(2)}
-                    </Title>
-                  )}
-                </Card>
-              </Col>
-            ))}
+                    )}
+                  </button>
+                </Col>
+              );
+            })}
           </Row>
-          <Flex align="center" justify="center">
-            <Space direction="vertical" align="center">
-              <Text type="secondary" style={{ margin: "16px 0 8px 0" }}>
-                {t("Total pay")}: $
-                {selectedOptionKey
-                  ? creditOptions
-                      .find((item) => item.key === selectedOptionKey)
-                      ?.price.currentPrice.toFixed(2)
-                  : "0.00"}
-              </Text>
-              <Button
-                type="primary"
-                size="large"
-                disabled={!selectedOptionKey}
-                loading={buyButtonLoading}
-                onClick={handlePayForCredits}
-              >
-                {t("Buy now")}
-              </Button>
-            </Space>
-          </Flex>
+          <Text type="secondary" style={{ margin: "16px 0 0 0", display: "block", textAlign: "center" }}>
+            {t("Total pay")}: $
+            {selectedOptionKey
+              ? creditOptions
+                  .find((item) => item.key === selectedOptionKey)
+                  ?.price.currentPrice.toFixed(2)
+              : "0.00"}
+          </Text>
         </Space>
-      </Modal>
-      <Modal
-        title={t("Cancel paid plan?")}
+      </AppSModal>
+      <AppSModal
         open={cancelPlanWarnModal}
-        centered
-        onCancel={() => setCancelPlanWarnModal(false)}
-        footer={
-          <Flex align="end" justify="end" gap={10}>
-            <Button
-              loading={planCancelFetcher.state == "submitting"}
-              onClick={handleCancelPlan}
-            >
-              {t("Switch to free plan")}
-            </Button>
-            <Button
-              type="primary"
-              onClick={() => setCancelPlanWarnModal(false)}
-            >
-              {t("Keep paid plan")}
-            </Button>
-          </Flex>
-        }
+        heading={t("Cancel paid plan?")}
+        onClose={() => setCancelPlanWarnModal(false)}
+        size="small"
+        primaryAction={{
+          content: t("Keep paid plan"),
+          onAction: () => setCancelPlanWarnModal(false),
+        }}
+        secondaryActions={[
+          {
+            content: t("Switch to free plan"),
+            onAction: handleCancelPlan,
+            loading: planCancelFetcher.state == "submitting",
+            tone: "critical",
+          },
+        ]}
       >
         <Text>
           {t(
             "Moving to the free plan will turn off key features. Are you sure you want to switch?",
           )}
         </Text>
-      </Modal>
+      </AppSModal>
     </Page>
   );
 };

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Input, Space, Typography, Select, Checkbox, Alert } from "antd";
+import { Input, Space, Typography, Checkbox, Alert } from "antd";
+import { Select as PolarisSelect } from "@shopify/polaris";
+import { AppSModal } from "~/ui/components/AppSModal";
 import Button from "~/ui/components/AppButton";
 import { useFetcher, useNavigate } from "@remix-run/react";
 import { useDispatch, useSelector } from "react-redux";
@@ -326,36 +328,22 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
   };
 
   return (
-    <Modal
-      title={title}
+    <AppSModal
       open={isVisible}
-      onCancel={handleCloseModal}
-      footer={[
-        <div
-          key={"footer_buttons"}
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            width: "100%",
-          }}
-        >
-          <Button
-            key={"manage_cancel_button"}
-            onClick={handleCloseModal}
-            style={{ marginRight: "10px" }}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button
-            onClick={() => handleConfirm(id)}
-            key={"manage_confirm_button"}
-            type="primary"
-            disabled={confirmButtonDisable}
-            loading={confirmButtonDisable}
-          >
-            {t("Save")}
-          </Button>
-        </div>,
+      heading={title}
+      onClose={handleCloseModal}
+      size="base"
+      primaryAction={{
+        content: t("Save"),
+        onAction: () => void handleConfirm(id),
+        disabled: confirmButtonDisable,
+        loading: confirmButtonDisable,
+      }}
+      secondaryActions={[
+        {
+          content: t("Cancel"),
+          onAction: handleCloseModal,
+        },
       ]}
     >
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
@@ -435,28 +423,21 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
         </div>
         <Text strong>{t("Apply for")}</Text>
         <div style={{ display: "flex", flexDirection: "column", width: 200 }}>
-          <Select
-            options={localeOptions}
-            style={{ width: "100%" }}
-            onChange={(e) => {
+          <PolarisSelect
+            label={t("Apply for")}
+            labelHidden
+            options={localeOptions.map((option) => ({
+              label: option.label,
+              value: option.value,
+            }))}
+            onChange={(value) => {
               setModalAlert(null);
-              setRangeCode(e);
+              setRangeCode(value);
             }}
             value={rangeCode}
-            status={rangeCodeStatus}
-            loading={localesLoading}
+            error={rangeCodeError ? rangeCodeErrorMsg : undefined}
+            disabled={localesLoading}
           />
-          {rangeCodeError && (
-            <Text type="danger" style={{ marginTop: 2 }}>
-              <ExclamationCircleOutlined
-                style={{
-                  display: rangeCodeError ? "inline-block" : "none",
-                  marginRight: "4px",
-                }}
-              />
-              {rangeCodeErrorMsg}
-            </Text>
-          )}
           {isCreateMode && !localesLoading && shopLocales.length === 0 ? (
             <Space direction="vertical" size="small" style={{ marginTop: 8 }}>
               <Text type="secondary">
@@ -478,7 +459,7 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
           {t("Case-sensitive")}
         </Checkbox>
       </Space>
-    </Modal>
+    </AppSModal>
   );
 };
 

@@ -1,8 +1,7 @@
-import { Modal, Checkbox, Typography } from "antd";
-import Button from "~/ui/components/AppButton";
+import { Checkbox } from "antd";
 import { useTranslation } from "react-i18next";
-
-const { Text } = Typography;
+import { AppSModal } from "~/ui/components/AppSModal";
+import { Text } from "@shopify/polaris";
 
 interface DeleteConfirmModalProps {
   isVisible: boolean;
@@ -22,44 +21,36 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   text,
 }) => {
   const { t } = useTranslation();
+  const heading =
+    langauges.length > 1
+      ? t("Delete {{count}} languages", { count: langauges.length })
+      : t("Delete {{item}}", { item: langauges[0]?.name });
 
   return (
-    <Modal
-      title={
-        langauges.length > 1
-          ? t("Delete {{count}} languages", { count: langauges.length })
-          : t("Delete {{item}}", { item: langauges[0]?.name })
-      }
-      width={1000}
+    <AppSModal
       open={isVisible}
-      onCancel={() => setVisible(false)}
-      footer={[
-        <div key={"footer_buttons"}>
-          <Button
-            key={"manage_cancel_button"}
-            style={{ marginRight: "10px" }}
-            onClick={() => setVisible(false)}
-          >
-            {t("No")}
-          </Button>
-          <Button
-            onClick={handleDelete}
-            key={"manage_confirm_button"}
-            type="primary"
-          >
-            {t("Yes")}
-          </Button>
-        </div>,
+      heading={heading}
+      onClose={() => setVisible(false)}
+      size="small"
+      primaryAction={{
+        content: t("Yes"),
+        onAction: handleDelete,
+        tone: "critical",
+      }}
+      secondaryActions={[
+        {
+          content: t("No"),
+          onAction: () => setVisible(false),
+        },
       ]}
-      style={{ top: "40%" }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <Text>{text}</Text>
+        <Text as="p">{text}</Text>
         <Checkbox onChange={(e) => setDontPromptAgain(e.target.checked)}>
           {t("Don’t prompt again next time")}
         </Checkbox>
       </div>
-    </Modal>
+    </AppSModal>
   );
 };
 

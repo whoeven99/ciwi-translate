@@ -15,11 +15,11 @@ import {
   BlockStack,
   Button,
   InlineStack,
-  Modal,
   Page,
   ProgressBar,
   Text,
 } from "@shopify/polaris";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
 import { message } from "~/ui/message";
 import { authenticate } from "~/shopify.server";
@@ -1481,13 +1481,12 @@ export default function TranslateV4MvpRoute() {
           </div>
         </BlockStack>
       </div>
-      <Modal
+      <AppSModal
         open={coverageDetailOpen}
+        heading={t("v4Mvp.coverageModal.title")}
         onClose={() => setCoverageDetailOpen(false)}
-        title={t("v4Mvp.coverageModal.title")}
         size="large"
       >
-        <Modal.Section>
           <div style={coverageModalShellStyle}>
             <BlockStack gap="350">
               <div style={coverageModalHeroStyle}>
@@ -1575,8 +1574,7 @@ export default function TranslateV4MvpRoute() {
               </BlockStack>
             </BlockStack>
           </div>
-        </Modal.Section>
-      </Modal>
+      </AppSModal>
       <CreateTaskConfirmModal
         open={createConfirmConfig !== null}
         creating={creating}

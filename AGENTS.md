@@ -154,11 +154,10 @@ globally inside a card (it breaks Ant single-select layout). ESLint
 `app/routes/app.translate-v4/**`（`.eslintrc.cjs` override；`app.translate-v4-history`
 目前不在该 glob 内，新增下拉仍请用 Polaris）。Remaining Ant Selects
 (allow for now, 已核对):
-`app/components/singleTranslateAction.tsx`（AI 模型）、manage-translation 头部
-（`app.manage_translation/route.tsx`）、custom liquid `updateCustomTransModal`、
-glossary `updateGlossaryModal`、currency `currencyEditModal` — prefer Polaris
-when those screens are next touched。`app/components/paymentModal.tsx` 已是
-Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns.mdc`.
+manage-translation 头部（`app.manage_translation/route.tsx`）— 表格密集筛选，
+prefer Polaris when that screen is next touched。`singleTranslateAction`、
+glossary `updateGlossaryModal`、currency `currencyEditModal`、Switcher 已是
+Polaris `Select`。`app/components/paymentModal.tsx` 仍是参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns.mdc`.
 - Ant Design theme values should be derived from Polaris-like tokens through
 `app/ui/theme.ts`; avoid creating a second visual system.
 - Prefer existing shared wrappers in `app/ui/components/*`, including
@@ -168,8 +167,8 @@ Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns
   must use App Home `<s-modal>` via `AppSModal` (`heading` + `primary-action` /
   `secondary-actions` slots). Do not put those CTAs in the modal body. Polaris
   web components load from `polaris-1.js` in `app/root.tsx`. In-body actions
-  (e.g. Precise estimate) stay in children. Remaining Ant/Polaris React dialogs
-  are P1.
+  (e.g. Precise estimate) stay in children. Remaining Ant dialogs are mainly
+  manage-translation resource pages (P2).
 - Sub-pages (NavMenu children, history, custom create-task, shop-profile) must offer a
   back control to the parent: `AppSubpageTitleBar` (App Bridge breadcrumb) plus
   `AppPageHeader` `backAction` (Polaris arrow beside the in-page title; visual match

@@ -6,12 +6,12 @@ import {
   Flex,
   Table,
   Switch,
-  Modal,
   Skeleton,
-  Card,
   Checkbox,
 } from "antd";
 import Button from "~/ui/components/AppButton";
+import { AppSModal } from "~/ui/components/AppSModal";
+import AppMobileListCard from "~/ui/components/AppMobileListCard";
 import {
   useCallback,
   useEffect,
@@ -98,7 +98,6 @@ import {
   translateV4Message,
 } from "../app.translate-v4/v4I18n";
 import { localeRegionCode } from "../app.translate-v4/localeDisplay";
-import { v4Colors } from "../app.translate-v4/v4Styles";
 
 const { Text } = Typography;
 
@@ -1414,35 +1413,26 @@ const Index = () => {
                   />
                 ) : null}
                 {isMobile ? (
-                  <Card
-                    className={styles.languageMobileCard}
-                    title={
-                      <Checkbox
-                        checked={allCurrentPageSelected && !loading}
-                        indeterminate={
-                          someCurrentPageSelected && !allCurrentPageSelected
-                        }
-                        onChange={(e: any) =>
-                          setSelectedRowKeys(
-                            e.target.checked
-                              ? dataSource.map((item) => item.key)
-                              : [],
-                          )
-                        }
-                      >
-                        {t("Languages")}
-                      </Checkbox>
-                    }
-                    loading={loading}
-                    style={{ border: "none", boxShadow: "none" }}
-                  >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <Checkbox
+                      checked={allCurrentPageSelected && !loading}
+                      indeterminate={
+                        someCurrentPageSelected && !allCurrentPageSelected
+                      }
+                      onChange={(e: any) =>
+                        setSelectedRowKeys(
+                          e.target.checked
+                            ? dataSource.map((item) => item.key)
+                            : [],
+                        )
+                      }
+                    >
+                      {t("Languages")}
+                    </Checkbox>
                     {dataSource.map((item: any) => (
-                      <Card.Grid key={item.key} style={{ width: "100%" }}>
-                        <Space
-                          direction="vertical"
-                          size="middle"
-                          style={{ width: "100%" }}
-                        >
+                      <AppMobileListCard
+                        key={item.key}
+                        title={
                           <Checkbox
                             checked={selectedRowKeys.includes(item.key)}
                             onChange={(e: any) => {
@@ -1457,54 +1447,68 @@ const Index = () => {
                           >
                             {item.name}
                           </Checkbox>
-                          <div>
-                            <TranslatedIcon
-                              status={item.status}
-                              detail={item.statusDetail}
-                            />
-                          </div>
-                          <Flex justify="space-between">
-                            <Text>{t("Publish")}</Text>
-                            <Switch
-                              checked={item.published}
-                              onChange={(checked) =>
-                                handlePublishChange(item.locale, checked)
-                              }
-                            />
-                          </Flex>
-                          <Flex justify="space-between">
-                            <Text>{t("Auto translation")}</Text>
-                            <Switch
-                              checked={item.autoTranslate}
-                              onChange={(checked) =>
-                                handleAutoUpdateTranslationChange(
-                                  item.locale,
-                                  checked,
-                                )
-                              }
-                            />
-                          </Flex>
-                          <Button
-                            type="primary"
-                            style={{ width: "100%" }}
-                            onClick={() => openTranslateModal([item.locale])}
-                          >
-                            {t("Translate")}
-                          </Button>
-                          <Button
-                            style={{ width: "100%" }}
-                            onClick={() => {
-                              navigate(
-                                `/app/manage_translation?language=${item?.locale}`,
-                              );
-                            }}
-                          >
-                            {t("Manage")}
-                          </Button>
-                        </Space>
-                      </Card.Grid>
+                        }
+                        rows={[
+                          {
+                            key: "status",
+                            label: t("Status"),
+                            value: (
+                              <TranslatedIcon
+                                status={item.status}
+                                detail={item.statusDetail}
+                              />
+                            ),
+                          },
+                          {
+                            key: "publish",
+                            label: t("Publish"),
+                            value: (
+                              <Switch
+                                checked={item.published}
+                                onChange={(checked) =>
+                                  handlePublishChange(item.locale, checked)
+                                }
+                              />
+                            ),
+                          },
+                          {
+                            key: "auto",
+                            label: t("Auto translation"),
+                            value: (
+                              <Switch
+                                checked={item.autoTranslate}
+                                onChange={(checked) =>
+                                  handleAutoUpdateTranslationChange(
+                                    item.locale,
+                                    checked,
+                                  )
+                                }
+                              />
+                            ),
+                          },
+                        ]}
+                        actions={
+                          <>
+                            <Button
+                              type="primary"
+                              onClick={() => openTranslateModal([item.locale])}
+                            >
+                              {t("Translate")}
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                navigate(
+                                  `/app/manage_translation?language=${item?.locale}`,
+                                );
+                              }}
+                            >
+                              {t("Manage")}
+                            </Button>
+                          </>
+                        }
+                      />
                     ))}
-                  </Card>
+                  </div>
                 ) : (
                   <Table
                     className={styles.languageTable}
@@ -1526,45 +1530,11 @@ const Index = () => {
         setIsModalOpen={setIsLanguageModalOpen}
         languageLocaleData={languageLocaleData}
       />
-      <Modal
+      <AppSModal
         open={translateModalOpen}
-        onCancel={() => setTranslateModalOpen(false)}
-        footer={null}
-        centered
-        destroyOnHidden
-        width={760}
-        closeIcon={
-          <span
-            aria-hidden
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 24,
-              height: 24,
-              fontSize: 18,
-              color: v4Colors.textMuted,
-              lineHeight: 1,
-            }}
-          >
-            ×
-          </span>
-        }
-        styles={{
-          content: {
-            padding: 0,
-            overflow: "hidden",
-            borderRadius: 20,
-            border: `1px solid ${v4Colors.cardBorder}`,
-            background: v4Colors.cardBg,
-            boxShadow: "var(--app-shadow-card-strong)",
-          },
-          body: {
-            padding: 0,
-            maxHeight: "min(720px, calc(100vh - 96px))",
-            overflowY: "auto",
-          },
-        }}
+        heading={t("Translate")}
+        onClose={() => setTranslateModalOpen(false)}
+        size="large"
       >
         <CreateTaskCard
           targetOptions={targetOptions}
@@ -1585,7 +1555,7 @@ const Index = () => {
           advancedDefaultOpen
           submitPlacement="footer-center"
         />
-      </Modal>
+      </AppSModal>
       <DeleteConfirmModal
         isVisible={deleteConfirmModalVisible}
         setVisible={setDeleteConfirmModalVisible}
@@ -1598,24 +1568,22 @@ const Index = () => {
           "Are you sure to delete this language? After deletion, the translation data will be deleted together",
         )}
       />
-      <Modal
-        title={t("The 20 language limit has been reached")}
+      <AppSModal
         open={showWarnModal}
-        onCancel={() => setShowWarnModal(false)}
-        centered
-        width={700}
-        footer={
-          <Space>
-            <Button onClick={() => setShowWarnModal(false)}>{t("OK")}</Button>
-          </Space>
-        }
+        heading={t("The 20 language limit has been reached")}
+        onClose={() => setShowWarnModal(false)}
+        size="base"
+        primaryAction={{
+          content: t("OK"),
+          onAction: () => setShowWarnModal(false),
+        }}
       >
         <Text>
           {t(
             "Based on Shopify's language limit, you can only add up to 20 languages.Please delete some languages and then continue.",
           )}
         </Text>
-      </Modal>
+      </AppSModal>
       <PublishModal
         markets={markets}
         setMarkets={setMarkets}

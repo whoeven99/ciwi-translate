@@ -209,29 +209,19 @@
 }
 
 .pricing-plan-card {
-  border-radius: 16px;
+  border-radius: 8px;
   border: 1px solid var(--app-color-border-secondary) !important;
   background: var(--p-color-bg-surface);
   box-shadow: var(--app-shadow-card);
 }
 
 .pricing-plan-card--current {
-  background: linear-gradient(
-      180deg,
-      rgba(84, 103, 255, 0.1) 0%,
-      rgba(255, 255, 255, 0.98) 100%
-    ),
-    var(--p-color-bg-surface);
+  background: var(--p-color-bg-surface-selected, var(--app-color-surface-selected));
 }
 
 .pricing-plan-card--recommended {
-  background: linear-gradient(
-      180deg,
-      rgba(84, 103, 255, 0.1) 0%,
-      rgba(255, 255, 255, 0.98) 100%
-    ),
-    var(--p-color-bg-surface);
-  border-color: rgba(84, 103, 255, 0.22) !important;
+  background: var(--p-color-bg-surface);
+  border-color: var(--p-color-border-emphasis, var(--app-color-border)) !important;
   box-shadow: var(--app-shadow-card-strong);
 }
 

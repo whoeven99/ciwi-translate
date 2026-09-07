@@ -1,17 +1,15 @@
 import { SaveBar } from "@shopify/app-bridge-react";
-import { Page } from "@shopify/polaris";
+import { Page, Select as PolarisSelect } from "@shopify/polaris";
 import {
   Alert,
-  Card,
   Typography,
   Switch,
-  Select,
   ColorPicker,
   Slider,
   Popconfirm,
-  Modal,
 } from "antd";
 import Button from "~/ui/components/AppButton";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
 import {
   getTranslateV4ErrorMessage,
@@ -43,7 +41,7 @@ import AppStatusBadge from "~/ui/components/AppStatusBadge";
 import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
 import { confirmLeaveSaveBar } from "~/lib/saveBarNavigation";
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 type PreviewLanguageOption = {
   iso_code: string;
@@ -796,9 +794,10 @@ const Index = () => {
                         <Text style={{ display: "block" }}>
                           {t("Selector type")}
                         </Text>
-                        <Select
+                        <PolarisSelect
+                          label={t("Selector type")}
+                          labelHidden
                           options={switcherOptions}
-                          style={{ width: "100%" }}
                           value={switcherTypeValue}
                           onChange={(value) => {
                             switch (value) {
@@ -881,9 +880,10 @@ const Index = () => {
                         <Text style={{ display: "block" }}>
                           {t("Selector position:")}
                         </Text>
-                        <Select
+                        <PolarisSelect
+                          label={t("Selector position:")}
+                          labelHidden
                           options={switcherPositionOptions}
-                          style={{ width: "100%" }}
                           value={selectorPosition}
                           onChange={(value) =>
                             handleEditData({ selectorPosition: value })
@@ -908,20 +908,10 @@ const Index = () => {
             </div>
           </div>
           <div className={styles.switcher_preview}>
-            <Card
-              loading={isLoading}
-              style={{
-                height: "100%",
-                border: "none",
-                boxShadow: "var(--app-shadow-card)",
-              }}
+            <AppSectionCard
+              title={t("Preview")}
+              style={{ height: "100%" }}
             >
-              <Title
-                level={5}
-                style={{ fontSize: 14, color: "var(--app-color-text)" }}
-              >
-                {t("Preview")}
-              </Title>
               <div
                 style={{
                   position: "relative",
@@ -1380,23 +1370,21 @@ const Index = () => {
                   </div>
                 </div>
               </div>
-            </Card>
+            </AppSectionCard>
           </div>
         </div>
-        <Modal
-          title={t("Feature Unavailable")}
+        <AppSModal
           open={showWarnModal}
-          onCancel={() => setShowWarnModal(false)}
-          centered
-          width={700}
-          footer={
-            <Button type="primary" onClick={goToPricing}>
-              {t("Upgrade")}
-            </Button>
-          }
+          heading={t("Feature Unavailable")}
+          onClose={() => setShowWarnModal(false)}
+          size="small"
+          primaryAction={{
+            content: t("Upgrade"),
+            onAction: goToPricing,
+          }}
         >
           <Text>{t("This feature is available only with the paid plan.")}</Text>
-        </Modal>
+        </AppSModal>
       </div>
     </Page>
   );
