@@ -911,6 +911,7 @@ Currency changes often touch admin, App Proxy, and extension JS.
 - App Proxy: `app/routes/api.storefront.$.ts`.
 - Extension: `extensions/ciwi-switcher/blocks/ciwi_I18n_Switcher.liquid` and
 `extensions/ciwi-switcher/assets/ciwi-*.js`.
+- 店面不通过 REST Asset / GraphQL `themes { files }` 读写主题文件（BFS「Doesn't use Asset API」）。`read_themes` 只给 Translations API 的 `ONLINE_STORE_THEME_*`；不要加回 `write_themes` 或 `themeFilesUpsert`。
 - App Proxy 店面路径：Extension `ciwi-api.js` 固定 `STOREFRONT_APP_PROXY_BASE=/apps/ciwi`
  （对齐正式 `shopify.app.prod.toml` `subpath=ciwi`）。测试 App 为 `ciwi-test` 时
  需临时改扩展常量或单独分支后再 `deployTest`。

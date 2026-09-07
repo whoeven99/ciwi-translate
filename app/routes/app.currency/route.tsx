@@ -73,47 +73,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session, admin } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const { shop } = session;
   const formData = await request.formData();
-  const theme = formData.get("theme")
-    ? JSON.parse(formData.get("theme") as string)
-    : null;
   const deleteCurrencies = formData.get("deleteCurrencies")
     ? (JSON.parse(formData.get("deleteCurrencies") as string) as number[])
     : null;
   const updateCurrencies = formData.get("updateCurrencies")
     ? JSON.parse(formData.get("updateCurrencies") as string)
     : null;
-
-  if (theme) {
-    try {
-      const response = await admin.graphql(
-        `#graphql
-            query {
-              themes(roles: MAIN, first: 1) {
-                nodes {
-                  files(filenames: "config/settings_data.json") { 
-                    nodes {
-                      body {
-                        ... on OnlineStoreThemeFileBodyText {
-                          __typename
-                          content
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }`,
-      );
-      const data = await response.json();
-      return json({ data: data.data.themes });
-    } catch (error) {
-      console.error("Error theme currency:", error);
-      return json({ error: "theme fetch failed" }, { status: 500 });
-    }
-  }
 
   if (Array.isArray(deleteCurrencies) && deleteCurrencies.length > 0) {
     try {
