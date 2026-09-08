@@ -111,6 +111,7 @@ export function AppSModal({
       id={`app-s-modal-${reactId}`}
       heading={heading}
       size={size}
+      accessibilityLabel={heading}
     >
       {open ? children : null}
       {primaryAction ? (
