@@ -79,16 +79,14 @@ export default function AppButton({
     </Button>
   );
 
-  const { width: _ignoredWidth, ...restStyle } = style ?? {};
-  void _ignoredWidth;
-  const wrapStyle =
-    className || Object.keys(restStyle).length > 0 ? restStyle : undefined;
-  if (!className && wrapStyle == null) return button;
+  // Polaris Button ignores leftover Ant visual styles. Do not paint them on a
+  // wrapper — that created a second white rounded box behind manage Translate.
+  if (!className) return button;
 
   return (
     <span
       className={["app-button", className].filter(Boolean).join(" ")}
-      style={wrapStyle}
+      style={{ display: "contents" }}
     >
       {button}
     </span>
