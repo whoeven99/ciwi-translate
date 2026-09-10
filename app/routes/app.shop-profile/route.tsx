@@ -1,6 +1,7 @@
 import { json, redirect, type LoaderFunctionArgs, type ActionFunctionArgs } from "@remix-run/node";
 import { useFetcher, useLoaderData, useRevalidator } from "@remix-run/react";
 import { Page } from "@shopify/polaris";
+import { useTranslation } from "react-i18next";
 import AppPageHeader from "~/ui/components/AppPageHeader";
 import AppSubpageTitleBar, {
   useAppHomeBackAction,
@@ -250,6 +251,7 @@ export default function ShopProfilePage() {
   const fetcher = useFetcher<{ enqueued: boolean; reason?: string }>();
   const revalidator = useRevalidator();
   const homeBackAction = useAppHomeBackAction();
+  const { t } = useTranslation();
 
   const isActive = scan ? ACTIVE_STATUSES.includes(scan.status) : false;
   const isRescanning = fetcher.state !== "idle";
@@ -329,7 +331,7 @@ export default function ShopProfilePage() {
 
   return (
     <Page>
-      <AppSubpageTitleBar title="店铺画像 (Shop Profile)" />
+      <AppSubpageTitleBar title={t("Shop Profile")} />
       <Flex vertical gap={20}>
         <AppPageHeader
           title={

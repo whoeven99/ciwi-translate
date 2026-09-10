@@ -1066,7 +1066,7 @@ const Index = () => {
                                     id="currency-arrow-icon"
                                     className={styles.arrow_icon}
                                     src="/arrow.svg"
-                                    alt="Arrow Icon"
+                                    alt={t("Arrow")}
                                     width="25%"
                                     height="25%"
                                   />
@@ -1159,7 +1159,7 @@ const Index = () => {
                                     id="currency-arrow-icon"
                                     className={styles.arrow_icon}
                                     src="/arrow.svg"
-                                    alt="Arrow Icon"
+                                    alt={t("Arrow")}
                                     width="25%"
                                     height="25%"
                                   />
@@ -1249,7 +1249,7 @@ const Index = () => {
                           id="mainbox-arrow-icon"
                           className={styles.mainarrow_icon}
                           src="/arrow.svg"
-                          alt="Arrow Icon"
+                          alt={t("Arrow")}
                           width="25px"
                           height="25%"
                         />
