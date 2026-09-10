@@ -75,6 +75,7 @@ import {
 } from "~/utils/billingReturn";
 import { message } from "~/ui/message";
 import { APP_NAV_HOME, APP_NAV_ITEMS } from "~/lib/appNav";
+import { installBlurPolarisSelectOnChange } from "~/lib/blurPolarisSelectOnChange";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -539,6 +540,8 @@ export default function App() {
       setPerfDebugEnabled(true);
     }
   }, []);
+
+  useEffect(() => installBlurPolarisSelectOnChange(), []);
 
   useEffect(() => {
     setIsClient(true);

@@ -146,6 +146,12 @@ body {
   box-shadow: 0 0 0 3px var(--p-color-border-focus, var(--app-accent-primary-soft));
 }
 
+/* Polaris Select 焦点环（蓝色 outline）失焦立刻关掉，不做过渡淡出 */
+.Polaris-Select__Backdrop,
+.Polaris-Select__Input:focus-visible ~ .Polaris-Select__Backdrop {
+  transition: none;
+}
+
 .app-button.ant-btn-default {
   background: var(--app-color-surface);
   border-color: var(--app-color-border-secondary);

@@ -352,11 +352,7 @@ export function CreateTaskCard({
                 labelHidden
                 options={aiModelOptions}
                 value={aiModel}
-                onChange={(value) => {
-                  onAiModelChange(value);
-                  const active = document.activeElement;
-                  if (active instanceof HTMLElement) active.blur();
-                }}
+                onChange={onAiModelChange}
               />
             </div>
             <SectionLabel>{t("v4.createTask.translationOptions")}</SectionLabel>
