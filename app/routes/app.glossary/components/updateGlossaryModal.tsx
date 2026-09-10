@@ -366,16 +366,14 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
           />
         ) : null}
         <Text>{t("Keep translation consistent across your store")}</Text>
-        <div
-          style={{
-            display: "flex",
-            width: "100%",
-            justifyContent: "center",
-            alignItems: "flex-start",
-            gap: 8,
-          }}
-        >
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        <Space direction="vertical" size="small" style={{ display: "flex" }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              width: "100%",
+            }}
+          >
             <Input
               placeholder={t("Please enter original text")}
               value={sourceText}
@@ -397,8 +395,24 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
               </Text>
             )}
           </div>
-          <Text style={{ margin: "0 8px", lineHeight: "32px" }}>{t("to")}</Text>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          <Text
+            type="secondary"
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "center",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("to")}
+          </Text>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              width: "100%",
+            }}
+          >
             <Input
               placeholder={t("Please enter escaped text")}
               value={targetText}
@@ -420,7 +434,7 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
               </Text>
             )}
           </div>
-        </div>
+        </Space>
         <Text strong>{t("Apply for")}</Text>
         <div style={{ display: "flex", flexDirection: "column", width: 200 }}>
           <PolarisSelect

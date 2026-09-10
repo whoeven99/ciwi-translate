@@ -7,8 +7,6 @@ import {
   ColorPicker,
   Slider,
 } from "antd";
-import Button from "~/ui/components/AppButton";
-import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
 import {
   getTranslateV4ErrorMessage,
@@ -17,7 +15,7 @@ import {
 import styles from "./styles.module.css";
 import { useEffect, useMemo, useState } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import { authenticate } from "~/shopify.server";
 import {
   loadSwitcherConfigCompat,
@@ -26,7 +24,6 @@ import {
   type SwitcherEditData,
 } from "./switcherClient";
 import { useSelector } from "react-redux";
-import { InfoCircleOutlined } from "@ant-design/icons";
 import defaultStyles from "../styles/defaultStyles.module.css";
 import useReport from "scripts/eventReport";
 import CloseIcon from "~/components/icon/closeIcon";
@@ -38,7 +35,6 @@ import AppSubpageTitleBar, {
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
 import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
-import { confirmLeaveSaveBar } from "~/lib/saveBarNavigation";
 
 const { Text } = Typography;
 
@@ -217,13 +213,11 @@ const Index = () => {
     previewCurrencies[0].iso_code,
   );
   const [isLoading, setIsLoading] = useState(true);
-  const [showWarnModal, setShowWarnModal] = useState(false);
   const [saveAlert, setSaveAlert] = useState<string>("");
   const [loadAlert, setLoadAlert] = useState(false);
   const [updateLoading, setUpdateLoading] = useState<boolean>(false);
   const { report } = useReport();
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const homeBackAction = useAppHomeBackAction();
   const { plan } = useSelector((state: any) => state.userConfig);
   const isGeoLocationEnabled = editData.ipOpen;
@@ -407,10 +401,6 @@ const Index = () => {
   );
   useContextualSaveBar("switcher-save-bar", isDirty);
 
-  const goToPricing = () => {
-    void confirmLeaveSaveBar().then(() => navigate("/app/pricing"));
-  };
-
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
@@ -548,8 +538,6 @@ const Index = () => {
     }
     if (plan?.type !== "Free" || !checked) {
       handleEditData({ ipOpen: checked });
-    } else {
-      setShowWarnModal(true);
     }
     report(
       {
@@ -699,17 +687,6 @@ const Index = () => {
               ) : null}
               <AppSectionCard
                 title={t("Auto adaptation settings")}
-                extra={
-                  showPaidPlanHint ? (
-                    <Button
-                      type="text"
-                      icon={<InfoCircleOutlined />}
-                      onClick={() => setShowWarnModal(true)}
-                    >
-                      {t("Paid feature")}
-                    </Button>
-                  ) : null
-                }
               >
                 <div style={sectionContentStackStyle}>
                   <div style={rowBetweenStyle}>
@@ -1365,27 +1342,6 @@ const Index = () => {
             </AppSectionCard>
           </div>
         </div>
-        <AppSModal
-          open={showWarnModal}
-          heading={t("Feature Unavailable")}
-          onClose={() => setShowWarnModal(false)}
-          size="small"
-          primaryAction={{
-            content: t("Upgrade"),
-            onAction: () => {
-              setShowWarnModal(false);
-              goToPricing();
-            },
-          }}
-          secondaryActions={[
-            {
-              content: t("Cancel"),
-              onAction: () => setShowWarnModal(false),
-            },
-          ]}
-        >
-          <Text>{t("This feature is available only with the paid plan.")}</Text>
-        </AppSModal>
       </div>
     </Page>
   );

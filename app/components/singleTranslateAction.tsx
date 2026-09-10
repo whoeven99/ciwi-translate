@@ -1,8 +1,11 @@
 import { Input, Typography } from "antd";
 import { Select as PolarisSelect } from "@shopify/polaris";
 import { useEffect, useMemo, useState } from "react";
+import { useFetcher, useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
+import { useSelector } from "react-redux";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
+import { buildBillingReturnPath } from "~/utils/billingReturn";
 import {
   AI_MODEL_OPTIONS,
   DEFAULT_AI_MODEL,
@@ -10,7 +13,14 @@ import {
 import { getV4AiModelLabel } from "~/routes/app.translate-v4/v4I18n";
 import { AppSModal } from "~/ui/components/AppSModal";
 import Button, { type AppButtonProps } from "~/ui/components/AppButton";
-import { v4Colors } from "~/routes/app.translate-v4/v4Styles";
+import {
+  CreditsEstimatePanel,
+  QuotaOfferPanel,
+  formatConfirmCredits,
+  getConfirmScenarioTitle,
+  type CreateTaskConfirmScenario,
+  type CreateTaskQuotaOfferMode,
+} from "~/routes/app.translate-v4/components/CreditsConfirmPanel";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -96,6 +106,19 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
   triggerProps,
 }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const isNew = useSelector(
+    (state: { userConfig?: { isNew?: boolean | null } }) =>
+      state.userConfig?.isNew ?? null,
+  );
+  const planType = useSelector(
+    (state: { userConfig?: { plan?: { type?: string | null } } }) =>
+      state.userConfig?.plan?.type?.trim() || null,
+  );
+  const planFetcher = useFetcher<{
+    success?: boolean;
+    response?: { confirmationUrl?: string };
+  }>();
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [aiModel, setAiModel] = useState(DEFAULT_AI_MODEL);
@@ -130,9 +153,32 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
   const quotaPrecheckPending = open && (estimateLoading || quotaLoading);
   const quotaPrecheckReady =
     estimatedCredits != null && currentRemainingCredits != null;
-  const shouldOpenPurchaseModal =
-    quotaPrecheckReady &&
-    (currentRemainingCredits <= 0 || estimatedCredits > currentRemainingCredits);
+  const normalizedPlanType = planType?.trim().toLowerCase() || "";
+  const hasPaidPlan =
+    normalizedPlanType !== "" && normalizedPlanType !== "free";
+  const needsMoreCredits =
+    quotaPrecheckReady && estimatedCredits > currentRemainingCredits;
+  const quotaOfferMode: CreateTaskQuotaOfferMode = hasPaidPlan
+    ? "paid"
+    : isNew === true
+      ? "trial"
+      : "pricing";
+  const scenario: CreateTaskConfirmScenario =
+    !quotaPrecheckReady || !needsMoreCredits
+      ? "ready"
+      : quotaOfferMode === "paid"
+        ? "insufficient_paid"
+        : quotaOfferMode === "trial"
+          ? "insufficient_trial"
+          : "insufficient_pricing";
+  const isReady = scenario === "ready";
+  const isTrialOffer = scenario === "insufficient_trial";
+  const isInsufficientPaid = scenario === "insufficient_paid";
+  const hasPositiveCredits =
+    currentRemainingCredits != null && currentRemainingCredits > 0;
+  const hasNonPositiveCredits =
+    currentRemainingCredits != null && currentRemainingCredits <= 0;
+  const canStartPartial = !isReady && !hasNonPositiveCredits && hasPositiveCredits;
 
   useEffect(() => {
     if (!open) {
@@ -232,63 +278,139 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
     return () => controller.abort();
   }, [open]);
 
+  useEffect(() => {
+    if (!planFetcher.data?.success) return;
+    const confirmationUrl = planFetcher.data.response?.confirmationUrl;
+    if (confirmationUrl) {
+      window.open(confirmationUrl, "_top");
+    }
+  }, [planFetcher.data]);
+
   const actionLabel = getActionLabel(modalState, t);
-  const modalTitle = getModalTitle(modalState, t);
   const submitLabel = getSubmitLabel(modalState, t);
   const promptLabel = t("manage.singleTranslate.promptSuggestion");
-  const primaryLabel = shouldOpenPurchaseModal
-    ? t("Buy credits and translate")
-    : submitLabel;
+  const headingBusy = planFetcher.state === "submitting";
+  const modalTitle =
+    !quotaPrecheckReady || isReady
+      ? getModalTitle(modalState, t)
+      : getConfirmScenarioTitle(t, scenario, canStartPartial);
 
-  const estimateLabel = estimateLoading
-    ? t("Estimating...")
-    : estimatedCredits === null
+  const primaryLabel = isReady
+    ? submitLabel
+    : canStartPartial
+      ? submitLabel
+      : isInsufficientPaid
+        ? t("Buy credits and translate")
+        : isTrialOffer
+          ? t("v4.createTask.confirmTrialAndStart")
+          : t("Buy credits and translate");
+
+  const requiredCreditsValue = quotaPrecheckPending
+    ? t("v4.createTask.confirmEstimateComputing")
+    : estimatedCredits == null
       ? "--"
-      : `${estimatedCredits.toLocaleString()} ${t("credits")}`;
-
-  const remainingLabel = quotaLoading
-    ? t("Estimating...")
+      : formatConfirmCredits(estimatedCredits);
+  const availableCreditsValue = quotaPrecheckPending
+    ? t("v4.createTask.confirmEstimateComputing")
     : currentRemainingCredits == null
       ? "--"
-      : `${currentRemainingCredits.toLocaleString()} ${t("credits")}`;
+      : formatConfirmCredits(currentRemainingCredits);
 
   const closeModal = () => {
     setOpen(false);
     setPrompt("");
   };
 
-  const handleSubmit = () => {
-    const customPrompt = normalizeText(prompt);
+  const openPurchaseModalWithContext = () => {
+    closeModal();
+    deferOpenCreditsPurchaseModal({
+      kind: "single_translate",
+      target: normalizeText(targetLocale) || "target",
+      fieldKey: fieldKey?.trim() || "value",
+      estimatedCredits,
+      currentRemainingCredits,
+      shortfallCredits,
+      state: modalState,
+    });
+  };
 
-    const openPurchaseModalWithContext = () => {
-      closeModal();
-      deferOpenCreditsPurchaseModal({
-        kind: "single_translate",
-        target: normalizeText(targetLocale) || "target",
-        fieldKey: fieldKey?.trim() || "value",
-        estimatedCredits,
-        currentRemainingCredits,
-        shortfallCredits,
-        state: modalState,
-      });
+  const buildReturnPathForPlan = () => {
+    if (typeof window === "undefined") return undefined;
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    return buildBillingReturnPath(currentPath, { kind: "plan" });
+  };
+
+  const handleViewPlans = () => {
+    const returnPath = buildReturnPathForPlan();
+    closeModal();
+    navigate(
+      returnPath
+        ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}`
+        : "/app/pricing",
+    );
+  };
+
+  const handleTrialAction = () => {
+    const payload: Record<string, string> = {
+      payForPlan: JSON.stringify({
+        title: "Basic",
+        monthlyPrice: 7.99,
+        yearlyPrice: 6.39,
+        yearly: false,
+        trialDays: 5,
+      }),
     };
+    const returnPath = buildReturnPathForPlan();
+    if (returnPath) {
+      payload.returnPath = returnPath;
+    }
+    planFetcher.submit(payload, { method: "POST", action: "/app/pricing" });
+  };
 
+  const secondaryAction = isReady
+    ? { content: t("Cancel"), onAction: closeModal }
+    : canStartPartial
+      ? isTrialOffer
+        ? {
+            content: t("v4.createTask.confirmTrialAndStart"),
+            onAction: handleTrialAction,
+          }
+        : scenario === "insufficient_pricing"
+          ? {
+              content: t("v4.createTask.confirmViewPlans"),
+              onAction: handleViewPlans,
+            }
+          : {
+              content: t("v4.createTask.confirmBuyCreditsOnly"),
+              onAction: openPurchaseModalWithContext,
+            }
+      : {
+          content: t("v4.createTask.confirmViewPlans"),
+          onAction: handleViewPlans,
+        };
+
+  const handlePrimaryAction = () => {
     if (quotaPrecheckPending) {
       shopify.toast.show(t("Calculating..."));
       return;
     }
 
-    if (shouldOpenPurchaseModal) {
-      openPurchaseModalWithContext();
+    if (isReady || canStartPartial) {
+      persistAiModel(aiModel);
+      void onSubmit({
+        customPrompt: normalizeText(prompt) || undefined,
+        aiModel,
+      });
+      closeModal();
       return;
     }
 
-    persistAiModel(aiModel);
-    void onSubmit({
-      customPrompt: customPrompt || undefined,
-      aiModel,
-    });
-    closeModal();
+    if (isTrialOffer) {
+      handleTrialAction();
+      return;
+    }
+
+    openPurchaseModalWithContext();
   };
 
   return (
@@ -312,105 +434,61 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
           size="base"
           primaryAction={{
             content: primaryLabel,
-            onAction: handleSubmit,
-            loading,
+            onAction: handlePrimaryAction,
+            loading: loading || headingBusy,
             disabled: quotaPrecheckPending,
           }}
           secondaryActions={[
             {
-              content: t("Cancel"),
-              onAction: closeModal,
-              disabled: loading,
+              content: secondaryAction.content,
+              onAction: secondaryAction.onAction,
+              disabled: loading || headingBusy,
             },
           ]}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-              <div
-                style={{
-                  padding: "14px 16px",
-                  borderRadius: 8,
-                  border: `1px solid ${v4Colors.cardBorder}`,
-                  background: v4Colors.cardSubdued,
-                }}
-              >
-                <Text strong style={{ display: "block", marginBottom: 12 }}>
-                  {t("manage.singleTranslate.summaryTitle")}
-                </Text>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <StatItem
-                    label={t("Estimated total")}
-                    value={estimateLabel}
-                  />
-                  <StatItem
-                    label={t("Available now")}
-                    value={remainingLabel}
-                  />
-                  <StatItem
-                    label={t("Need to top up")}
-                    value={
-                      shortfallCredits == null
-                        ? t("Estimating...")
-                        : `${shortfallCredits.toLocaleString()} ${t("credits")}`
-                    }
-                  />
-                </div>
-              </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <CreditsEstimatePanel
+                requiredValue={requiredCreditsValue}
+                availableValue={availableCreditsValue}
+                hint={t("v4.createTask.confirmEstimateExactHint")}
+              />
 
-              <div>
-                <Text strong style={{ display: "block", marginBottom: 8 }}>
-                  {t("v4.createTask.aiModel")}
-                </Text>
-                <PolarisSelect
-                  label={t("v4.createTask.aiModel")}
-                  labelHidden
-                  options={aiModelOptions}
-                  value={aiModel}
-                  onChange={setAiModel}
-                />
-              </div>
+              {isReady ? (
+                <>
+                  <div>
+                    <Text strong style={{ display: "block", marginBottom: 8 }}>
+                      {t("v4.createTask.aiModel")}
+                    </Text>
+                    <PolarisSelect
+                      label={t("v4.createTask.aiModel")}
+                      labelHidden
+                      options={aiModelOptions}
+                      value={aiModel}
+                      onChange={setAiModel}
+                    />
+                  </div>
 
-              <div>
-                <Text strong style={{ display: "block", marginBottom: 4 }}>
-                  {promptLabel}
-                </Text>
-                <TextArea
-                  rows={4}
-                  maxLength={MAX_PROMPT_LENGTH}
-                  value={prompt}
-                  placeholder={t("manage.singleTranslate.promptPlaceholder")}
-                  onChange={(event) => setPrompt(event.target.value)}
-                />
-              </div>
+                  <div>
+                    <Text strong style={{ display: "block", marginBottom: 4 }}>
+                      {promptLabel}
+                    </Text>
+                    <TextArea
+                      rows={4}
+                      maxLength={MAX_PROMPT_LENGTH}
+                      value={prompt}
+                      placeholder={t("manage.singleTranslate.promptPlaceholder")}
+                      onChange={(event) => setPrompt(event.target.value)}
+                    />
+                  </div>
+                </>
+              ) : null}
+
+              <QuotaOfferPanel scenario={scenario} />
           </div>
         </AppSModal>
     </>
   );
 };
-
-function StatItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div>
-      <Text type="secondary" style={{ display: "block", fontSize: 12 }}>
-        {label}
-      </Text>
-      <Text strong style={{ display: "block", marginTop: 4 }}>
-        {value}
-      </Text>
-    </div>
-  );
-}
 
 function getActionLabel(
   state: SingleTranslateModalState,

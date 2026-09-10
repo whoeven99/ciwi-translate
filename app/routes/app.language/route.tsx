@@ -89,15 +89,34 @@ import {
 import { normalizeShopQuota } from "~/lib/translationQuota";
 import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import type { ShopQuota } from "~/lib/translationQuota";
-import { DEFAULT_AI_MODEL, DEFAULT_MODULE_KEYS } from "../app.translate-v4/constants";
+import {
+  AI_MODEL_OPTIONS,
+  DEFAULT_AI_MODEL,
+  DEFAULT_MODULE_KEYS,
+} from "../app.translate-v4/constants";
 import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import { CreateTaskCard } from "../app.translate-v4/components/CreateTaskCard";
-import { CreateTaskQuotaGateModal } from "../app.translate-v4/components/CreateTaskQuotaGateModal";
+import { CreateTaskConfirmModal } from "../app.translate-v4/components/CreateTaskConfirmModal";
+import {
+  buildUntranslatedRatioByLocale,
+  useCreateTaskEstimate,
+} from "../app.translate-v4/useCreateTaskEstimate";
 import {
   formatV4CreateTasksMessage,
   translateV4Message,
 } from "../app.translate-v4/v4I18n";
 import { localeRegionCode } from "../app.translate-v4/localeDisplay";
+import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
+import { buildCreateTaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
+import {
+  clearCreateTaskDraft,
+  loadCreateTaskDraft,
+  saveCreateTaskDraft,
+} from "~/utils/createTaskDraft";
+import {
+  parseBillingReturn,
+  stripBillingReturnParams,
+} from "~/utils/billingReturn";
 
 const { Text } = Typography;
 
@@ -470,6 +489,10 @@ const Index = () => {
   const pollFailureLoggedRef = useRef(false);
   const skipWebPresencesResyncRef = useRef(true);
   const coverageRequestRef = useRef<Promise<void> | null>(null);
+  const billingDraftRestoredRef = useRef(false);
+  const [coverageLocales, setCoverageLocales] = useState<LanguageCoverageRow[]>(
+    [],
+  );
   const [markets, setMarkets] = useState<MarketType[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]); //表格多选控制key
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false); // 控制Modal显示的状态
@@ -494,10 +517,9 @@ const Index = () => {
     useState<string>(DEFAULT_AI_MODEL);
   const [translateIsCover, setTranslateIsCover] = useState(false);
   const [translateIsHandle, setTranslateIsHandle] = useState(false);
+  const [translateIncludeLiquid, setTranslateIncludeLiquid] = useState(false);
   const [translateCreating, setTranslateCreating] = useState(false);
-  const [translateQuotaGateMode, setTranslateQuotaGateMode] = useState<
-    "trial" | "pricing" | null
-  >(null);
+  const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
   const [quota, setQuota] = useState<ShopQuota | null>(null);
   const [strictQuotaGate, setStrictQuotaGate] = useState(false);
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
@@ -525,6 +547,61 @@ const Index = () => {
   const { reportClick, report } = useReport();
   const location = useLocation();
   const planType = plan?.type?.trim() || null;
+  const remainingCredits = normalizedQuota?.remaining ?? null;
+  const normalizedPlanType = planType?.trim().toLowerCase() || "";
+  const hasPaidPlan =
+    normalizedPlanType !== "" && normalizedPlanType !== "free";
+  const createShouldGateByCredits = shouldBlockCreateTaskByCredits({
+    remainingCredits,
+  });
+  const createQuotaGatePending = createShouldGateByCredits && isNew == null;
+  const createQuotaGateMode: "trial" | "pricing" | null =
+    createShouldGateByCredits && isNew != null
+      ? isNew
+        ? "trial"
+        : "pricing"
+      : null;
+  const untranslatedRatioByLocale = useMemo(
+    () => buildUntranslatedRatioByLocale(coverageLocales),
+    [coverageLocales],
+  );
+  const taskEstimate = useCreateTaskEstimate({
+    modules: translateModuleKeys,
+    targets: translateTargets,
+    isCover: translateIsCover,
+    includeLiquid: translateIncludeLiquid,
+    untranslatedRatioByLocale,
+    remainingCredits,
+  });
+  const createConfirmScenario:
+    | "ready"
+    | "insufficient_paid"
+    | "insufficient_trial"
+    | "insufficient_pricing" =
+    taskEstimate.needsMoreCredits
+      ? hasPaidPlan
+        ? "insufficient_paid"
+        : createQuotaGateMode === "trial"
+          ? "insufficient_trial"
+          : "insufficient_pricing"
+      : "ready";
+
+  const persistCreateTaskDraft = useCallback(() => {
+    saveCreateTaskDraft(shop, {
+      targets: translateTargets,
+      modules: translateModuleKeys,
+      aiModel: translateAiModel,
+      isCover: translateIsCover,
+      isHandle: translateIsHandle,
+    });
+  }, [
+    shop,
+    translateAiModel,
+    translateIsCover,
+    translateIsHandle,
+    translateModuleKeys,
+    translateTargets,
+  ]);
 
   const targetOptions = useMemo<ShopLocaleOption[]>(
     () =>
@@ -572,6 +649,7 @@ const Index = () => {
           const coverageData = await listLanguageCoverageCompat({ targets });
           const coverageRows = (coverageData?.summary?.locales ??
             []) as LanguageCoverageRow[];
+          setCoverageLocales(coverageRows);
           dispatch(
             setLanguageTableData(applyCoverageToLanguageRows(baseRows, coverageRows)),
           );
@@ -592,6 +670,7 @@ const Index = () => {
                   });
                   latestRows = (refreshed?.summary?.locales ??
                     latestRows) as LanguageCoverageRow[];
+                  setCoverageLocales(latestRows);
                   dispatch(
                     setLanguageTableData(
                       applyCoverageToLanguageRows(baseRows, latestRows),
@@ -608,6 +687,7 @@ const Index = () => {
           }
         } catch (error) {
           console.error("[language] load coverage status failed:", error);
+          setCoverageLocales([]);
           dispatch(setLanguageTableData(baseRows));
         } finally {
           setLoading(false);
@@ -831,6 +911,7 @@ const Index = () => {
         const targets = dataSource.map((lang) => lang.locale).filter(Boolean);
         const coverageData = await listLanguageCoverageCompat({ targets });
         const rows = (coverageData?.summary?.locales ?? []) as LanguageCoverageRow[];
+        setCoverageLocales(rows);
         const nextStatusSignature = dataSource
           .map((lang) => {
             const row = rows.find((r) =>
@@ -1027,6 +1108,7 @@ const Index = () => {
     setTranslateAiModel(DEFAULT_AI_MODEL);
     setTranslateIsCover(false);
     setTranslateIsHandle(false);
+    setTranslateIncludeLiquid(false);
     setTranslateModalOpen(true);
     void refreshQuota();
     fetcher.submit(
@@ -1041,36 +1123,40 @@ const Index = () => {
     reportClick("language_list_translate");
   };
 
-  const handleCreateTranslateTasks = useCallback(async () => {
+  const handleCreateRequest = useCallback(() => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    setTranslateModalOpen(false);
+    setCreateConfirmOpen(true);
+  }, [createQuotaGatePending, t]);
+
+  const handleCreateConfirm = useCallback(async () => {
     if (!source?.code) {
       message.warning(t("Primary language not found"));
       return;
     }
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (createQuotaGateMode !== null) return;
 
-    // 创建前刷新额度，避免语言页仍用过期余额绕过 gate。
     const freshQuota = await refreshQuota();
-    const remainingCredits =
-      freshQuota?.remainingCredits ?? normalizedQuota?.remaining ?? null;
-    if (remainingCredits == null) {
+    const remaining =
+      freshQuota?.remainingCredits ?? remainingCredits;
+    if (remaining == null) {
       message.info(t("v4.create.quotaUnavailable"));
       return;
     }
-    const shouldGateByCredits = shouldBlockCreateTaskByCredits({
-      remainingCredits,
-    });
 
-    if (shouldGateByCredits) {
-      if (isNew === null) {
-        message.info(
-          t("Checking your trial eligibility. Please try again in a moment."),
-        );
-        return;
-      }
-      setTranslateModalOpen(false);
-      setTranslateQuotaGateMode(isNew ? "trial" : "pricing");
-      return;
-    }
-
+    setCreateConfirmOpen(false);
+    clearCreateTaskDraft(shop);
     setTranslateCreating(true);
     try {
       const result = await createTranslateV4Tasks({
@@ -1080,6 +1166,7 @@ const Index = () => {
         aiModel: translateAiModel,
         isCover: translateIsCover,
         isHandle: translateIsHandle,
+        includeLiquid: translateIncludeLiquid,
         targetOptions,
         shop,
       });
@@ -1091,7 +1178,6 @@ const Index = () => {
 
       const summary = formatV4CreateTasksMessage(result, t, localeRegionCode);
       if (result.created.length === 0) {
-        // 服务端额度拒绝时走升级/试用引导，与首页一致。
         if (
           result.failed.some(
             (item) =>
@@ -1107,8 +1193,8 @@ const Index = () => {
             );
             return;
           }
-          setTranslateModalOpen(false);
-          setTranslateQuotaGateMode(isNew ? "trial" : "pricing");
+          await refreshQuota();
+          setCreateConfirmOpen(true);
           return;
         }
         message.error(summary);
@@ -1121,7 +1207,6 @@ const Index = () => {
         message.success(summary);
       }
 
-      setTranslateModalOpen(false);
       navigate(getTranslatePagePath(), {
         state: {
           from: "/app/language",
@@ -1136,19 +1221,75 @@ const Index = () => {
       setTranslateCreating(false);
     }
   }, [
+    createQuotaGateMode,
+    createQuotaGatePending,
     isNew,
     navigate,
-    normalizedQuota?.remaining,
+    remainingCredits,
     refreshQuota,
     shop,
     source?.code,
     t,
     targetOptions,
     translateAiModel,
+    translateIncludeLiquid,
     translateIsCover,
     translateIsHandle,
     translateModuleKeys,
     translateTargets,
+  ]);
+
+  useEffect(() => {
+    if (billingDraftRestoredRef.current) return;
+    const billing = parseBillingReturn(location.search);
+    if (!billing) return;
+    if (loading) return;
+    if (targetOptions.length === 0) return;
+    billingDraftRestoredRef.current = true;
+
+    const cleanedPath = stripBillingReturnParams(
+      `${location.pathname}${location.search}${location.hash}`,
+    );
+    navigate(cleanedPath, { replace: true });
+
+    const draft = loadCreateTaskDraft(shop);
+    if (!draft) return;
+
+    const allowedTargets = new Set(targetOptions.map((option) => option.value));
+    const restoredTargets = draft.targets.filter((locale) =>
+      allowedTargets.has(locale),
+    );
+    const allowedModules = new Set<string>(DEFAULT_MODULE_KEYS);
+    const restoredModules = draft.modules.filter((mod) =>
+      allowedModules.has(mod),
+    );
+    const allowedModels = new Set(
+      AI_MODEL_OPTIONS.map((option) => option.value),
+    );
+    const restoredModel = allowedModels.has(draft.aiModel)
+      ? draft.aiModel
+      : DEFAULT_AI_MODEL;
+
+    if (restoredTargets.length > 0) setTranslateTargets(restoredTargets);
+    if (restoredModules.length > 0) setTranslateModuleKeys(restoredModules);
+    setTranslateAiModel(restoredModel);
+    setTranslateIsCover(draft.isCover);
+    setTranslateIsHandle(draft.isHandle);
+    if (restoredTargets.length > 0) {
+      setCreateConfirmOpen(true);
+      void refreshQuota();
+      message.info(t("v4.create.draftRestored"));
+    }
+  }, [
+    loading,
+    location.hash,
+    location.pathname,
+    location.search,
+    navigate,
+    refreshQuota,
+    shop,
+    t,
+    targetOptions,
   ]);
 
   const navigateToManage = (selectedLanguageCode: string) => {
@@ -1545,13 +1686,16 @@ const Index = () => {
           creating={translateCreating}
           createDisabled={normalizedQuota == null}
           disabledMessage={createDisabledMessage}
-          onCreate={handleCreateTranslateTasks}
+          onCreate={handleCreateRequest}
           aiModel={translateAiModel}
           onAiModelChange={setTranslateAiModel}
           isCover={translateIsCover}
           onIsCoverChange={setTranslateIsCover}
           isHandle={translateIsHandle}
           onIsHandleChange={setTranslateIsHandle}
+          includeLiquid={translateIncludeLiquid}
+          onIncludeLiquidChange={setTranslateIncludeLiquid}
+          estimate={taskEstimate}
           advancedDefaultOpen
           submitPlacement="footer-center"
         />
@@ -1591,10 +1735,40 @@ const Index = () => {
         setIsModalOpen={setIsPublishModalOpen}
         publishLangaugeCode={publishModalLanguageCode}
       />
-      <CreateTaskQuotaGateModal
-        open={translateQuotaGateMode !== null}
-        mode={translateQuotaGateMode ?? "pricing"}
-        onClose={() => setTranslateQuotaGateMode(null)}
+      <CreateTaskConfirmModal
+        open={createConfirmOpen}
+        creating={translateCreating}
+        planType={planType}
+        targetOptions={targetOptions}
+        targets={translateTargets}
+        modules={translateModuleKeys}
+        aiModel={translateAiModel}
+        isCover={translateIsCover}
+        isHandle={translateIsHandle}
+        includeLiquid={translateIncludeLiquid}
+        sourceLocale={source?.code}
+        estimate={taskEstimate}
+        scenario={createConfirmScenario}
+        quotaOfferMode={hasPaidPlan ? "paid" : isNew === true ? "trial" : "pricing"}
+        onClose={() => {
+          if (!translateCreating) {
+            setCreateConfirmOpen(false);
+          }
+        }}
+        onConfirmCreate={handleCreateConfirm}
+        onBeforeBilling={persistCreateTaskDraft}
+        onBuyCredits={(detailedCredits) => {
+          setCreateConfirmOpen(false);
+          openCreditsPurchaseModal(
+            buildCreateTaskCreditsPurchaseContext({
+              estimatedCredits:
+                detailedCredits ?? taskEstimate?.estimatedCredits ?? null,
+              currentRemainingCredits: remainingCredits,
+              targetsCount: translateTargets.length,
+              modulesCount: translateModuleKeys.length,
+            }),
+          );
+        }}
       />
     </Page>
   );

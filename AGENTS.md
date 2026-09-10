@@ -321,7 +321,7 @@ real `route.tsx` or route module is added.
 Core files:
 
 - UI page: `app/routes/app.translate-v4/route.tsx`.
-- UI components: `app/routes/app.translate-v4/components/*`.
+- UI components: `app/routes/app.translate-v4/components/*`（确认弹窗积分/优惠共用 `CreditsConfirmPanel.tsx`，`CreateTaskConfirmModal` 与 `singleTranslateAction` 共用）。
 - UI constants/status/i18n: `constants.ts`, `v4I18n.ts`, `jobStageUtils.ts`,
 `v4JobNotice.ts`, `localeDisplay.ts`, `v4Styles.ts`（共享色板/卡片样式，
 `paymentModal` 等也在用）, `jobFilters.ts`（current / history 任务切分）,
@@ -1077,12 +1077,11 @@ AI model `Select` + optional prompt + credit estimate) →
 the real system prompt (glossary + shop profile + custom prompt) via
 `estimateSingleTranslateLlmTokens`, then ceil(tokens × model multiplier)
 (DeepSeek default 1, GPT/Google default 1.5).
-- 单字段额度不足：打开弹窗时先预估 + 读剩余额度，`shortfallCredits > 0` 直接转到
-共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
-`openCreditsPurchaseModal({ kind: "single_translate", … })`）；翻译失败后的
+- 单字段额度不足：打开弹窗时先预估 + 读剩余额度；积分区/试用优惠复用 `CreditsConfirmPanel`（Required / Available，无 Precise estimate）。额度不够留在本弹窗展示 trial / 买积分，点买积分才开共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
+`openCreditsPurchaseModal({ kind: "single_translate", … })`）。翻译失败后的
 额度类报错统一走 `app/hooks/useSingleTranslateQuotaGate.tsx` +
 `app/lib/singleTranslateQuotaFeedback.ts`（`v4.create.noCreditsPricing` → 补额度
-弹窗，`noCreditsTrial` → `CreateTaskQuotaGateModal` trial 模式，其余落
+弹窗，`noCreditsTrial` → toast 提示试用、再次打开单条弹窗即可开试用，其余落
 `v4.error.singleQuotaInsufficient`）。20 多个 manage 页共用这一套，不要在单页
 自己拼额度文案。
 
@@ -1169,6 +1168,7 @@ Common edits:
 Language:
 
 - Page: `app/routes/app.language/route.tsx`.
+- Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗，再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate / trial / 买积分，积分区走 `CreditsConfirmPanel`）。
 - Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
 - Server: `app/server/translateV4/targetLocale.server.ts`,
@@ -1394,7 +1394,8 @@ For "合入PR然后发布测试环境", the script will:
 | 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldRenderSetupGuide`（默认不渲染；仅首次 Account 打标新人；三项齐才写 `setupGuideDismissedAt`）、`app/server/setupGuide.server.ts`；X 仅本次访问；推荐卡片「立即翻译」仍一键确认 |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
-| Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslate.server.ts`, translation-core `syncTranslate.ts` / `llmTranslate.ts`, quota guard       |
+| Language 页 Translate 确认      | `app/routes/app.language/route.tsx`                 | `CreateTaskConfirmModal` / `CreditsConfirmPanel` / `useCreateTaskEstimate`                               |
+| Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslateAction.tsx` + `CreditsConfirmPanel`，`singleTranslate.server.ts` |
 | Stuck task/progress              | `progress.server.ts`                                  | worker scheduler/init/translate/writeback, Redis/Cosmos scripts                                         |
 | Pause/resume/cancel bug          | `api.translate-v4.task-action.ts`                     | `resumeStatus.ts`, worker control logic                                                                 |
 | Post-writeback completion/counts | `worker/src/services/finalizeJobAfterWriteback.ts`    | `worker/src/services/itemsCount.ts`, `app/server/translateV4/itemsCount.server.ts`, Redis `items_count` |
