@@ -6,8 +6,8 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
+import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
+import { useFetcher, useLoaderData, useNavigate, useSearchParams } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { useSelector } from "react-redux";
 import {
@@ -69,12 +69,19 @@ import {
 } from "~/utils/creditsPurchaseTaskContext";
 import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
 import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
-import { buildSetupGuideState, shouldRenderSetupGuide } from "~/lib/setupGuide";
+import {
+  buildSetupGuideState,
+  shouldAutoDismissSetupGuide,
+  shouldRenderSetupGuide,
+} from "~/lib/setupGuide";
 import {
   CIWI_SWITCHER_EMBED_HANDLE,
   buildSwitcherThemeEditorUrl,
 } from "~/lib/themeAppExtensions";
-import { loadSetupGuideSnapshot } from "~/server/setupGuide.server";
+import {
+  loadSetupGuideSnapshot,
+  persistSetupGuideDismissed,
+} from "~/server/setupGuide.server";
 import { CUSTOM_LIQUID_MODULE } from "~/lib/jobModulesWithLiquid";
 import { ThemeExtensionStatusCard } from "./components/ThemeExtensionStatusCard";
 import { SetupGuideCard } from "./components/SetupGuideCard";
@@ -153,6 +160,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ciwiSwitcherId: process.env.SHOPIFY_CIWI_SWITCHER_ID ?? "",
     setupGuide,
   });
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  if (String(formData.get("intent") ?? "") !== "setup-guide-complete") {
+    return json({ ok: false }, { status: 400 });
+  }
+  await persistSetupGuideDismissed(session.shop);
+  return json({ ok: true });
 };
 
 async function readJsonResponse<T = unknown>(res: Response): Promise<T> {
@@ -411,6 +428,8 @@ export default function TranslateV4MvpRoute() {
   const [creating, setCreating] = useState(false);
   const [guideDismissed, setGuideDismissed] = useState(false);
   const [hasOpenedCreateFlow, setHasOpenedCreateFlow] = useState(false);
+  const setupGuidePersistRef = useRef(false);
+  const setupGuideFetcher = useFetcher();
   const embedStatus = useThemeAppExtensionStatus(CIWI_SWITCHER_EMBED_HANDLE);
   const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
@@ -679,7 +698,7 @@ export default function TranslateV4MvpRoute() {
     isCoverageInitializing && visibleRecommendations.length === 0
       ? initializationRecommendations
       : visibleRecommendations;
-  const hasV4Job = !jobsLoading && jobs.length > 0;
+  const hasV4Job = setupGuide.hasV4Job || (!jobsLoading && jobs.length > 0);
   const hasIncludeLiquidJob = jobs.some((job) =>
     job.modules.includes(CUSTOM_LIQUID_MODULE),
   );
@@ -700,12 +719,30 @@ export default function TranslateV4MvpRoute() {
       setupGuide.hasGlossary,
     ],
   );
+  const setupGuideAllComplete = shouldAutoDismissSetupGuide(setupGuideState);
   const showSetupGuide = shouldRenderSetupGuide({
-    dismissed: guideDismissed,
-    jobsReady: !jobsLoading,
-    hasPersistedV4Job: setupGuide.hasV4Job,
-    hasListedV4Job: jobs.length > 0,
+    eligible: setupGuide.eligible,
+    dismissed: guideDismissed || Boolean(setupGuide.dismissedAt),
+    allComplete: setupGuideAllComplete,
   });
+  useEffect(() => {
+    if (setupGuidePersistRef.current) return;
+    if (!setupGuide.eligible || setupGuide.dismissedAt) return;
+    if (jobsLoading || embedStatus === "loading") return;
+    if (!setupGuideAllComplete) return;
+    setupGuidePersistRef.current = true;
+    setupGuideFetcher.submit(
+      { intent: "setup-guide-complete" },
+      { method: "post" },
+    );
+  }, [
+    embedStatus,
+    jobsLoading,
+    setupGuide.dismissedAt,
+    setupGuide.eligible,
+    setupGuideAllComplete,
+    setupGuideFetcher,
+  ]);
   const handleDismissSetupGuide = useCallback(() => {
     setGuideDismissed(true);
   }, []);

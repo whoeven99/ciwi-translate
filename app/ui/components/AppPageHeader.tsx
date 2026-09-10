@@ -10,6 +10,7 @@ export interface AppPageBackAction {
 
 interface AppPageHeaderProps {
   title: ReactNode;
+  titleMeta?: ReactNode;
   description?: ReactNode;
   extra?: ReactNode;
   style?: CSSProperties;
@@ -18,6 +19,7 @@ interface AppPageHeaderProps {
 
 export default function AppPageHeader({
   title,
+  titleMeta,
   description,
   extra,
   style,
@@ -36,7 +38,10 @@ export default function AppPageHeader({
           </div>
         ) : null}
         <div className={styles.titleWrap}>
-          <h1 className={styles.title}>{title}</h1>
+          <div className={styles.titleRow}>
+            <h1 className={styles.title}>{title}</h1>
+            {titleMeta ? <div className={styles.titleMeta}>{titleMeta}</div> : null}
+          </div>
           {description ? (
             <div className={styles.description}>{description}</div>
           ) : null}

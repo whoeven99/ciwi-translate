@@ -145,61 +145,45 @@ describe("shouldAutoDismissSetupGuide", () => {
 });
 
 describe("shouldRenderSetupGuide", () => {
-  it("stays hidden until jobs are ready", () => {
+  it("stays hidden until the shop is an eligible newcomer", () => {
     assert.equal(
       shouldRenderSetupGuide({
+        eligible: false,
         dismissed: false,
-        jobsReady: false,
-        hasPersistedV4Job: false,
-        hasListedV4Job: false,
+        allComplete: false,
       }),
       false,
     );
   });
 
-  it("hides as soon as a persisted v4 job exists", () => {
+  it("shows an eligible newcomer who has not finished or dismissed", () => {
     assert.equal(
       shouldRenderSetupGuide({
+        eligible: true,
         dismissed: false,
-        jobsReady: false,
-        hasPersistedV4Job: true,
-        hasListedV4Job: false,
-      }),
-      false,
-    );
-  });
-
-  it("hides after a listed v4 job appears", () => {
-    assert.equal(
-      shouldRenderSetupGuide({
-        dismissed: false,
-        jobsReady: true,
-        hasPersistedV4Job: false,
-        hasListedV4Job: true,
-      }),
-      false,
-    );
-  });
-
-  it("shows only for newcomers with no v4 job", () => {
-    assert.equal(
-      shouldRenderSetupGuide({
-        dismissed: false,
-        jobsReady: true,
-        hasPersistedV4Job: false,
-        hasListedV4Job: false,
+        allComplete: false,
       }),
       true,
     );
   });
 
-  it("stays hidden after session dismiss", () => {
+  it("hides when all three setup tasks are complete", () => {
     assert.equal(
       shouldRenderSetupGuide({
+        eligible: true,
+        dismissed: false,
+        allComplete: true,
+      }),
+      false,
+    );
+  });
+
+  it("stays hidden after session or persisted dismiss", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        eligible: true,
         dismissed: true,
-        jobsReady: true,
-        hasPersistedV4Job: false,
-        hasListedV4Job: false,
+        allComplete: false,
       }),
       false,
     );

@@ -80,6 +80,33 @@
   padding: 0 var(--p-space-600) !important;
 }
 
+/* Keep Polaris Page back + title on one row (Polaris stacks title on narrow viewports). */
+@media (max-width: 64.9975em) {
+  .Polaris-Page .Polaris-Page-Header--longTitle .Polaris-Page-Header__Row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--p-space-100);
+  }
+}
+
+@media (max-width: 47.9975em) {
+  .Polaris-Page
+    .Polaris-Page-Header--mediumTitle:not(
+      .Polaris-Page-Header--noBreadcrumbs
+    )
+    .Polaris-Page-Header__Row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--p-space-100);
+  }
+}
+
+.Polaris-Page .Polaris-Page-Header__TitleWrapper {
+  margin-top: 0;
+}
+
 body {
   margin: 0;
   background: var(--app-color-bg);

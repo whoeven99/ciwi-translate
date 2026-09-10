@@ -1121,21 +1121,19 @@ const Index = () => {
             <AppPageHeader
               title={t("Pricing")}
               backAction={homeBackAction}
-              description={
+              titleMeta={
                 plan.type ? (
-                  <div className="pricing-page__plan-meta">
-                    <div className="app-status-cluster">
-                      <AppStatusBadge tone="info">
-                        {getPlanDisplayLabel(plan.type)}
-                      </AppStatusBadge>
-                    </div>
-                    {localNextPaymentText ? (
-                      <Text className="pricing-page__next-payment" type="secondary">
-                        {t("Next payment")}: {localNextPaymentText}
-                      </Text>
-                    ) : null}
-                  </div>
-                ) : null
+                  <AppStatusBadge tone="info">
+                    {getPlanDisplayLabel(plan.type)}
+                  </AppStatusBadge>
+                ) : undefined
+              }
+              description={
+                localNextPaymentText ? (
+                  <Text className="pricing-page__next-payment" type="secondary">
+                    {t("Next payment")}: {localNextPaymentText}
+                  </Text>
+                ) : undefined
               }
             />
 
