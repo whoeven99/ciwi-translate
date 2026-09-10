@@ -405,33 +405,30 @@ const Index = () => {
   );
 
   const renderManageField = (record: FieldRecord, stacked = false) => (
-    <Flex align="flex-start" gap={8}>
-      <Checkbox
-        checked={selectedRowKeys.includes(record.key)}
-        onChange={(e) => {
-          setSelectedRowKeys(
-            e.target.checked
-              ? [...selectedRowKeys, record.key]
-              : selectedRowKeys.filter((key) => key !== record.key),
-          );
-        }}
-        style={{ marginTop: 4 }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <ManageTranslationFieldRow
-          record={record}
-          isSuccess={successTranslatedKey.includes(record.key)}
-          translatedValues={translatedValues}
-          setTranslatedValues={setTranslatedValues}
-          handleInputChange={handleInputChange}
-          isRtl={selectedLanguage === "ar"}
-          stacked={stacked}
-          sourceLabel={t("Default Language")}
-          translatedLabel={t("Translated")}
-          action={renderTranslateAction(record)}
+    <ManageTranslationFieldRow
+      record={record}
+      isSuccess={successTranslatedKey.includes(record.key)}
+      translatedValues={translatedValues}
+      setTranslatedValues={setTranslatedValues}
+      handleInputChange={handleInputChange}
+      isRtl={selectedLanguage === "ar"}
+      stacked={stacked}
+      sourceLabel={t("Default Language")}
+      translatedLabel={t("Translated")}
+      action={renderTranslateAction(record)}
+      leading={
+        <Checkbox
+          checked={selectedRowKeys.includes(record.key)}
+          onChange={(e) => {
+            setSelectedRowKeys(
+              e.target.checked
+                ? [...selectedRowKeys, record.key]
+                : selectedRowKeys.filter((key) => key !== record.key),
+            );
+          }}
         />
-      </div>
-    </Flex>
+      }
+    />
   );
 
   const resourceColumns = [

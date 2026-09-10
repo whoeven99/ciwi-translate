@@ -40,8 +40,27 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: min-content;
+  flex: 1 1 auto;
+}
+
+.pricing-section__billing-toggle {
+  flex: 0 1 auto;
   min-width: 0;
-  flex: 1;
+}
+
+@media (max-width: 768px) {
+  .pricing-section__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .pricing-section__title-wrap,
+  .pricing-section__billing-toggle {
+    flex: none;
+    width: 100%;
+  }
 }
 
 .pricing-section__title {

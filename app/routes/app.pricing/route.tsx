@@ -1168,7 +1168,12 @@ const Index = () => {
                 <div className="pricing-section__title-wrap">
                   <h2 className="pricing-section__title">{t("Plans")}</h2>
                 </div>
-                <Flex align="center" gap={8} wrap="wrap">
+                <Flex
+                  className="pricing-section__billing-toggle"
+                  align="center"
+                  gap={8}
+                  wrap="wrap"
+                >
                   <Text type="secondary">{t("Monthly")}</Text>
                   <Switch checked={yearly} onChange={handleSetYearlyReport} />
                   <Text strong>{t("Yearly")}</Text>
