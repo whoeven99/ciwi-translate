@@ -4,6 +4,7 @@ import {
   buildSetupGuideState,
   firstIncompleteSetupGuideTask,
   shouldAutoDismissSetupGuide,
+  shouldRenderSetupGuide,
   type SetupGuideInput,
 } from "./setupGuide.ts";
 
@@ -139,6 +140,68 @@ describe("shouldAutoDismissSetupGuide", () => {
         ),
       ),
       true,
+    );
+  });
+});
+
+describe("shouldRenderSetupGuide", () => {
+  it("stays hidden until jobs are ready", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        dismissed: false,
+        jobsReady: false,
+        hasPersistedV4Job: false,
+        hasListedV4Job: false,
+      }),
+      false,
+    );
+  });
+
+  it("hides as soon as a persisted v4 job exists", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        dismissed: false,
+        jobsReady: false,
+        hasPersistedV4Job: true,
+        hasListedV4Job: false,
+      }),
+      false,
+    );
+  });
+
+  it("hides after a listed v4 job appears", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        dismissed: false,
+        jobsReady: true,
+        hasPersistedV4Job: false,
+        hasListedV4Job: true,
+      }),
+      false,
+    );
+  });
+
+  it("shows only for newcomers with no v4 job", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        dismissed: false,
+        jobsReady: true,
+        hasPersistedV4Job: false,
+        hasListedV4Job: false,
+      }),
+      true,
+    );
+  });
+
+  it("stays hidden after session dismiss", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        dismissed: true,
+        jobsReady: true,
+        hasPersistedV4Job: false,
+        hasListedV4Job: false,
+      }),
+      false,
     );
   });
 });

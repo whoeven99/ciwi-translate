@@ -11,14 +11,14 @@
 .pricing-page__plan-meta {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 8px;
 }
 
 .pricing-page__next-payment {
   font-size: 13px;
   line-height: 20px;
-  text-align: right;
+  text-align: left;
 }
 
 .pricing-section {

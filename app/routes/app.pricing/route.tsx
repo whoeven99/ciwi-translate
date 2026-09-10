@@ -1121,7 +1121,7 @@ const Index = () => {
             <AppPageHeader
               title={t("Pricing")}
               backAction={homeBackAction}
-              extra={
+              description={
                 plan.type ? (
                   <div className="pricing-page__plan-meta">
                     <div className="app-status-cluster">

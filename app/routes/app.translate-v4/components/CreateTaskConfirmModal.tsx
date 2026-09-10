@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@shopify/polaris";
 import { useFetcher, useNavigate } from "@remix-run/react";
@@ -83,6 +83,11 @@ export function CreateTaskConfirmModal({
 }: Props) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [narrowViewport, setNarrowViewport] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 768px)").matches,
+  );
   const planFetcher = useFetcher<{
     success?: boolean;
     response?: { confirmationUrl?: string };
@@ -91,6 +96,14 @@ export function CreateTaskConfirmModal({
 
   const detailedRunning = detailed.progress.status === "running";
   const { reset: resetDetailed } = detailed;
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 768px)");
+    const sync = () => setNarrowViewport(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -442,7 +455,7 @@ export function CreateTaskConfirmModal({
       open={open}
       heading={scenarioMeta.title}
       onClose={onClose}
-      size="large"
+      size={narrowViewport ? "base" : "large"}
       primaryAction={{
         content: primaryActionLabel,
         onAction: handlePrimaryAction,

@@ -539,3 +539,9 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+@media (max-width: 768px) {
+  s-modal {
+    max-width: calc(100vw - 24px);
+  }
+}

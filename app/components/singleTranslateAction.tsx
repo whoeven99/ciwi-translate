@@ -1,6 +1,6 @@
 import { Input, Typography } from "antd";
 import { Select as PolarisSelect } from "@shopify/polaris";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 import {
@@ -105,7 +105,6 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
     number | null
   >(null);
   const [quotaLoading, setQuotaLoading] = useState(false);
-  const hasSubmittedRef = useRef(false);
   const hasExistingTranslation = useMemo(
     () => normalizeText(existingTranslation).length > 0,
     [existingTranslation],
@@ -134,17 +133,6 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
   const shouldOpenPurchaseModal =
     quotaPrecheckReady &&
     (currentRemainingCredits <= 0 || estimatedCredits > currentRemainingCredits);
-
-  useEffect(() => {
-    if (loading) {
-      hasSubmittedRef.current = true;
-      return;
-    }
-    if (!hasSubmittedRef.current) return;
-    hasSubmittedRef.current = false;
-    setOpen(false);
-    setPrompt("");
-  }, [loading]);
 
   useEffect(() => {
     if (!open) {
@@ -296,11 +284,11 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
     }
 
     persistAiModel(aiModel);
-    hasSubmittedRef.current = true;
     void onSubmit({
       customPrompt: customPrompt || undefined,
       aiModel,
     });
+    closeModal();
   };
 
   return (

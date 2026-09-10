@@ -69,7 +69,7 @@ import {
 } from "~/utils/creditsPurchaseTaskContext";
 import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
 import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
-import { buildSetupGuideState, shouldAutoDismissSetupGuide } from "~/lib/setupGuide";
+import { buildSetupGuideState, shouldRenderSetupGuide } from "~/lib/setupGuide";
 import {
   CIWI_SWITCHER_EMBED_HANDLE,
   buildSwitcherThemeEditorUrl,
@@ -700,9 +700,12 @@ export default function TranslateV4MvpRoute() {
       setupGuide.hasGlossary,
     ],
   );
-  const hideSetupGuide =
-    guideDismissed ||
-    (!jobsLoading && shouldAutoDismissSetupGuide(setupGuideState));
+  const showSetupGuide = shouldRenderSetupGuide({
+    dismissed: guideDismissed,
+    jobsReady: !jobsLoading,
+    hasPersistedV4Job: setupGuide.hasV4Job,
+    hasListedV4Job: jobs.length > 0,
+  });
   const handleDismissSetupGuide = useCallback(() => {
     setGuideDismissed(true);
   }, []);
@@ -1155,7 +1158,7 @@ export default function TranslateV4MvpRoute() {
             planType={planType}
           />
 
-          {hideSetupGuide ? null : (
+          {showSetupGuide ? (
             <SetupGuideCard
               state={setupGuideState}
               themeEditorUrl={themeEditorUrl}
@@ -1164,7 +1167,7 @@ export default function TranslateV4MvpRoute() {
               onConfigureTask={handleSetupGuideOpenCustom}
               onOpenLiquid={handleSetupGuideOpenLiquid}
             />
-          )}
+          ) : null}
 
           <div className="v4-summary-hero">
             <div className="v4-summary-hero-grid">

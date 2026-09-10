@@ -78,6 +78,18 @@ export function shouldAutoDismissSetupGuide(state: SetupGuideState): boolean {
   );
 }
 
+/** 首页是否挂载 Setup Guide：默认不渲染，确认仍是新人后再出现。 */
+export function shouldRenderSetupGuide(input: {
+  dismissed: boolean;
+  jobsReady: boolean;
+  hasPersistedV4Job: boolean;
+  hasListedV4Job: boolean;
+}): boolean {
+  if (input.dismissed || input.hasPersistedV4Job) return false;
+  if (!input.jobsReady) return false;
+  return !input.hasListedV4Job;
+}
+
 export function firstIncompleteSetupGuideTask(state: SetupGuideState): SetupGuideTaskId {
   if (!state.translate.complete) return "translate";
   if (!state.glossary.complete) return "glossary";

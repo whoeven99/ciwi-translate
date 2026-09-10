@@ -676,7 +676,7 @@ const Index = () => {
                   </Button>
                 )}
                 {hasSelected
-                  ? `${t("Selected")}${selectedRowKeys.length}${t("items")}`
+                  ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
                   : null}
               </Flex>
               {planMapping[plan?.type as keyof typeof planMapping] === 0 ? (
