@@ -1,0 +1,17 @@
+# Settings > Languages Translate dropdown (and later intent surfaces).
+# Without this registration, the app drops off those lists after 2027-01-01.
+[[extensions]]
+name = "Translate"
+description = "Translate and adapt store content into another language."
+handle = "translate-intent"
+type = "admin_link"
+uid = "54aa8853-6ebb-af3d-b580-ac4ab763731fe4b98ad8"
+
+[[extensions.targeting]]
+target = "admin.app.intent.link"
+url = "/"
+
+[[extensions.targeting.intents]]
+type = "shopify/content-localization"
+action = "edit"
+schema = "./localization.intent.json"

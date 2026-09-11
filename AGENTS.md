@@ -83,6 +83,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `prisma/schema.prisma`                                       | Turso/Prisma model source.                                                                |
 | `prisma/migrations/*`                                        | SQL migrations.                                                                           |
 | `worker/src/*`                                               | Background workers and services for translation, shop scan, email, Cosmos/Blob/Redis/LLM. |
+| `extensions/translate-intent/*`                              | Admin translation intent (`admin_link`); Settings > Languages → Translate.                |
 | `extensions/ciwi-switcher/*`                                 | Storefront language/currency switcher theme extension.                                    |
 | `extensions/web-pixel/*`                                     | Shopify web pixel extension.                                                              |
 | `scripts/*`                                                  | 运维 / 诊断 / 迁移 / 审计脚本；共用 `scripts/lib/loadEnv.mjs`；`eventReport.ts` 为 App 运行时埋点。 |
@@ -1338,6 +1339,17 @@ artifacts and should be cleaned up. No runtime code depends on them.
 
 ## Shopify Extensions
 
+`extensions/translate-intent` is an `admin_link` on `admin.app.intent.link`
+(`shopify/content-localization` `edit`). It keeps the app in Settings >
+Languages → Translate after 2027-01-01. Launch URL is `/`; Admin appends
+`?shopLocale=<iso>`. Schema: `extensions/translate-intent/localization.intent.json`.
+The App does not yet read `shopLocale` or call `shopify.intents.response`.
+Deploy with `npm run deployTest` / `deployProd` (Shopify app version, not Render).
+Partner validation (2026-09-11, CLI 3.94.3 / 4.8.0) still rejects
+`type 'shopify/content-localization' is not supported` — CDN schema exists,
+allowlist not live yet; retry deploy after Shopify unstable rolls out. Do not
+ship a substitute intent type.
+
 `extensions/ciwi-switcher` runs on the merchant storefront, not inside the admin app.
 
 - Liquid block: `extensions/ciwi-switcher/blocks/ciwi_I18n_Switcher.liquid`.
@@ -1424,6 +1436,7 @@ For "合入PR然后发布测试环境", the script will:
 | Translation core/filter rule     | `packages/translation-core/src/*`                     | App and Worker runtime adapters, focused builds                                                         |
 | i18n copy                        | `public/locales/en/translation.json`                  | `public/locales/zh-CN/translation.json`, other locales                                                  |
 | Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`（`@shopify/shopify-app-remix` 5 / `@shopify/shopify-api` 14，需 Node ≥22）、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml` |
+| Languages Translate 入口 / translation intent | `extensions/translate-intent/shopify.extension.toml` | `localization.intent.json`；`npm run deployTest` / `deployProd` |
 | Deploy config                    | `shopify.app*.toml`                                   | `Dockerfile`, Render/GitHub Actions config                                                              |
 
 

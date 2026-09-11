@@ -1,0 +1,27 @@
+{
+  "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/shopify-intent.json",
+  "value": {
+    "$ref": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/shopify/shop/gid.json",
+    "description": "Shop GID passed as the intent subject."
+  },
+  "inputSchema": {
+    "$ref": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/shopify/content-localization.json",
+    "type": "object",
+    "properties": {
+      "locale": {
+        "type": "string",
+        "description": "ISO language code the merchant is translating into (e.g. \"fr\").",
+        "mapTo": "query_param",
+        "fieldName": "shopLocale"
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "$ref": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/shopify/shop/gid.json"
+      }
+    }
+  }
+}
