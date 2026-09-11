@@ -1274,7 +1274,6 @@ const Index = () => {
                         }
                         block
                         disabled={item.disabled || selectedPayPlanOption}
-                        style={{ marginBottom: "20px" }}
                         onClick={() =>
                           handlePayForPlan({
                             plan: item,
@@ -1295,7 +1294,6 @@ const Index = () => {
                           type="default"
                           block
                           disabled={item.disabled || selectedPayPlanOption}
-                          style={{ marginBottom: "20px" }}
                           onClick={() =>
                             handlePayForPlan({
                               plan: item,
