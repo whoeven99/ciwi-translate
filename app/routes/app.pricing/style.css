@@ -221,6 +221,9 @@
 }
 
 .pricing-plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   border-radius: 8px;
   border: 1px solid var(--app-color-border-secondary) !important;
   background: var(--p-color-bg-surface);
@@ -250,7 +253,6 @@
 }
 
 .pricing-plan-card__billing-note {
-  margin-bottom: 12px;
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--app-color-surface-secondary);
@@ -270,10 +272,6 @@
   color: var(--p-color-text);
   display: block;
   margin-bottom: 4px;
-}
-
-.pricing-plan-card__primary-action {
-  margin-top: 20px;
 }
 
 .pricing-plan-card__feature {
