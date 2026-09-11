@@ -27,6 +27,7 @@ import { resolveBillingBinding } from "~/server/billing/index.server";
 import { scheduleTsfWelcomeEmail } from "~/server/billing/email/welcomeEmail.server";
 import { scheduleFirstInstallFeishuNotify } from "~/server/billing/lifecycleFeishuNotify.server";
 import { enqueueShopScan } from "~/server/shopScan/trigger.server";
+import { markSetupGuideEligible } from "~/server/setupGuide.server";
 import {
   loadShopLocalesForTranslation,
   type LoadedShopLocales,
@@ -74,6 +75,7 @@ import {
 } from "~/utils/billingReturn";
 import { message } from "~/ui/message";
 import { APP_NAV_HOME, APP_NAV_ITEMS } from "~/lib/appNav";
+import { installBlurPolarisSelectOnChange } from "~/lib/blurPolarisSelectOnChange";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -174,6 +176,11 @@ async function runAppInitialization({
     );
     scheduleTsfWelcomeEmail(binding, shop, "app-loader-init");
     scheduleFirstInstallFeishuNotify(binding, shop);
+    if (binding.bound) {
+      void markSetupGuideEligible(shop).catch((err) => {
+        console.error(`${initLog} setup-guide mark failed:`, err);
+      });
+    }
 
     // 安装/首次进 App：计量扫描（源语言总量 + 已发布语言覆盖率），幂等、best-effort。
     void enqueueShopScan({ shop, trigger: "install" }).then((result) => {
@@ -533,6 +540,8 @@ export default function App() {
       setPerfDebugEnabled(true);
     }
   }, []);
+
+  useEffect(() => installBlurPolarisSelectOnChange(), []);
 
   useEffect(() => {
     setIsClient(true);

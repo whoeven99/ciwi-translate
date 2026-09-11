@@ -8,17 +8,10 @@
   overflow-x: hidden;
 }
 
-.pricing-page__plan-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
 .pricing-page__next-payment {
   font-size: 13px;
   line-height: 20px;
-  text-align: right;
+  text-align: left;
 }
 
 .pricing-section {
@@ -47,8 +40,27 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: min-content;
+  flex: 1 1 auto;
+}
+
+.pricing-section__billing-toggle {
+  flex: 0 1 auto;
   min-width: 0;
-  flex: 1;
+}
+
+@media (max-width: 768px) {
+  .pricing-section__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .pricing-section__title-wrap,
+  .pricing-section__billing-toggle {
+    flex: none;
+    width: 100%;
+  }
 }
 
 .pricing-section__title {
@@ -209,29 +221,19 @@
 }
 
 .pricing-plan-card {
-  border-radius: 16px;
+  border-radius: 8px;
   border: 1px solid var(--app-color-border-secondary) !important;
   background: var(--p-color-bg-surface);
   box-shadow: var(--app-shadow-card);
 }
 
 .pricing-plan-card--current {
-  background: linear-gradient(
-      180deg,
-      rgba(84, 103, 255, 0.1) 0%,
-      rgba(255, 255, 255, 0.98) 100%
-    ),
-    var(--p-color-bg-surface);
+  background: var(--p-color-bg-surface-selected, var(--app-color-surface-selected));
 }
 
 .pricing-plan-card--recommended {
-  background: linear-gradient(
-      180deg,
-      rgba(84, 103, 255, 0.1) 0%,
-      rgba(255, 255, 255, 0.98) 100%
-    ),
-    var(--p-color-bg-surface);
-  border-color: rgba(84, 103, 255, 0.22) !important;
+  background: var(--p-color-bg-surface);
+  border-color: var(--p-color-border-emphasis, var(--app-color-border)) !important;
   box-shadow: var(--app-shadow-card-strong);
 }
 

@@ -1,6 +1,6 @@
 import { useFetcher } from "@remix-run/react";
-import { Alert, Flex, Modal, Space, Switch, Table, Typography } from "antd";
-import Button from "~/ui/components/AppButton";
+import { Alert, Flex, Space, Switch, Table, Typography } from "antd";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDispatch, useSelector } from "react-redux";
@@ -308,32 +308,28 @@ const PublishModal: React.FC<PublishModalProps> = ({
   };
 
   return (
-    <Modal
-      title={t("publishModal.title", {
+    <AppSModal
+      open={isVisible}
+      heading={t("publishModal.title", {
         languageName: selectedLanguage?.localeName,
       })}
-      open={isVisible}
-      onCancel={handleCloseModal}
-      footer={
-        <Space>
-          <Button onClick={handleCloseModal}>{t("Cancel")}</Button>
-          <Button
-            type="primary"
-            disabled={
-              dataSource.every(
-                (item) => item.originalPublishStatus == item.published,
-              ) && published == selectedLanguage?.published
-            }
-            loading={publishFetcher.state == "submitting"}
-            onClick={onSave}
-          >
-            {t("Save")}
-          </Button>
-        </Space>
-      }
-      style={{
-        top: "40%",
+      onClose={handleCloseModal}
+      size="base"
+      primaryAction={{
+        content: t("Save"),
+        onAction: onSave,
+        disabled:
+          dataSource.every(
+            (item) => item.originalPublishStatus == item.published,
+          ) && published == selectedLanguage?.published,
+        loading: publishFetcher.state == "submitting",
       }}
+      secondaryActions={[
+        {
+          content: t("Cancel"),
+          onAction: handleCloseModal,
+        },
+      ]}
     >
       <Space
         direction="vertical"
@@ -369,7 +365,7 @@ const PublishModal: React.FC<PublishModalProps> = ({
           />
         </div>
       </Space>
-    </Modal>
+    </AppSModal>
   );
 };
 

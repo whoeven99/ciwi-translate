@@ -391,18 +391,6 @@ const Index = () => {
       triggerProps={{
         type: "default",
         size: "small",
-        style: {
-          height: 22,
-          paddingInline: 6,
-          fontWeight: 500,
-          fontSize: 12,
-          lineHeight: 1,
-          color: "var(--app-accent-primary)",
-          borderColor: "var(--app-accent-primary)",
-          borderRadius: 6,
-          backgroundColor: "var(--p-color-bg-surface)",
-          whiteSpace: "nowrap",
-        },
       }}
       loading={loadingItems.includes(record.key)}
       existingTranslation={translatedValues[record.key] ?? record.translated}
@@ -417,33 +405,30 @@ const Index = () => {
   );
 
   const renderManageField = (record: FieldRecord, stacked = false) => (
-    <Flex align="flex-start" gap={8}>
-      <Checkbox
-        checked={selectedRowKeys.includes(record.key)}
-        onChange={(e) => {
-          setSelectedRowKeys(
-            e.target.checked
-              ? [...selectedRowKeys, record.key]
-              : selectedRowKeys.filter((key) => key !== record.key),
-          );
-        }}
-        style={{ marginTop: 4 }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <ManageTranslationFieldRow
-          record={record}
-          isSuccess={successTranslatedKey.includes(record.key)}
-          translatedValues={translatedValues}
-          setTranslatedValues={setTranslatedValues}
-          handleInputChange={handleInputChange}
-          isRtl={selectedLanguage === "ar"}
-          stacked={stacked}
-          sourceLabel={t("Default Language")}
-          translatedLabel={t("Translated")}
-          action={renderTranslateAction(record)}
+    <ManageTranslationFieldRow
+      record={record}
+      isSuccess={successTranslatedKey.includes(record.key)}
+      translatedValues={translatedValues}
+      setTranslatedValues={setTranslatedValues}
+      handleInputChange={handleInputChange}
+      isRtl={selectedLanguage === "ar"}
+      stacked={stacked}
+      sourceLabel={t("Default Language")}
+      translatedLabel={t("Translated")}
+      action={renderTranslateAction(record)}
+      leading={
+        <Checkbox
+          checked={selectedRowKeys.includes(record.key)}
+          onChange={(e) => {
+            setSelectedRowKeys(
+              e.target.checked
+                ? [...selectedRowKeys, record.key]
+                : selectedRowKeys.filter((key) => key !== record.key),
+            );
+          }}
         />
-      </div>
-    </Flex>
+      }
+    />
   );
 
   const resourceColumns = [
@@ -478,9 +463,10 @@ const Index = () => {
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          marginBottom: "15px",
-          gap: "8px",
+          flexDirection: isMobile ? "column" : "row",
+          alignItems: isMobile ? "stretch" : "center",
+          marginBottom: 15,
+          gap: 8,
         }}
       >
         <Input
@@ -489,27 +475,40 @@ const Index = () => {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           allowClear
-          style={{ flex: 1 }}
+          style={{ flex: 1, minWidth: 0, width: isMobile ? "100%" : undefined }}
         />
-        <div style={{ width: "160px" }}>
-          <Select
-            label=""
-            options={languageOptions}
-            value={selectedLanguage}
-            onChange={handleLanguageChange}
-          />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            minWidth: 0,
+            width: isMobile ? "100%" : undefined,
+          }}
+        >
+          <div style={{ flex: isMobile ? 1 : undefined, width: isMobile ? undefined : 160, minWidth: 0 }}>
+            <Select
+              label=""
+              options={languageOptions}
+              value={selectedLanguage}
+              onChange={handleLanguageChange}
+            />
+          </div>
+          <div style={{ flex: isMobile ? 1 : undefined, width: isMobile ? undefined : 160, minWidth: 0 }}>
+            <Select
+              label=""
+              options={itemOptions}
+              value={selectedItem}
+              onChange={handleItemChange}
+            />
+          </div>
+          {isMobile ? null : (
+            <Button type="primary" onClick={() => setCreateOpen(true)}>
+              {t("Create rule")}
+            </Button>
+          )}
         </div>
-        <div style={{ width: "160px" }}>
-          <Select
-            label=""
-            options={itemOptions}
-            value={selectedItem}
-            onChange={handleItemChange}
-          />
-        </div>
-        <Button type="primary" onClick={() => setCreateOpen(true)}>
-          {t("Create rule")}
-        </Button>
       </div>
       {pageAlert ? (
         <Alert
@@ -521,6 +520,30 @@ const Index = () => {
           style={{ marginBottom: 12 }}
         />
       ) : null}
+      <Flex
+        align="center"
+        justify="space-between"
+        gap="middle"
+        wrap="wrap"
+        style={{ width: "100%", marginBottom: 12 }}
+      >
+        <Flex align="center" gap="small" wrap="wrap">
+          <Button
+            onClick={handleDelete}
+            disabled={!hasSelected || loading}
+          >
+            {t("Delete")}
+          </Button>
+          {hasSelected
+            ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
+            : null}
+        </Flex>
+        {isMobile ? (
+          <Button type="primary" onClick={() => setCreateOpen(true)}>
+            {t("Create rule")}
+          </Button>
+        ) : null}
+      </Flex>
       <Layout
         style={{
           overflow: "auto",
@@ -542,28 +565,13 @@ const Index = () => {
         ) : (
           <Content
             style={{
-              paddingLeft: isMobile ? "16px" : "0",
+              paddingLeft: 0,
               minHeight: "70vh",
               display: "flex",
               flexDirection: "column",
               overflow: "auto",
             }}
           >
-            <Flex
-              align="center"
-              gap="middle"
-              style={{ width: "100%", marginBottom: 12 }}
-            >
-              <Button
-                onClick={handleDelete}
-                disabled={!hasSelected || loading}
-              >
-                {t("Delete")}
-              </Button>
-              {hasSelected
-                ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
-                : null}
-            </Flex>
             {pagedData.length === 0 ? (
               <div
                 style={{

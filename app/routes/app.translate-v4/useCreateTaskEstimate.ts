@@ -30,7 +30,7 @@ export function formatEstimateCredits(n: number): string {
 
 /** 从覆盖率行推导未译比例（0=已全译，1=全未译；未知为 null）。 */
 export function buildUntranslatedRatioByLocale(
-  locales: LocaleCoverageRow[],
+  locales: Array<Pick<LocaleCoverageRow, "locale" | "percent" | "cacheMissing">>,
 ): Record<string, number | null> {
   const map: Record<string, number | null> = {};
   for (const row of locales) {

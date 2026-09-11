@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { InputNumber, Modal, Skeleton, Space, Statistic, Typography, message } from "antd";
+import { InputNumber, Skeleton, Space, Statistic, Typography, message } from "antd";
 import Button from "~/ui/components/AppButton";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
 import "../style.css";
 
@@ -152,15 +153,23 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
       </div>
 
       {sparkCreditMigrationEnabled ? (
-        <Modal
-          title={t("pricing.migrate.title")}
+        <AppSModal
           open={migrateOpen}
-          onCancel={closeMigrate}
-          onOk={() => void submitMigrate()}
-          okText={t("pricing.migrate.confirm")}
-          cancelText={t("pricing.migrate.cancel")}
-          confirmLoading={migrating}
-          okButtonProps={{ disabled: !canMigrate }}
+          heading={t("pricing.migrate.title")}
+          onClose={closeMigrate}
+          size="base"
+          primaryAction={{
+            content: t("pricing.migrate.confirm"),
+            onAction: () => void submitMigrate(),
+            loading: migrating,
+            disabled: !canMigrate,
+          }}
+          secondaryActions={[
+            {
+              content: t("pricing.migrate.cancel"),
+              onAction: closeMigrate,
+            },
+          ]}
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Text type="secondary">{t("pricing.migrate.help")}</Text>
@@ -196,7 +205,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
               <Text type="secondary">{t("pricing.migrate.empty")}</Text>
             )}
           </Space>
-        </Modal>
+        </AppSModal>
       ) : null}
     </div>
   );

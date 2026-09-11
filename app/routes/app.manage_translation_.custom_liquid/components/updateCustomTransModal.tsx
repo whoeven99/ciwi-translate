@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Flex, Input, Modal, Space, Typography } from "antd";
-import Button from "~/ui/components/AppButton";
+import { Alert, Input, Space, Typography } from "antd";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
 import { globalStore } from "~/globalStore";
 import { insertLiquidCompat, type LiquidTableRow } from "../liquidClient";
@@ -105,23 +105,22 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
   };
 
   return (
-    <Modal
-      title={title}
+    <AppSModal
       open={open}
-      onCancel={handleCloseModal}
-      centered
-      footer={[
-        <Space key="updateCustomTransModal_footer">
-          <Button onClick={handleCloseModal}>{t("Cancel")}</Button>
-          <Button
-            onClick={handleConfirm}
-            type="primary"
-            disabled={confirmDisabled}
-            loading={submitting}
-          >
-            {t("Save")}
-          </Button>
-        </Space>,
+      heading={title}
+      onClose={handleCloseModal}
+      size="base"
+      primaryAction={{
+        content: t("Save"),
+        onAction: () => void handleConfirm(),
+        disabled: confirmDisabled,
+        loading: submitting,
+      }}
+      secondaryActions={[
+        {
+          content: t("Cancel"),
+          onAction: handleCloseModal,
+        },
       ]}
     >
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
@@ -135,12 +134,7 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
           />
         ) : null}
         <Text>{t("Keep translation consistent across your store")}</Text>
-        <Flex
-          gap={8}
-          justify="center"
-          align="flex-start"
-          style={{ width: "100%" }}
-        >
+        <Space direction="vertical" size="small" style={{ display: "flex" }}>
           <Input
             placeholder={t("Please enter original text")}
             value={sourceText}
@@ -150,7 +144,17 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
             }}
             disabled={submitting}
           />
-          <Text style={{ margin: "0 8px", lineHeight: "32px" }}>{t("to")}</Text>
+          <Text
+            type="secondary"
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "center",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("to")}
+          </Text>
           <Input
             placeholder={t("Please enter escaped text")}
             value={targetText}
@@ -160,9 +164,9 @@ const UpdateCustomTransModal: React.FC<UpdateCustomTransModalProps> = ({
             }}
             disabled={submitting}
           />
-        </Flex>
+        </Space>
       </Space>
-    </Modal>
+    </AppSModal>
   );
 };
 

@@ -1,17 +1,12 @@
 import { SaveBar } from "@shopify/app-bridge-react";
-import { Page } from "@shopify/polaris";
+import { Page, Select as PolarisSelect } from "@shopify/polaris";
 import {
   Alert,
-  Card,
   Typography,
   Switch,
-  Select,
   ColorPicker,
   Slider,
-  Popconfirm,
-  Modal,
 } from "antd";
-import Button from "~/ui/components/AppButton";
 import { useTranslation } from "react-i18next";
 import {
   getTranslateV4ErrorMessage,
@@ -20,7 +15,7 @@ import {
 import styles from "./styles.module.css";
 import { useEffect, useMemo, useState } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import { authenticate } from "~/shopify.server";
 import {
   loadSwitcherConfigCompat,
@@ -29,7 +24,6 @@ import {
   type SwitcherEditData,
 } from "./switcherClient";
 import { useSelector } from "react-redux";
-import { InfoCircleOutlined } from "@ant-design/icons";
 import defaultStyles from "../styles/defaultStyles.module.css";
 import useReport from "scripts/eventReport";
 import CloseIcon from "~/components/icon/closeIcon";
@@ -41,9 +35,8 @@ import AppSubpageTitleBar, {
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
 import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
-import { confirmLeaveSaveBar } from "~/lib/saveBarNavigation";
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 type PreviewLanguageOption = {
   iso_code: string;
@@ -220,13 +213,11 @@ const Index = () => {
     previewCurrencies[0].iso_code,
   );
   const [isLoading, setIsLoading] = useState(true);
-  const [showWarnModal, setShowWarnModal] = useState(false);
   const [saveAlert, setSaveAlert] = useState<string>("");
   const [loadAlert, setLoadAlert] = useState(false);
   const [updateLoading, setUpdateLoading] = useState<boolean>(false);
   const { report } = useReport();
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const homeBackAction = useAppHomeBackAction();
   const { plan } = useSelector((state: any) => state.userConfig);
   const isGeoLocationEnabled = editData.ipOpen;
@@ -410,10 +401,6 @@ const Index = () => {
   );
   useContextualSaveBar("switcher-save-bar", isDirty);
 
-  const goToPricing = () => {
-    void confirmLeaveSaveBar().then(() => navigate("/app/pricing"));
-  };
-
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
@@ -551,8 +538,6 @@ const Index = () => {
     }
     if (plan?.type !== "Free" || !checked) {
       handleEditData({ ipOpen: checked });
-    } else {
-      setShowWarnModal(true);
     }
     report(
       {
@@ -702,24 +687,6 @@ const Index = () => {
               ) : null}
               <AppSectionCard
                 title={t("Auto adaptation settings")}
-                extra={
-                  showPaidPlanHint ? (
-                    <Popconfirm
-                      title=""
-                      description={t(
-                        "This feature is available only with the paid plan.",
-                      )}
-                      trigger="hover"
-                      showCancel={false}
-                      okText={t("Upgrade")}
-                      onConfirm={goToPricing}
-                    >
-                      <Button type="text" icon={<InfoCircleOutlined />}>
-                        {t("Paid feature")}
-                      </Button>
-                    </Popconfirm>
-                  ) : null
-                }
               >
                 <div style={sectionContentStackStyle}>
                   <div style={rowBetweenStyle}>
@@ -796,9 +763,10 @@ const Index = () => {
                         <Text style={{ display: "block" }}>
                           {t("Selector type")}
                         </Text>
-                        <Select
+                        <PolarisSelect
+                          label={t("Selector type")}
+                          labelHidden
                           options={switcherOptions}
-                          style={{ width: "100%" }}
                           value={switcherTypeValue}
                           onChange={(value) => {
                             switch (value) {
@@ -881,9 +849,10 @@ const Index = () => {
                         <Text style={{ display: "block" }}>
                           {t("Selector position:")}
                         </Text>
-                        <Select
+                        <PolarisSelect
+                          label={t("Selector position:")}
+                          labelHidden
                           options={switcherPositionOptions}
-                          style={{ width: "100%" }}
                           value={selectorPosition}
                           onChange={(value) =>
                             handleEditData({ selectorPosition: value })
@@ -908,20 +877,10 @@ const Index = () => {
             </div>
           </div>
           <div className={styles.switcher_preview}>
-            <Card
-              loading={isLoading}
-              style={{
-                height: "100%",
-                border: "none",
-                boxShadow: "var(--app-shadow-card)",
-              }}
+            <AppSectionCard
+              title={t("Preview")}
+              style={{ height: "100%" }}
             >
-              <Title
-                level={5}
-                style={{ fontSize: 14, color: "var(--app-color-text)" }}
-              >
-                {t("Preview")}
-              </Title>
               <div
                 style={{
                   position: "relative",
@@ -1107,7 +1066,7 @@ const Index = () => {
                                     id="currency-arrow-icon"
                                     className={styles.arrow_icon}
                                     src="/arrow.svg"
-                                    alt="Arrow Icon"
+                                    alt={t("Arrow")}
                                     width="25%"
                                     height="25%"
                                   />
@@ -1200,7 +1159,7 @@ const Index = () => {
                                     id="currency-arrow-icon"
                                     className={styles.arrow_icon}
                                     src="/arrow.svg"
-                                    alt="Arrow Icon"
+                                    alt={t("Arrow")}
                                     width="25%"
                                     height="25%"
                                   />
@@ -1290,7 +1249,7 @@ const Index = () => {
                           id="mainbox-arrow-icon"
                           className={styles.mainarrow_icon}
                           src="/arrow.svg"
-                          alt="Arrow Icon"
+                          alt={t("Arrow")}
                           width="25px"
                           height="25%"
                         />
@@ -1380,23 +1339,9 @@ const Index = () => {
                   </div>
                 </div>
               </div>
-            </Card>
+            </AppSectionCard>
           </div>
         </div>
-        <Modal
-          title={t("Feature Unavailable")}
-          open={showWarnModal}
-          onCancel={() => setShowWarnModal(false)}
-          centered
-          width={700}
-          footer={
-            <Button type="primary" onClick={goToPricing}>
-              {t("Upgrade")}
-            </Button>
-          }
-        >
-          <Text>{t("This feature is available only with the paid plan.")}</Text>
-        </Modal>
       </div>
     </Page>
   );

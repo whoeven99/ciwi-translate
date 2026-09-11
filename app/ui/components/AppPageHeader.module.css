@@ -56,6 +56,15 @@
   flex: 1;
 }
 
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  flex-wrap: wrap;
+}
+
 .title {
   margin: 0;
   color: var(--app-color-text);
@@ -63,6 +72,12 @@
   line-height: 30px;
   font-weight: 700;
   letter-spacing: -0.03em;
+}
+
+.titleMeta {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .description {

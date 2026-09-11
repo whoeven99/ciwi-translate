@@ -5,11 +5,11 @@ import {
   Table,
   Typography,
   Skeleton,
-  Card,
   Checkbox,
   Pagination,
 } from "antd";
 import Button from "~/ui/components/AppButton";
+import AppMobileListCard from "~/ui/components/AppMobileListCard";
 import {
   json,
   type ActionFunctionArgs,
@@ -73,47 +73,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session, admin } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const { shop } = session;
   const formData = await request.formData();
-  const theme = formData.get("theme")
-    ? JSON.parse(formData.get("theme") as string)
-    : null;
   const deleteCurrencies = formData.get("deleteCurrencies")
     ? (JSON.parse(formData.get("deleteCurrencies") as string) as number[])
     : null;
   const updateCurrencies = formData.get("updateCurrencies")
     ? JSON.parse(formData.get("updateCurrencies") as string)
     : null;
-
-  if (theme) {
-    try {
-      const response = await admin.graphql(
-        `#graphql
-            query {
-              themes(roles: MAIN, first: 1) {
-                nodes {
-                  files(filenames: "config/settings_data.json") { 
-                    nodes {
-                      body {
-                        ... on OnlineStoreThemeFileBodyText {
-                          __typename
-                          content
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }`,
-      );
-      const data = await response.json();
-      return json({ data: data.data.themes });
-    } catch (error) {
-      console.error("Error theme currency:", error);
-      return json({ error: "theme fetch failed" }, { status: 500 });
-    }
-  }
 
   if (Array.isArray(deleteCurrencies) && deleteCurrencies.length > 0) {
     try {
@@ -562,43 +530,66 @@ const Index = () => {
             style={{ marginBottom: 16 }}
           /> */}
         {isMobile ? (
-          <>
-            <Card
-              title={
-                <Checkbox
-                  checked={allCurrentPageSelected && !loading}
-                  indeterminate={
-                    someCurrentPageSelected && !allCurrentPageSelected
-                  }
-                  onChange={(e) =>
-                    setSelectedRowKeys(
-                      e.target.checked
-                        ? [
-                            ...currentPageKeys,
-                            ...selectedRowKeys.filter(
-                              (key) => !currentPageKeys.includes(key),
-                            ),
-                          ]
-                        : [
-                            ...selectedRowKeys.filter(
-                              (key) => !currentPageKeys.includes(key),
-                            ),
-                          ],
-                    )
-                  }
-                >
-                  {t("Currency")}
-                </Checkbox>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Checkbox
+              checked={allCurrentPageSelected && !loading}
+              indeterminate={
+                someCurrentPageSelected && !allCurrentPageSelected
               }
-              loading={loading}
+              onChange={(e) =>
+                setSelectedRowKeys(
+                  e.target.checked
+                    ? [
+                        ...currentPageKeys,
+                        ...selectedRowKeys.filter(
+                          (key) => !currentPageKeys.includes(key),
+                        ),
+                      ]
+                    : [
+                        ...selectedRowKeys.filter(
+                          (key) => !currentPageKeys.includes(key),
+                        ),
+                      ],
+                )
+              }
             >
-              {pagedData.map((item: any) => (
-                <Card.Grid key={item.key} style={{ width: "100%" }}>
-                  <Space
-                    direction="vertical"
-                    size="middle"
-                    style={{ width: "100%" }}
-                  >
+              {t("Currency")}
+            </Checkbox>
+            {pagedData.map((item: any) => (
+              <AppMobileListCard
+                key={item.key}
+                title={`${item.currency}(${item.currencyCode})`}
+                rows={[
+                  {
+                    key: "rounding",
+                    label: t("Rounding"),
+                    value:
+                      item.rounding === null ? (
+                        <Text></Text>
+                      ) : item.rounding === "" ? (
+                        <Text>{t("Disable")}</Text>
+                      ) : item.rounding === "0" ? (
+                        <Text>{t("No decimal")}</Text>
+                      ) : (
+                        <Text>{Number(item.rounding).toFixed(2)}</Text>
+                      ),
+                  },
+                  {
+                    key: "rate",
+                    label: t("Exchange rate"),
+                    value:
+                      item.exchangeRate === "Auto" ? (
+                        <Text>{t("Auto")}</Text>
+                      ) : (
+                        <Text>
+                          {defaultCurrency.symbol}1 = {item.exchangeRate}{" "}
+                          {item.currencyCode}
+                        </Text>
+                      ),
+                  },
+                ]}
+                actions={
+                  <>
                     <Checkbox
                       checked={selectedRowKeys.includes(item.key)}
                       onChange={(e: any) => {
@@ -608,57 +599,11 @@ const Index = () => {
                             : selectedRowKeys.filter((key) => key !== item.key),
                         );
                       }}
-                    >
-                      {item.currency}({item.currencyCode})
-                    </Checkbox>
-                    <Flex justify="space-between">
-                      <Text>{t("Rounding")}</Text>
-                      {item.rounding === null ? (
-                        <Text></Text>
-                      ) : item.rounding === "" ? (
-                        <Text>{t("Disable")}</Text>
-                      ) : item.rounding === "0" ? (
-                        <Text>{t("No decimal")}</Text>
-                      ) : (
-                        <Text>{Number(item.rounding).toFixed(2)}</Text>
-                      )}
-                    </Flex>
-                    <Flex justify="space-between">
-                      <Text>{t("Exchange rate")}</Text>
-                      {item.exchangeRate === "Auto" ? (
-                        <div>
-                          <Text>{t("Auto")}</Text>
-                          {typeof currencyAutoRate.find(
-                            (item: any) =>
-                              item?.currencyCode == item.currencyCode,
-                          )?.rate === "number" && (
-                            <Text>
-                              ({defaultCurrency.symbol}1 ={" "}
-                              {currencyAutoRate
-                                .find(
-                                  (item: any) =>
-                                    item?.currencyCode == item.currencyCode,
-                                )
-                                ?.rate.toFixed(4)}{" "}
-                              {item.currencyCode})
-                            </Text>
-                          )}
-                        </div>
-                      ) : (
-                        <Text>
-                          {defaultCurrency.symbol}1 = {item.exchangeRate}{" "}
-                          {item.currencyCode}
-                        </Text>
-                      )}
-                    </Flex>
-                    <Button
-                      style={{ width: "100%" }}
-                      onClick={() => handleEdit(item.key)}
-                    >
+                    />
+                    <Button onClick={() => handleEdit(item.key)}>
                       {t("Edit")}
                     </Button>
                     <Button
-                      style={{ width: "100%" }}
                       loading={
                         deleteFetcher.state === "submitting" &&
                         deleteCode === item.key
@@ -667,10 +612,10 @@ const Index = () => {
                     >
                       {t("Delete")}
                     </Button>
-                  </Space>
-                </Card.Grid>
-              ))}
-            </Card>
+                  </>
+                }
+              />
+            ))}
             <div
               style={{
                 display: "flex",
@@ -687,7 +632,7 @@ const Index = () => {
                 onChange={(page) => setCurrentPage(page)}
               />
             </div>
-          </>
+          </div>
         ) : (
           <Table
             rowSelection={rowSelection}

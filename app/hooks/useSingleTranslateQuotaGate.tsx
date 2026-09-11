@@ -1,24 +1,14 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { useSelector } from "react-redux";
-import { CreateTaskQuotaGateModal } from "~/routes/app.translate-v4/components/CreateTaskQuotaGateModal";
 import {
   isSingleTranslateQuotaError,
   resolveSingleTranslateErrorMessage,
-  resolveSingleTranslateQuotaGateMode,
 } from "~/lib/singleTranslateQuotaFeedback";
 import { TRANSLATE_V4_ERROR_KEYS } from "~/utils/translateV4Errors";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 
 export function useSingleTranslateQuotaGate() {
   const { t } = useTranslation();
-  const isNew = useSelector(
-    (state: { userConfig?: { isNew?: boolean | null } }) =>
-      state.userConfig?.isNew ?? null,
-  );
-  const [quotaGateMode, setQuotaGateMode] = useState<
-    "trial" | "pricing" | null
-  >(null);
 
   const handleSingleTranslateFailure = useCallback(
     (errorMsg?: string | null) => {
@@ -27,9 +17,8 @@ export function useSingleTranslateQuotaGate() {
           openCreditsPurchaseModal();
           return;
         }
-        const mode = resolveSingleTranslateQuotaGateMode(errorMsg, isNew);
-        if (mode) {
-          setQuotaGateMode(mode);
+        if (errorMsg === "v4.create.noCreditsTrial") {
+          shopify.toast.show(t("v4.createTask.confirmTrialTitle"));
           return;
         }
       }
@@ -41,21 +30,12 @@ export function useSingleTranslateQuotaGate() {
       );
       shopify.toast.show(message);
     },
-    [isNew, t],
+    [t],
   );
-
-  const quotaGateModal =
-    quotaGateMode !== null ? (
-      <CreateTaskQuotaGateModal
-        open
-        mode={quotaGateMode}
-        onClose={() => setQuotaGateMode(null)}
-      />
-    ) : null;
 
   return {
     handleSingleTranslateFailure,
-    quotaGateModal,
+    quotaGateModal: null,
     resolveSingleTranslateErrorMessage: (errorMsg?: string | null) =>
       resolveSingleTranslateErrorMessage(
         t,
@@ -68,8 +48,9 @@ export function useSingleTranslateQuotaGate() {
         openCreditsPurchaseModal();
         return;
       }
-      const mode = resolveSingleTranslateQuotaGateMode(errorMsg, isNew);
-      if (mode) setQuotaGateMode(mode);
+      if (errorMsg === "v4.create.noCreditsTrial") {
+        shopify.toast.show(t("v4.createTask.confirmTrialTitle"));
+      }
     },
   };
 }

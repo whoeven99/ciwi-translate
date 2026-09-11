@@ -154,11 +154,10 @@ globally inside a card (it breaks Ant single-select layout). ESLint
 `app/routes/app.translate-v4/**`（`.eslintrc.cjs` override；`app.translate-v4-history`
 目前不在该 glob 内，新增下拉仍请用 Polaris）。Remaining Ant Selects
 (allow for now, 已核对):
-`app/components/singleTranslateAction.tsx`（AI 模型）、manage-translation 头部
-（`app.manage_translation/route.tsx`）、custom liquid `updateCustomTransModal`、
-glossary `updateGlossaryModal`、currency `currencyEditModal` — prefer Polaris
-when those screens are next touched。`app/components/paymentModal.tsx` 已是
-Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns.mdc`.
+manage-translation 头部（`app.manage_translation/route.tsx`）— 表格密集筛选，
+prefer Polaris when that screen is next touched。`singleTranslateAction`、
+glossary `updateGlossaryModal`、currency `currencyEditModal`、Switcher 已是
+Polaris `Select`。`app/components/paymentModal.tsx` 仍是参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns.mdc`.
 - Ant Design theme values should be derived from Polaris-like tokens through
 `app/ui/theme.ts`; avoid creating a second visual system.
 - Prefer existing shared wrappers in `app/ui/components/*`, including
@@ -168,8 +167,8 @@ Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns
   must use App Home `<s-modal>` via `AppSModal` (`heading` + `primary-action` /
   `secondary-actions` slots). Do not put those CTAs in the modal body. Polaris
   web components load from `polaris-1.js` in `app/root.tsx`. In-body actions
-  (e.g. Precise estimate) stay in children. Remaining Ant/Polaris React dialogs
-  are P1.
+  (e.g. Precise estimate) stay in children. Remaining Ant dialogs are mainly
+  manage-translation resource pages (P2).
 - Sub-pages (NavMenu children, history, custom create-task, shop-profile) must offer a
   back control to the parent: `AppSubpageTitleBar` (App Bridge breadcrumb) plus
   `AppPageHeader` `backAction` (Polaris arrow beside the in-page title; visual match
@@ -210,6 +209,8 @@ sweeps moved plan names, modal copy, and worker notice text into locale keys.
 - `app/routes/app.tsx`: app shell loader/action, navigation, app bootstrap.
   NavMenu `rel="home"` 指向 `getTranslatePagePath()`（`/app/translate-v4-mvp`），不要用 `/app`（BFS 4.1.4：`/app` 是所有嵌入路由的前缀，会抢走子页高亮）。可见导航 href / 子路径前缀见 `app/lib/appNav.ts`。
 - `app/routes/auth.$.tsx`, `app/routes/auth.login/route.tsx`: Shopify auth.
+  Production `/auth/login` without `shop` 302s to the App Store listing (no extra
+  login screen). Local `shopify app dev` still shows the shop-domain form.
 - `app/routes/webhooks.tsx`: Shopify webhook topic handling. Billing and uninstall
 logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
 `cleanupBillingOnUninstall` (local `cancelSubscription`; SHOP_REDACT only
@@ -243,15 +244,16 @@ compatibility; client helpers live in `app/utils/clientLog.ts`。对
 见 Operations Debugging → LCP）。
 - `app/routes/publishAction.tsx`: publish/unpublish Shopify locales.
 - `app/routes/_index/route.tsx` and `app/routes/app._index/route.tsx`: root entry
-and embedded `/app` redirect/landing behavior.
-- `app/routes/invite/route.tsx`: standalone invite page.
+and embedded `/app` redirect/landing behavior. `/` with `shop` goes to `/app`;
+without `shop` 302s to the App Store listing (no extra login form).
+- `app/routes/invite/route.tsx`: 302 to the same App Store listing (no email signup).
 
 
 
 ### Main Pages
 
 - `/app`: `app/routes/app._index/route.tsx` 重定向到 `/app/translate-v4-mvp`（`getTranslatePagePath()` 同指向 MVP）。
-- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：Polaris 折叠 Setup Guide（BFS 4.2.2；批量翻译 / 术语表 / 第三方 Liquid；X 只藏本次访问，三项都完成才不再出现）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。
+- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：Polaris 折叠 Setup Guide（BFS 4.2.2；批量翻译 / 术语表 / 第三方 Liquid；默认不渲染，仅首次建 Account 打标的新人才展示；三项都勾完才写 `setupGuideDismissedAt` 永久关闭；X 只藏本次访问）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。
 - `/app/translate-v4-mvp-custom`: `app/routes/app.translate-v4-mvp-custom/route.tsx`（自定义语言/模块建任务）。
 - `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（全量工作台保留；只展示进行中 /
 暂停 / 失败任务，见 `jobFilters.ts` `isCurrentV4Job`）。
@@ -319,7 +321,7 @@ real `route.tsx` or route module is added.
 Core files:
 
 - UI page: `app/routes/app.translate-v4/route.tsx`.
-- UI components: `app/routes/app.translate-v4/components/*`.
+- UI components: `app/routes/app.translate-v4/components/*`（确认弹窗积分/优惠共用 `CreditsConfirmPanel.tsx`，`CreateTaskConfirmModal` 与 `singleTranslateAction` 共用）。
 - UI constants/status/i18n: `constants.ts`, `v4I18n.ts`, `jobStageUtils.ts`,
 `v4JobNotice.ts`, `localeDisplay.ts`, `v4Styles.ts`（共享色板/卡片样式，
 `paymentModal` 等也在用）, `jobFilters.ts`（current / history 任务切分）,
@@ -911,6 +913,7 @@ Currency changes often touch admin, App Proxy, and extension JS.
 - App Proxy: `app/routes/api.storefront.$.ts`.
 - Extension: `extensions/ciwi-switcher/blocks/ciwi_I18n_Switcher.liquid` and
 `extensions/ciwi-switcher/assets/ciwi-*.js`.
+- 店面不通过 REST Asset / GraphQL `themes { files }` 读写主题文件（BFS「Doesn't use Asset API」）。`read_themes` 只给 Translations API 的 `ONLINE_STORE_THEME_*`；不要加回 `write_themes` 或 `themeFilesUpsert`。
 - App Proxy 店面路径：Extension `ciwi-api.js` 固定 `STOREFRONT_APP_PROXY_BASE=/apps/ciwi`
  （对齐正式 `shopify.app.prod.toml` `subpath=ciwi`）。测试 App 为 `ciwi-test` 时
  需临时改扩展常量或单独分支后再 `deployTest`。
@@ -1074,12 +1077,11 @@ AI model `Select` + optional prompt + credit estimate) →
 the real system prompt (glossary + shop profile + custom prompt) via
 `estimateSingleTranslateLlmTokens`, then ceil(tokens × model multiplier)
 (DeepSeek default 1, GPT/Google default 1.5).
-- 单字段额度不足：打开弹窗时先预估 + 读剩余额度，`shortfallCredits > 0` 直接转到
-共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
-`openCreditsPurchaseModal({ kind: "single_translate", … })`）；翻译失败后的
+- 单字段额度不足：打开弹窗时先预估 + 读剩余额度；积分区/试用优惠复用 `CreditsConfirmPanel`（Required / Available，无 Precise estimate）。额度不够留在本弹窗展示 trial / 买积分，点买积分才开共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
+`openCreditsPurchaseModal({ kind: "single_translate", … })`）。翻译失败后的
 额度类报错统一走 `app/hooks/useSingleTranslateQuotaGate.tsx` +
 `app/lib/singleTranslateQuotaFeedback.ts`（`v4.create.noCreditsPricing` → 补额度
-弹窗，`noCreditsTrial` → `CreateTaskQuotaGateModal` trial 模式，其余落
+弹窗，`noCreditsTrial` → toast 提示试用、再次打开单条弹窗即可开试用，其余落
 `v4.error.singleQuotaInsufficient`）。20 多个 manage 页共用这一套，不要在单页
 自己拼额度文案。
 
@@ -1105,8 +1107,10 @@ create-task 编排成一条「店铺理解 → 推荐 → 试用/建首个任务
 能力，任一数据源失败都降级，不阻塞继续；可跳过，跳过/完成后不再打断。
 
 BFS 4.2.2 首页 Setup Guide（Polaris 折叠清单）在 `/app/translate-v4-mvp`，与本全页引导
-相互独立。三项：批量翻译、术语表、第三方 App（主题 embed + Custom Liquid）。X 只藏本次访问，
-不写 `setupGuideDismissedAt`；三项都完成则整卡不再出现。展开区为说明 + 未完成子步骤蓝链接（右侧 P0 留空）；批量翻译 / Liquid 链接进
+相互独立。三项：批量翻译、术语表、第三方 App（主题 embed + Custom Liquid）。默认不渲染；
+仅终身首次建 Account（`bound: true`）写入的 `ShopOnboarding` 才出现。有过 v4 任务只勾
+「批量翻译」，不卸卡；三项都勾完才写 `setupGuideDismissedAt` 永久关闭。X 只藏本次访问。
+展开区为说明 + 未完成子步骤蓝链接（右侧 P0 留空）；批量翻译 / Liquid 链接进
 `/app/translate-v4-mvp-custom`；推荐卡片「立即翻译」仍走一键确认弹窗。
 
 Core files:
@@ -1164,6 +1168,7 @@ Common edits:
 Language:
 
 - Page: `app/routes/app.language/route.tsx`.
+- Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗，再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate / trial / 买积分，积分区走 `CreditsConfirmPanel`）。
 - Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
 - Server: `app/server/translateV4/targetLocale.server.ts`,
@@ -1302,8 +1307,8 @@ units, source chars); written by Worker at job terminal states.
 written on deduct (App) or quota flush (Worker).
 - `SupportConversation`, `SupportMessage`: support chat.
 - `ShopOnboarding`: 首次翻译新手引导状态（status/skipped/completed/试用/建首任务来源、
- 推荐语言与模块快照、积分与耗时预估、来源 scan id）；另含历史列 `setupGuideDismissedAt`
-（首页 Setup Guide 不再写入；三项完成后按完成态隐藏）。独立于 `Account.isNew`。
+ 推荐语言与模块快照、积分与耗时预估、来源 scan id）；`setupGuideDismissedAt` 在首页
+ Setup Guide 三项都勾完时写入（永久关闭）。独立于 `Account.isNew`。
 - `UserPicture`: product/shop image translation metadata and translated image
 URLs used by admin pages and storefront App Proxy reads.
 
@@ -1386,10 +1391,11 @@ For "合入PR然后发布测试环境", the script will:
 | NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
 | 上下文保存栏离开拦截（BFS 4.1.5） | `app/hooks/useContextualSaveBar.ts`                   | `app/lib/saveBarNavigation.ts`、`app.switcher/route.tsx`、`AppSubpageTitleBar`                           |
 | 主题扩展状态 / BFS 4.2.3          | `app/lib/themeAppExtensions.ts`                       | mvp `ThemeExtensionStatusCard`、switcher `switcherSettingCard`、`shopify.app.extensions()`；打开主题编辑器用 `openSwitcherThemeEditor`（`_top`），不要用 Polaris `Button url`（会把 iframe 带到不可嵌入的 Admin） |
-| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`（Polaris `Collapsible`；展开区说明 + 子步骤蓝链接）、`shouldAutoDismissSetupGuide`、`app/server/setupGuide.server.ts`（glossary count）；X 仅本次访问；完成条件：v4 任务 / 术语表 / embed+CUSTOM_LIQUID；推荐卡片「立即翻译」仍一键确认 |
+| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldRenderSetupGuide`（默认不渲染；仅首次 Account 打标新人；三项齐才写 `setupGuideDismissedAt`）、`app/server/setupGuide.server.ts`；X 仅本次访问；推荐卡片「立即翻译」仍一键确认 |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
-| Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslate.server.ts`, translation-core `syncTranslate.ts` / `llmTranslate.ts`, quota guard       |
+| Language 页 Translate 确认      | `app/routes/app.language/route.tsx`                 | `CreateTaskConfirmModal` / `CreditsConfirmPanel` / `useCreateTaskEstimate`                               |
+| Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslateAction.tsx` + `CreditsConfirmPanel`，`singleTranslate.server.ts` |
 | Stuck task/progress              | `progress.server.ts`                                  | worker scheduler/init/translate/writeback, Redis/Cosmos scripts                                         |
 | Pause/resume/cancel bug          | `api.translate-v4.task-action.ts`                     | `resumeStatus.ts`, worker control logic                                                                 |
 | Post-writeback completion/counts | `worker/src/services/finalizeJobAfterWriteback.ts`    | `worker/src/services/itemsCount.ts`, `app/server/translateV4/itemsCount.server.ts`, Redis `items_count` |

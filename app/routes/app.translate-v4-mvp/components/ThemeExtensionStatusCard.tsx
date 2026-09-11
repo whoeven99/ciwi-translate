@@ -54,6 +54,7 @@ export function ThemeExtensionStatusCard({
       description={description}
       bodyPadding={bodyPadding}
       compact={compact}
+      fill
       style={{
         height: "100%",
         flex: 1,

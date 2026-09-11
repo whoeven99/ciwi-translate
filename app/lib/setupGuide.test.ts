@@ -4,6 +4,7 @@ import {
   buildSetupGuideState,
   firstIncompleteSetupGuideTask,
   shouldAutoDismissSetupGuide,
+  shouldRenderSetupGuide,
   type SetupGuideInput,
 } from "./setupGuide.ts";
 
@@ -139,6 +140,52 @@ describe("shouldAutoDismissSetupGuide", () => {
         ),
       ),
       true,
+    );
+  });
+});
+
+describe("shouldRenderSetupGuide", () => {
+  it("stays hidden until the shop is an eligible newcomer", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        eligible: false,
+        dismissed: false,
+        allComplete: false,
+      }),
+      false,
+    );
+  });
+
+  it("shows an eligible newcomer who has not finished or dismissed", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        eligible: true,
+        dismissed: false,
+        allComplete: false,
+      }),
+      true,
+    );
+  });
+
+  it("hides when all three setup tasks are complete", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        eligible: true,
+        dismissed: false,
+        allComplete: true,
+      }),
+      false,
+    );
+  });
+
+  it("stays hidden after session or persisted dismiss", () => {
+    assert.equal(
+      shouldRenderSetupGuide({
+        eligible: true,
+        dismissed: true,
+        allComplete: false,
+      }),
+      false,
     );
   });
 });

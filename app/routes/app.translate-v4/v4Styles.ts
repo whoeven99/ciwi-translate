@@ -6,8 +6,7 @@ export const v4Colors = {
   cardSelected: "var(--app-color-surface-selected)",
   cardBorder: "var(--app-color-border-secondary)",
   divider: "var(--app-color-border-secondary)",
-  summaryBg:
-    "linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(246, 248, 252, 0.92) 55%, rgba(29, 154, 127, 0.05) 100%)",
+  summaryBg: "var(--app-color-surface-secondary)",
   primary: "var(--v4-accent-primary, var(--app-accent-primary))",
   primaryHover: "var(--v4-accent-primary-hover, var(--app-accent-primary-hover))",
   primaryTextOnFill: "var(--app-color-brand-on-fill)",
@@ -25,7 +24,7 @@ export const v4Colors = {
   textMuted: "var(--app-color-text-secondary)",
   textFaint: "var(--app-color-text-tertiary)",
   textLight: "var(--app-color-text-secondary)",
-  ringTrack: "var(--v4-ring-track, rgba(84, 103, 255, 0.16))",
+  ringTrack: "var(--p-color-border-secondary, var(--app-color-border-secondary))",
   progressTrack: "var(--app-color-surface-secondary)",
   disabledBg: "var(--app-color-surface-secondary)",
   disabledText: "var(--app-color-text-tertiary)",
@@ -68,7 +67,7 @@ export const v4ContentStyle: CSSProperties = {
 
 export const v4CardStyle: CSSProperties = {
   background: v4Colors.cardBg,
-  borderRadius: 16,
+  borderRadius: 8,
   border: `1px solid ${v4Colors.cardBorder}`,
   boxShadow: "var(--app-shadow-card)",
 };
