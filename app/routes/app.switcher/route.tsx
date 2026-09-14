@@ -697,7 +697,8 @@ const Index = () => {
                       className={
                         showPaidPlanHint ? defaultStyles.Switch_disable : ""
                       }
-                      checked={isGeoLocationEnabled}
+                      checked={isGeoLocationEnabled && !showPaidPlanHint}
+                      disabled={showPaidPlanHint}
                       onChange={handleIpOpenChange}
                     />
                   </div>

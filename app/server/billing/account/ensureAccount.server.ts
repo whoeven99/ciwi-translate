@@ -2,6 +2,7 @@ import type { Account } from "../../../generated/prisma";
 import prisma from "../../../db.server";
 import { APP_SUBSCRIPTION_STATUS } from "../types.server";
 import { cancelSubscription } from "../subscription/cancelSubscription.server";
+import { resetSetupGuideOnReinstall } from "../../setupGuide.server";
 
 /**
  * 确保 tsf 账户存在且非软删除状态（幂等）。
@@ -22,7 +23,7 @@ export async function ensureAccount(shop: string): Promise<Account> {
       });
     }
     // 卸载后重装：恢复账户，清空所有额度
-    return prisma.account.update({
+    const restored = await prisma.account.update({
       where: { shop },
       data: {
         deletedAt: null,
@@ -32,6 +33,8 @@ export async function ensureAccount(shop: string): Promise<Account> {
         usedCredits: 0,
       },
     });
+    await resetSetupGuideOnReinstall(shop);
+    return restored;
   }
   return prisma.account.upsert({
     where: { shop },

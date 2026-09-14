@@ -6,6 +6,8 @@ export type BindingResolution = {
   bound: boolean;
   /** 判定是否落库。 */
   persisted: boolean;
+  /** 本次是否从软删除 Account 恢复（卸载后重装）。 */
+  restored: boolean;
 };
 
 /**
@@ -18,7 +20,7 @@ export async function resolveBillingBinding(
 ): Promise<BindingResolution> {
   const existing = await prisma.account.findUnique({
     where: { shop },
-    select: { shop: true },
+    select: { shop: true, deletedAt: true },
   });
 
   await ensureAccount(shop);
@@ -26,5 +28,6 @@ export async function resolveBillingBinding(
   return {
     bound: !existing,
     persisted: true,
+    restored: Boolean(existing?.deletedAt),
   };
 }
