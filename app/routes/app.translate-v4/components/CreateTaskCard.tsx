@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { ActionList, BlockStack, Button, Checkbox, Popover } from "@shopify/polaris";
+import { BlockStack, Button, Checkbox, Select as PolarisSelect } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import { message } from "~/ui/message";
 import { v4Colors, v4CardStyle } from "../v4Styles";
@@ -72,7 +72,6 @@ export function CreateTaskCard({
     !creating &&
     !createDisabled;
   const [advancedOpen, setAdvancedOpen] = useState(advancedDefaultOpen);
-  const [aiModelMenuOpen, setAiModelMenuOpen] = useState(false);
 
   // 顺序固定（按名称），避免点选时 chip 跳动。
   const localeChips = useMemo<TargetOption[]>(
@@ -95,13 +94,6 @@ export function CreateTaskCard({
       })),
     [t],
   );
-  const selectedAiModelLabel =
-    aiModelOptions.find((option) => option.value === aiModel)?.label ?? aiModel;
-
-  useEffect(() => {
-    if (!advancedOpen) setAiModelMenuOpen(false);
-  }, [advancedOpen]);
-
   // 翻译内容改为内联多选 chip：顺序固定（避免点选时跳动），选中态与上方语言同色。
   const moduleChips = CREATE_TASK_MODULE_OPTIONS.map((mod) => ({
     value: mod,
@@ -352,39 +344,14 @@ export function CreateTaskCard({
           }}
         >
           <div style={{ marginTop: 12 }}>
-            <SectionLabel>{t("v4.createTask.aiModel")}</SectionLabel>
             <div style={{ marginBottom: 16 }}>
-              <Popover
-                active={aiModelMenuOpen}
-                autofocusTarget="first-node"
-                fullWidth
-                preferredPosition="mostSpace"
-                onClose={() => setAiModelMenuOpen(false)}
-                activator={
-                  <Button
-                    disclosure={aiModelMenuOpen ? "up" : "select"}
-                    fullWidth
-                    textAlign="left"
-                    accessibilityLabel={t("v4.createTask.aiModel")}
-                    onClick={() => setAiModelMenuOpen((open) => !open)}
-                  >
-                    {selectedAiModelLabel}
-                  </Button>
-                }
-              >
-                <ActionList
-                  actionRole="menuitem"
-                  items={aiModelOptions.map((option) => ({
-                    id: option.value,
-                    content: option.label,
-                    active: option.value === aiModel,
-                    onAction: () => {
-                      onAiModelChange(option.value);
-                      setAiModelMenuOpen(false);
-                    },
-                  }))}
-                />
-              </Popover>
+              <PolarisSelect
+                label={t("v4.createTask.aiModel")}
+                labelHidden
+                options={aiModelOptions}
+                value={aiModel}
+                onChange={onAiModelChange}
+              />
             </div>
             <SectionLabel>{t("v4.createTask.translationOptions")}</SectionLabel>
             <BlockStack gap="300">
