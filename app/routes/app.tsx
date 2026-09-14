@@ -169,7 +169,7 @@ async function runAppInitialization({
   const initLog = "[app:init]";
   try {
     console.info(`${initLog} start shop=${shop}`);
-    // 确保 TSF 账户存在；新 TSF 用户只建账户，不在安装时发放试用额度。
+    // 确保 TSF 账户存在；终身首次建账户发放 20 万安装赠送（30 天到期）。
     const binding = await resolveBillingBinding(shop);
     console.info(
       `${initLog} billing-resolved shop=${shop} bound=${binding.bound} restored=${binding.restored} persisted=${binding.persisted}`,

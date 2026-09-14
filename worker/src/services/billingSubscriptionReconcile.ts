@@ -21,11 +21,12 @@ import {
   getTsfDb,
   getTsfAccountRemaining,
   hasTsfDbCredentials,
+  expireInstallTrialCreditsIfDue,
 } from "./tsfDb.js";
 import { fetchShopContact } from "./shopEmail.js";
 import { sendSubscriptionRenewalEmail } from "./workerEmail.js";
 import { notifyLifetimeFirstSubscribeFeishu } from "./lifecycleFeishuNotify.js";
-import { grantLaunchCreditsIfEligible } from "./grantLaunchCredits.js";
+import { grantInstallCreditsIfEligible } from "./grantInstallCredits.js";
 import { buildShopifyAdminGraphqlUrl } from "./shopifyAdminApiVersion.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -282,7 +283,7 @@ async function findPlanCredits(
 
 async function ensureAccount(shop: string): Promise<void> {
   const now = new Date().toISOString();
-  await getTsfDb().execute({
+  const inserted = await getTsfDb().execute({
     sql: `INSERT INTO Account (
             shop, subscriptionCredits, purchasedCredits, trialCredits,
             usedCredits, createdAt, updatedAt
@@ -290,6 +291,9 @@ async function ensureAccount(shop: string): Promise<void> {
           ON CONFLICT(shop) DO NOTHING`,
     args: [shop, now, now],
   });
+  if (Number(inserted.rowsAffected ?? 0) > 0) {
+    await grantInstallCreditsIfEligible(shop);
+  }
 }
 
 async function archivePeriodAndRenew(params: {
@@ -531,12 +535,6 @@ async function activateOrReplaceSubscription(params: {
         now,
       ],
     });
-    const launch = await grantLaunchCreditsIfEligible({ shop, planKey });
-    if (launch.granted) {
-      console.info(
-        `[billing reconcile] launch credits granted shop=${shop} planKey=${planKey} credits=${launch.credits}`,
-      );
-    }
     void notifyLifetimeFirstSubscribeFeishu(shop).catch((err) => {
       console.error(
         `[billing reconcile] first-subscribe feishu failed shop=${shop}`,
@@ -850,6 +848,7 @@ async function reconcileOneShop(
     datesDiffer(local.currentPeriodStart, currentPeriodStart);
 
   if (periodEndAdvanced) {
+    await expireInstallTrialCreditsIfDue(shop);
     const accRs = await getTsfDb().execute({
       sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits
             FROM Account WHERE shop = ? LIMIT 1`,
@@ -941,6 +940,7 @@ async function reconcileOneShop(
     });
 
     if (decision.action === "grant") {
+      await expireInstallTrialCreditsIfDue(shop);
       const accRs = await getTsfDb().execute({
         sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits
               FROM Account WHERE shop = ? LIMIT 1`,

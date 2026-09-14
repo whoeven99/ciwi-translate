@@ -520,8 +520,8 @@ and auto-translate; also runs scheduled shop-scan enqueue (target slot =
 `(currentSlot - 1) % slots`, i.e. 1h after the shop's auto slot), deploy
 wake/stale reset, empty auto-job cleanup, hourly v4 job retention cleanup
 (`cleanupOldJobs`，默认每小时 :40), shop_scan_jobs retention
-(`cleanupOldShopScanJobs`，默认每小时 :50), and subscription reconciliation
-schedules.
+(`cleanupOldShopScanJobs`，默认每小时 :50), subscription reconciliation
+schedules, and install-gift expiry scan (`expireInstallTrialJob`，默认 12h；每轮最多 200 店).
 - `worker/src/env.ts`: required env diagnostics.
 - `worker/src/shutdown.ts`: shared shutdown flag; `index.ts` releases jobs
 claimed by the current process on SIGTERM/SIGINT before exit.
@@ -701,8 +701,13 @@ Code: `worker/src/services/shopifyFetch.ts` `chunkResources`.
 `EMAIL_FALLBACK_SCAN_INTERVAL_MS`（默认 5min；邮件 worker 跨分区 DISTINCT 兜底
 间隔，平时走 Redis 标记快路径），
 `AUTO_EMPTY_JOB_CLEANUP_INTERVAL_MS`,
-`BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`, and
-`BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`.
+`BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`,
+`BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`,
+`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`（默认 12h）/
+`INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS`（默认 2min）/
+`INSTALL_TRIAL_EXPIRY_JITTER_MS`（默认 0–60s 启动抖动）/
+`INSTALL_TRIAL_EXPIRY_MAX_PER_RUN`（默认 200，剩的下轮继续）/
+`INSTALL_TRIAL_EXPIRY_DELAY_MS`（默认 50ms 店间间隔）。
 - Scheduled shop scan（计量复扫，与 auto 同一时区 / slots；目标槽
 `(currentSlot - 1) % slots`，即相对同店 auto 延后 1h）：
 `SHOP_SCAN_SCHEDULE_ENABLED` (default true),
@@ -748,7 +753,7 @@ variables consumed by `workerEmail.ts` and TSF email helpers.
 
 Models:
 
-- `Account`: TSF credit pools: subscription, purchased, trial, used.
+- `Account`: TSF credit pools: subscription, purchased, trial, used；安装赠送带 `trialCreditsExpiresAt`。
 - `PlanCatalog`, `AppSubscription`, `BillingLog`, `AccountPeriodUsage`.
 - `TranslateV4JobUsage`: per v4 job usage snapshot (Worker writes on terminal status).
 - `CreditUsage`: per-deduction credit audit (`single` / `image` / `v4_job`);
@@ -855,10 +860,23 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
-- Launch Credits（新手礼包）：店铺终身首次 `SUBSCRIPTION_ACTIVATED` 时按档写入
-  `trialCredits`（Basic 4M / Pro 8M / Premium 16M），`BillingLog` `TRIAL_GRANTED`
-  + `referenceId=launch_credits` 幂等；续费结转、不随月额度替换；App
-  `grantLaunchCredits.server.ts` 与 Worker `grantLaunchCredits.ts` 双路径发放。
+  Install-gift expiry is **not** checked on quota reads. Worker scans due
+  accounts every 12h (`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`, first delay 2min +
+  0–60s jitter; max 200 shops/run, 50ms inter-shop delay).
+  Deduct and subscription renewal still settle first so expired gift is not
+  spent. Leftover `trialCredits` are zeroed and `usedCredits` is reduced by
+  the gift already consumed (gift used first; paid pools not charged for
+  leftover).
+- 安装赠送：终身首次建 `Account` 写入 `trialCredits=200000`，
+  `trialCreditsExpiresAt = now+30d`；`BillingLog` `TRIAL_GRANTED` +
+  `referenceId=install_credits` 幂等。卸载重装不补发。存量 Launch Credits
+  （`expiresAt` 为空）不追回、不过期。App `grantInstallCredits.server.ts`，
+  Worker 新建 Account 时 `grantInstallCredits.ts`。  到期扫描
+  `expireInstallTrialJob.ts`（`scheduler.ts`，每轮 LIMIT 200）；单店结算
+  `expireInstallTrialCreditsIfDue`（App 扣费/续费、Worker `tsfDb` 扣费）。
+  到期写 `BillingLog` `TRIAL_EXPIRED` + `referenceId=install_credits`
+  （`creditsDelta` 为负 leftover；用完则为 0）。
+- 已停发首订 Launch Credits（Basic 4M / Pro 8M / Premium 16M）。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
 (MONTHLY ≈ +30d, ANNUAL ≈ +365d). `currentPeriodStart = end - intervalDays`.
