@@ -919,7 +919,7 @@ Currency changes often touch admin, App Proxy, and extension JS.
  需临时改扩展常量或单独分支后再 `deployTest`。
 - Constants: `app/lib/switcherConstants.ts`.
 - `ipOpen` is the live geolocation switch and is stored on Turso
-`SwitcherConfiguration`. Free 套餐锁定（BFS 4.3.7：开关 `disabled` + Paid 标记 + 升级链接；Basic+ 可开）。
+`SwitcherConfiguration`. Free 套餐锁定（BFS 4.3.7：开关视觉与功能均 `disabled`；Basic+ 可开）。
 The old `IpRedirection` table/model was dropped
 (`prisma/migrations/20260713000000_drop_ip_redirection`). Do not assume the
 removed `api.translate-v4.ip-redirections` / `custom_redirects` path or the

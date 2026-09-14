@@ -1,5 +1,5 @@
 import { SaveBar } from "@shopify/app-bridge-react";
-import { Link as PolarisLink, Page, Select as PolarisSelect } from "@shopify/polaris";
+import { Page, Select as PolarisSelect } from "@shopify/polaris";
 import {
   Alert,
   Typography,
@@ -15,7 +15,7 @@ import {
 import styles from "./styles.module.css";
 import { useEffect, useMemo, useState } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import { authenticate } from "~/shopify.server";
 import {
   loadSwitcherConfigCompat,
@@ -35,7 +35,6 @@ import AppSubpageTitleBar, {
 import AppSectionCard from "~/ui/components/AppSectionCard";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
 import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
-import { APP_NAV_ITEMS } from "~/lib/appNav";
 
 const { Text } = Typography;
 
@@ -70,18 +69,6 @@ const rowBetweenStyle = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 12,
-};
-
-const rowLabelTitleStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  flexWrap: "wrap" as const,
-};
-
-const ipOpenRowStyle = {
-  ...rowBetweenStyle,
-  alignItems: "flex-start" as const,
 };
 
 const fieldColumnStyle = {
@@ -233,7 +220,6 @@ const Index = () => {
   const { t } = useTranslation();
   const homeBackAction = useAppHomeBackAction();
   const { plan } = useSelector((state: any) => state.userConfig);
-  const navigate = useNavigate();
   const isGeoLocationEnabled = editData.ipOpen;
   const isIncludedFlag = editData.includedFlag;
   const languageSelector = editData.languageSelector;
@@ -703,27 +689,9 @@ const Index = () => {
                 title={t("Auto adaptation settings")}
               >
                 <div style={sectionContentStackStyle}>
-                  <div style={ipOpenRowStyle}>
+                  <div style={rowBetweenStyle}>
                     <div className={styles.switcher_row_label}>
-                      <div style={rowLabelTitleStyle}>
-                        <Text strong>{t("Match market by IP")}</Text>
-                        {showPaidPlanHint ? (
-                          <AppStatusBadge tone="info">
-                            {t("switcher.ipOpen.paidBadge")}
-                          </AppStatusBadge>
-                        ) : null}
-                      </div>
-                      {showPaidPlanHint ? (
-                        <Text type="secondary">
-                          {t("switcher.ipOpen.paidHint")}{" "}
-                          <PolarisLink
-                            onClick={() => navigate(APP_NAV_ITEMS.pricing)}
-                            removeUnderline
-                          >
-                            {t("switcher.ipOpen.upgrade")}
-                          </PolarisLink>
-                        </Text>
-                      ) : null}
+                      <Text strong>{t("Match market by IP")}</Text>
                     </div>
                     <Switch
                       className={
