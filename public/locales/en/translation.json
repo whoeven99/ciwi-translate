@@ -1074,7 +1074,7 @@
   "v4.error.invalidId": "Invalid or expired resource identifier.",
   "v4.error.invalidRequest": "Invalid request.",
   "v4.error.languagePublishFailed": "Failed to update language publish settings. Please try again.",
-  "v4.error.languagePublishPartialFailed": "Some domains could not be updated. Please review each publish status.",
+  "v4.error.languagePublishPartialFailed": "Language publish status was saved, but some domains could not be updated. Please review each domain.",
   "v4.error.liquidDeleteFailed": "Failed to delete liquid rule.",
   "v4.error.liquidDuplicateRule": "A liquid rule with the same source text already exists.",
   "v4.error.liquidIdRequired": "Liquid rule ID is required.",

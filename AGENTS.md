@@ -1170,6 +1170,7 @@ Common edits:
 Language:
 
 - Page: `app/routes/app.language/route.tsx`.
+- Publish 列表开关只跟 Shopify `shopLocale.published`（桌面/移动一致）；域名 `alternateLocales` 只在 `publishModal` 里改。`publishAction` 分别回传 `shopLocaleUpdate` / `webPresenceUpdate` 成败，部分失败弹窗不关。
 - Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗，再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate / trial / 买积分，积分区走 `CreditsConfirmPanel`）。
 - Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
