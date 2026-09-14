@@ -226,8 +226,10 @@ model Account {
   subscriptionCredits Int      @default(0)
   /// 加量包额度：结转、永不过期
   purchasedCredits    Int      @default(0)
-  /// 试用赠送额度：结转（安装赠送，不随续费刷新）
+  /// 试用赠送额度：结转（安装赠送，不随续费刷新）；到期后写库清零剩余
   trialCredits        Int      @default(0)
+  /// 安装赠送到期时间；null = 永不过期（存量 Launch Credits）
+  trialCreditsExpiresAt DateTime?
   /// 本周期累计已用（续费清零）
   usedCredits         Int      @default(0)
   /// 卸载/请求删除时设置，标记账号已失效；null 表示正常
@@ -289,7 +291,7 @@ model AppSubscription {
 model BillingLog {
   id           String   @id @default(cuid())
   shop         String
-  /// SUBSCRIPTION_ACTIVATED | SUBSCRIPTION_RENEWED | SUBSCRIPTION_CANCELLED | TOKEN_PACK_PURCHASED | TRIAL_GRANTED | CREDITS_MIGRATED_OUT | CREDITS_MIGRATION_FAILED
+  /// SUBSCRIPTION_ACTIVATED | SUBSCRIPTION_RENEWED | SUBSCRIPTION_CANCELLED | TOKEN_PACK_PURCHASED | TRIAL_GRANTED | TRIAL_EXPIRED | CREDITS_MIGRATED_OUT | CREDITS_MIGRATION_FAILED
   eventType    String
   planKey      String?
   /// Shopify subscription / purchase GID，做幂等
