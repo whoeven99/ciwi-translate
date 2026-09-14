@@ -1096,13 +1096,12 @@ AI model `Select` + optional prompt + credit estimate) →
 the real system prompt (glossary + shop profile + custom prompt) via
 `estimateSingleTranslateLlmTokens`, then ceil(tokens × model multiplier)
 (DeepSeek default 1, GPT/Google default 1.5).
-- 单字段额度不足：打开弹窗时先预估 + 读剩余额度；积分区/试用优惠复用 `CreditsConfirmPanel`（Required / Available，无 Precise estimate）。额度不够留在本弹窗展示 trial / 买积分，点买积分才开共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
-`openCreditsPurchaseModal({ kind: "single_translate", … })`）。翻译失败后的
-额度类报错统一走 `app/hooks/useSingleTranslateQuotaGate.tsx` +
-`app/lib/singleTranslateQuotaFeedback.ts`（`v4.create.noCreditsPricing` → 补额度
-弹窗，`noCreditsTrial` → toast 提示试用、再次打开单条弹窗即可开试用，其余落
-`v4.error.singleQuotaInsufficient`）。20 多个 manage 页共用这一套，不要在单页
-自己拼额度文案。
+- 单字段额度不足：点 Translate 先读剩余额度；remaining ≤ 0 时 toast
+  `v4.create.insufficientCredits`，不打开翻译弹窗。弹窗仅在有额度时出现（Required /
+  Available + 模型/提示词，无试用/买积分推销）。失败后的额度类报错同样 toast，走
+  `app/hooks/useSingleTranslateQuotaGate.tsx` +
+  `app/lib/singleTranslateQuotaFeedback.ts`。20 多个 manage 页共用这一套，不要在单页
+  自己拼额度文案。服务端 `evaluateCreateTaskQuotaGuard` 仍拦 remaining ≤ 0。
 
 Image translation, PageFly, and some summary/count behavior may still be
 separate from the save path.
