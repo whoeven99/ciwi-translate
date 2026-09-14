@@ -197,7 +197,7 @@ export default function TranslateV4MvpCustomRoute() {
     | "insufficient_paid"
     | "insufficient_trial"
     | "insufficient_pricing" =
-    taskEstimate.needsMoreCredits
+    createShouldGateByCredits
       ? hasPaidPlan
         ? "insufficient_paid"
         : createQuotaGateMode === "trial"
@@ -286,16 +286,6 @@ export default function TranslateV4MvpCustomRoute() {
     setAiModel(restoredModel);
     setIsCover(draft.isCover);
     setIsHandle(draft.isHandle);
-    if (
-      notifyIfCreateTaskBlockedByCredits({
-        remainingCredits,
-        t,
-        notify: message.warning,
-      })
-    ) {
-      void refreshQuota();
-      return;
-    }
     setCreateConfirmOpen(true);
     void refreshQuota();
     message.info(t("v4.create.draftRestored"));
@@ -401,13 +391,8 @@ export default function TranslateV4MvpCustomRoute() {
       );
       return;
     }
-    if (
-      notifyIfCreateTaskBlockedByCredits({
-        remainingCredits,
-        t,
-        notify: message.warning,
-      })
-    ) {
+    if (shouldBlockCreateTaskByCredits({ remainingCredits })) {
+      setCreateConfirmOpen(true);
       return;
     }
     setCreateConfirmOpen(true);

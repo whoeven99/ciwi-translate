@@ -13,6 +13,7 @@ import { getV4AiModelLabel, getV4ModuleLabel } from "../v4I18n";
 import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
 import { useDetailedCreateTaskEstimate } from "../useDetailedCreateTaskEstimate";
 import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
+import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
 import { reportClientLog } from "~/utils/clientLog";
 import {
@@ -172,12 +173,11 @@ export function CreateTaskConfirmModal({
     estimatedCredits != null && remainingCredits != null
       ? Math.max(estimatedCredits - remainingCredits, 0)
       : 0;
-  const needsMoreCredits =
-    estimatedCredits != null &&
-    remainingCredits != null &&
-    estimatedCredits > remainingCredits;
+  const createTaskBlockedByCredits = shouldBlockCreateTaskByCredits({
+    remainingCredits,
+  });
   const scenario: CreateTaskConfirmScenario = detailedDone
-    ? needsMoreCredits
+    ? createTaskBlockedByCredits
       ? resolveScenarioFromOfferMode(quotaOfferMode)
       : "ready"
     : parentScenario;

@@ -780,7 +780,7 @@ export default function TranslateV4MvpRoute() {
     | "insufficient_paid"
     | "insufficient_trial"
     | "insufficient_pricing" =
-    createConfirmConfig?.estimate?.needsMoreCredits
+    createShouldGateByCredits
       ? hasPaidPlan
         ? "insufficient_paid"
         : createQuotaGateMode === "trial"
@@ -961,15 +961,6 @@ export default function TranslateV4MvpRoute() {
 
     if (remainingCredits == null) {
       message.info(t("v4.create.quotaUnavailable"));
-      return;
-    }
-    if (
-      notifyIfCreateTaskBlockedByCredits({
-        remainingCredits,
-        t,
-        notify: message.warning,
-      })
-    ) {
       return;
     }
 

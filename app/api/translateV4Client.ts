@@ -2,6 +2,7 @@ import {
   getTranslateV4ErrorDefaultMessage,
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
+import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 
 const SINGLE_TRANSLATE_NO_CREDITS_ERROR = "v4.create.noCreditsPricing";
 
@@ -33,6 +34,17 @@ export const SingleTextTranslate = async (args: SingleTextTranslateArgs) => {
 
     if (!data?.success && data?.errorMsg) {
       const errorMsg = String(data.errorMsg).trim();
+      if (quotaBlocked) {
+        openCreditsPurchaseModal({
+          kind: "single_translate",
+          target: args.target,
+          fieldKey: args.key,
+          estimatedCredits: null,
+          currentRemainingCredits: null,
+          shortfallCredits: null,
+          state: "missing",
+        });
+      }
       if (errorMsg.startsWith("v4.")) {
         return { ...data, errorMsg };
       }

@@ -1,6 +1,6 @@
 import { Input, Typography } from "antd";
 import { Select as PolarisSelect } from "@shopify/polaris";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { notifyIfCreateTaskBlockedByCredits } from "~/lib/createTranslateQuotaGuard";
 import {
@@ -14,6 +14,7 @@ import {
   CreditsEstimatePanel,
   formatConfirmCredits,
 } from "~/routes/app.translate-v4/components/CreditsConfirmPanel";
+import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -211,6 +212,21 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
     return () => controller.abort();
   }, [open]);
 
+  const openSingleTranslateCreditsModal = useCallback((remainingCredits: number | null) => {
+    openCreditsPurchaseModal({
+      kind: "single_translate",
+      target: normalizeText(targetLocale) || "unknown",
+      fieldKey: normalizeText(fieldKey) || "value",
+      estimatedCredits,
+      currentRemainingCredits: remainingCredits,
+      shortfallCredits:
+        estimatedCredits == null
+          ? null
+          : Math.max(estimatedCredits - (remainingCredits ?? 0), 0),
+      state: modalState,
+    });
+  }, [estimatedCredits, fieldKey, modalState, targetLocale]);
+
   useEffect(() => {
     if (!open || quotaLoading) return;
     if (
@@ -220,10 +236,11 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
         notify: toastMessage,
       })
     ) {
+      openSingleTranslateCreditsModal(currentRemainingCredits);
       setOpen(false);
       setPrompt("");
     }
-  }, [open, quotaLoading, currentRemainingCredits, t]);
+  }, [open, quotaLoading, currentRemainingCredits, openSingleTranslateCreditsModal, t]);
 
   const actionLabel = getActionLabel(modalState, t);
   const submitLabel = getSubmitLabel(modalState, t);
@@ -265,6 +282,7 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
           notify: toastMessage,
         })
       ) {
+        openSingleTranslateCreditsModal(remaining);
         return;
       }
       setOpen(true);
@@ -287,6 +305,7 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
         notify: toastMessage,
       })
     ) {
+      openSingleTranslateCreditsModal(currentRemainingCredits);
       closeModal();
       return;
     }
