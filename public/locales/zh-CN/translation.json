@@ -1074,7 +1074,7 @@
   "v4.error.invalidId": "操作对象无效或已失效",
   "v4.error.invalidRequest": "请求参数无效",
   "v4.error.languagePublishFailed": "更新语言发布设置失败，请稍后重试",
-  "v4.error.languagePublishPartialFailed": "部分域名发布失败，请检查各域名的发布状态",
+  "v4.error.languagePublishPartialFailed": "语言发布状态已保存，但部分域名未能更新，请检查各域名的发布状态",
   "v4.error.liquidDeleteFailed": "删除 Liquid 规则失败",
   "v4.error.liquidDuplicateRule": "已存在相同原文的 Liquid 规则",
   "v4.error.liquidIdRequired": "缺少 Liquid 规则标识",

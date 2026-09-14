@@ -1043,22 +1043,9 @@ const Index = () => {
       width: "10%",
       render: (_: any, record: any) => (
         <Switch
-          checked={
-            record.published &&
-            markets?.some((item) => {
-              // console.log("item: ", item);
-              // console.log("record: ", record);
-
-              return (
-                Object.keys(item.domain).some((key) => {
-                  // 检查 domain[key] 数组中是否包含 record?.locale
-                  return item.domain[key].includes(record?.locale);
-                }) || item.defaultLocale == record?.locale
-              );
-            })
-          }
+          checked={Boolean(record.published)}
           onChange={(checked) => handlePublishChange(record.locale, checked)}
-          loading={record.publishLoading} // 使用每个项的 loading 状态
+          loading={record.publishLoading}
         />
       ),
     },
@@ -1605,10 +1592,11 @@ const Index = () => {
                             label: t("Publish"),
                             value: (
                               <Switch
-                                checked={item.published}
+                                checked={Boolean(item.published)}
                                 onChange={(checked) =>
                                   handlePublishChange(item.locale, checked)
                                 }
+                                loading={item.publishLoading}
                               />
                             ),
                           },

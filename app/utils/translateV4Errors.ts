@@ -287,7 +287,7 @@ const TRANSLATE_V4_ERROR_DEFINITIONS: Record<
     errorMsg: "LANGUAGE_PUBLISH_PARTIAL_FAILED",
     i18nKey: "v4.error.languagePublishPartialFailed",
     defaultMessage:
-      "Some domains could not be updated. Please review the publish status.",
+      "Language publish status was saved, but some domains could not be updated. Please review each domain.",
     status: 500,
   },
   LANGUAGE_PUBLISH_FAILED: {

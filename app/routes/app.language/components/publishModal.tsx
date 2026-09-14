@@ -1,7 +1,14 @@
 import { useFetcher } from "@remix-run/react";
 import { Alert, Flex, Space, Switch, Table, Typography } from "antd";
 import { AppSModal } from "~/ui/components/AppSModal";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useDispatch, useSelector } from "react-redux";
 import type { LanguagesDataType, MarketType } from "../route";
@@ -22,6 +29,7 @@ const { Text } = Typography;
 interface MarketDataType {
   key: string;
   domain: string;
+  defaultLocale?: string;
   originalPublishStatus: boolean;
   published: boolean;
 }
@@ -29,9 +37,73 @@ interface MarketDataType {
 interface PublishModalProps {
   publishLangaugeCode: string;
   markets: MarketType[];
-  setMarkets: (e: MarketType[]) => void;
+  setMarkets: Dispatch<SetStateAction<MarketType[]>>;
   isVisible: boolean;
   setIsModalOpen: (visible: boolean) => void;
+}
+
+function mergeWebPresenceUpdates(
+  current: MarketType[],
+  webPresenceUpdate: any[],
+): MarketType[] {
+  if (!webPresenceUpdate?.length) return current;
+  const updatedMarkets = [...current];
+
+  for (const market of webPresenceUpdate) {
+    const webpresenceId =
+      market?.value?.data?.webPresenceUpdate?.webPresence?.id;
+    const defaultLocale =
+      market?.value?.data?.webPresenceUpdate?.webPresence?.defaultLocale
+        ?.locale;
+    const host =
+      market?.value?.data?.webPresenceUpdate?.webPresence?.domain?.host;
+    const locales =
+      market?.value?.data?.webPresenceUpdate?.webPresence?.domain?.localization
+        ?.alternateLocales;
+
+    if (!webpresenceId || !locales || !host) continue;
+
+    const existingIndex = updatedMarkets.findIndex(
+      (m) => m.key === webpresenceId,
+    );
+    if (existingIndex >= 0) {
+      updatedMarkets[existingIndex] = {
+        ...updatedMarkets[existingIndex],
+        domain: {
+          ...updatedMarkets[existingIndex].domain,
+          [host]: locales,
+        },
+      };
+    } else {
+      updatedMarkets.push({
+        key: webpresenceId,
+        defaultLocale,
+        domain: { [host]: locales },
+      });
+    }
+  }
+
+  return updatedMarkets;
+}
+
+function joinPublishAlert(base: string, userErrors?: string[]): string {
+  const detail = (userErrors ?? []).filter(Boolean).join(" ");
+  return detail ? `${base} ${detail}` : base;
+}
+
+function buildDomainRows(
+  marketRows: MarketType[],
+  locale: string,
+): MarketDataType[] {
+  return marketRows.flatMap((market) =>
+    Object.entries(market.domain).map(([host, locales]) => ({
+      key: market.key,
+      defaultLocale: market.defaultLocale,
+      domain: host,
+      originalPublishStatus: (locales as string[]).includes(locale),
+      published: (locales as string[]).includes(locale),
+    })),
+  );
 }
 
 const PublishModal: React.FC<PublishModalProps> = ({
@@ -50,6 +122,7 @@ const PublishModal: React.FC<PublishModalProps> = ({
 
   const [published, setPublished] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<MarketDataType[]>([]);
+  const [domainSyncKey, setDomainSyncKey] = useState(0);
   const [modalAlert, setModalAlert] = useState<{
     type: "warning" | "error";
     message: string;
@@ -61,6 +134,7 @@ const PublishModal: React.FC<PublishModalProps> = ({
   const publishFetcher = useFetcher<any>();
   const { consume: consumePublishResponse, reset: resetPublishResponse } =
     useConsumableFetcherData<any>();
+  const wasVisibleRef = useRef(false);
   const handleCloseModal = () => {
     setModalAlert(null);
     setIsModalOpen(false);
@@ -79,144 +153,80 @@ const PublishModal: React.FC<PublishModalProps> = ({
       }),
     );
 
-    if (data?.success) {
-      const errorMsg = data?.errorMsg;
-      const shopLocaleUpdate = data?.response?.shopLocaleUpdate;
-      const webPresenceUpdate = data?.response?.webPresenceUpdate;
+    const shopLocaleUpdate = data?.response?.shopLocaleUpdate ?? [];
+    const webPresenceUpdate = data?.response?.webPresenceUpdate ?? [];
+    const userErrors = data?.response?.userErrors ?? [];
+    const shopLocale =
+      shopLocaleUpdate?.[0]?.value?.data?.shopLocaleUpdate?.shopLocale;
 
-      if (webPresenceUpdate?.length) {
-        const updatedMarkets = [...markets];
+    if (webPresenceUpdate.length) {
+      setMarkets((current) =>
+        mergeWebPresenceUpdates(current, webPresenceUpdate),
+      );
+    }
+    setDomainSyncKey((key) => key + 1);
 
-        webPresenceUpdate?.forEach((market: any) => {
-          const webpresenceId =
-            market?.value?.data?.webPresenceUpdate?.webPresence?.id;
-          const defaultLocale =
-            market?.value?.data?.webPresenceUpdate?.webPresence?.defaultLocale
-              ?.locale;
-          const host =
-            market?.value?.data?.webPresenceUpdate?.webPresence?.domain?.host;
-          const locales =
-            market?.value?.data?.webPresenceUpdate?.webPresence?.domain
-              ?.localization?.alternateLocales;
+    if (shopLocale) {
+      dispatch(
+        setPublishState({
+          locale: shopLocale.locale,
+          published: shopLocale.published,
+        }),
+      );
+      setPublished(Boolean(shopLocale.published));
+      fetcher.submit(
+        {
+          log: `${globalStore?.shop} ${
+            shopLocale.published ? "发布" : "取消发布"
+          }语言${shopLocale.locale}`,
+        },
+        {
+          method: "POST",
+          action: "/log",
+        },
+      );
+    }
 
-          if (webpresenceId && locales && host) {
-            const existingIndex = updatedMarkets.findIndex(
-              (m) => m.key === webpresenceId,
-            );
-
-            if (existingIndex >= 0) {
-              updatedMarkets[existingIndex] = {
-                ...updatedMarkets[existingIndex],
-                domain: {
-                  ...updatedMarkets[existingIndex].domain,
-                  [host]: locales,
-                },
-              };
-            } else {
-              updatedMarkets.push({
-                key: webpresenceId,
-                defaultLocale,
-                domain: {
-                  [host]: locales,
-                },
-              });
-            }
-          }
-        });
-
-        setMarkets(updatedMarkets);
-      }
-
-      if (shopLocaleUpdate?.length) {
-        const shopLocale =
-          shopLocaleUpdate[0]?.value?.data?.shopLocaleUpdate?.shopLocale;
-        if (shopLocale) {
-          dispatch(
-            setPublishLoadingState({
-              locale: shopLocale.locale,
-              loading: false,
-            }),
-          );
-          dispatch(
-            setPublishState({
-              locale: shopLocale.locale,
-              published: shopLocale.published,
-            }),
-          );
-          if (published) {
-            fetcher.submit(
-              {
-                log: `${globalStore?.shop} 发布语言${shopLocale?.locale}`,
-              },
-              {
-                method: "POST",
-                action: "/log",
-              },
-            );
-          } else {
-            fetcher.submit(
-              {
-                log: `${globalStore?.shop} 取消发布语言${shopLocale?.locale}`,
-              },
-              {
-                method: "POST",
-                action: "/log",
-              },
-            );
-          }
-        }
-      }
-      if (errorMsg) {
-        setModalAlert({
-          type: "warning",
-          message: getTranslateV4ErrorMessage(
-            t,
-            errorMsg,
-            TRANSLATE_V4_ERROR_KEYS.LANGUAGE_PUBLISH_PARTIAL_FAILED,
-          ),
-        });
-        return;
-      }
-
+    if (data?.success && !data?.errorMsg) {
       setModalAlert(null);
       shopify.toast.show(t("Save successfully"));
       setIsModalOpen(false);
       return;
     }
+
+    const fallbackKey = data?.success
+      ? TRANSLATE_V4_ERROR_KEYS.LANGUAGE_PUBLISH_PARTIAL_FAILED
+      : TRANSLATE_V4_ERROR_KEYS.LANGUAGE_PUBLISH_FAILED;
     setModalAlert({
-      type: "error",
-      message: getTranslateV4ErrorMessage(
-        t,
-        data?.errorMsg,
-        TRANSLATE_V4_ERROR_KEYS.LANGUAGE_PUBLISH_FAILED,
+      type: data?.success ? "warning" : "error",
+      message: joinPublishAlert(
+        getTranslateV4ErrorMessage(t, data?.errorMsg, fallbackKey),
+        userErrors,
       ),
     });
   }, [
     consumePublishResponse,
     dispatch,
+    fetcher,
     publishFetcher.data,
     publishLangaugeCode,
+    setIsModalOpen,
+    setMarkets,
     t,
   ]);
 
   useEffect(() => {
     if (!publishLangaugeCode) return;
-    setDataSource(
-      markets.flatMap((market) =>
-        Object.entries(market.domain).map(([host, locales]) => ({
-          key: market.key,
-          defaultLocale: market.defaultLocale,
-          domain: host,
-          originalPublishStatus: (locales as string[]).includes(
-            publishLangaugeCode,
-          ),
-          published: (locales as string[]).includes(publishLangaugeCode),
-        })),
-      ),
-    );
-    setPublished(selectedLanguage?.published || false);
+    setDataSource(buildDomainRows(markets, publishLangaugeCode));
+  }, [markets, publishLangaugeCode, domainSyncKey]);
+
+  useEffect(() => {
+    const justOpened = isVisible && !wasVisibleRef.current;
+    wasVisibleRef.current = isVisible;
+    if (!justOpened || !publishLangaugeCode) return;
+    setPublished(Boolean(selectedLanguage?.published));
     setModalAlert(null);
-  }, [markets, publishLangaugeCode, isVisible]);
+  }, [isVisible, publishLangaugeCode, selectedLanguage?.published]);
 
   const columns = [
     {
@@ -257,7 +267,6 @@ const PublishModal: React.FC<PublishModalProps> = ({
     resetPublishResponse();
     setModalAlert(null);
     let publishInfo = null;
-    let webPresencesData = null;
     if (selectedLanguage) {
       if (selectedLanguage.published != published) {
         publishInfo = {
@@ -267,33 +276,27 @@ const PublishModal: React.FC<PublishModalProps> = ({
       }
     }
 
-    webPresencesData = dataSource.map((item) => {
-      // 找到对应的 market
-      const market = markets.find((m) => m.key === item.key);
-      // 找到 domain 的 value（数组）
-      let locales: string[] = [];
-      if (market) {
-        // 取出 domain 的第一个键值对（因为你的结构是 { [host]: string[] }，通常只有一个 host）
-        const domainLocales = Object.values(market.domain)[0] || [];
-        locales = [...domainLocales];
-      }
-      if (item.published) {
-        // published 为 true，确保 languageCode 存在且去重
-        if (!locales.includes(publishLangaugeCode)) {
-          locales.push(publishLangaugeCode);
+    const webPresencesData = dataSource
+      .filter((item) => item.originalPublishStatus !== item.published)
+      .map((item) => {
+        const market = markets.find((m) => m.key === item.key);
+        let locales: string[] = market
+          ? [...(Object.values(market.domain)[0] || [])]
+          : [];
+        if (item.published) {
+          if (!locales.includes(publishLangaugeCode)) {
+            locales.push(publishLangaugeCode);
+          }
+          locales = Array.from(new Set(locales));
+        } else {
+          locales = locales.filter((l) => l !== publishLangaugeCode);
         }
-        // 去重（其实上面已保证唯一，但更保险）
-        locales = Array.from(new Set(locales));
-      } else {
-        // published 为 false，确保 languageCode 不存在
-        locales = locales.filter((l) => l !== publishLangaugeCode);
-      }
-      return {
-        id: item.key,
-        alternateLocales: locales,
-        publishedCode: publishLangaugeCode,
-      };
-    });
+        return {
+          id: item.key,
+          alternateLocales: locales,
+          publishedCode: publishLangaugeCode,
+        };
+      });
 
     publishFetcher.submit(
       {
