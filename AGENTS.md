@@ -110,6 +110,7 @@ make a focused build/type check more useful for small changes.
 - `npm run turso:migrate:test` / `npm run turso:migrate:prod`: run Turso migrations.
 - `npm run deployTest` / `npm run deployProd`: Shopify app deploy with matching config.
 - `npm run push:pr`: commit (skips secrets) → push → create/reuse PR (`PR_URL:`).
+- `npm run rebase:pr`: squash relative-to-master commits, rewrite Chinese title/body, force-push (`PR_URL:`).
 - `npm run merge:deploy:test`: squash-merge current PR to master, then trigger
 test web + worker deploy (`MERGED_PR_URL:`, `DEPLOY_RUN_URL:`).
 
@@ -1370,6 +1371,7 @@ corresponding script without asking for confirmation:
 | User says                                             | Action                                                                                        |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | "提个pr" / "提pr" / "创建PR" / "push and create PR"        | Run `npm run push:pr`（或 `npm run push:pr -- --message "说明"`）                                  |
+| "rebase" / "压一下提交" / "整理 commit" / "rebase pr"        | 按 `origin/master...HEAD` 写中文标题/摘要后跑 `npm run rebase:pr`（见 `.cursor/rules/cursor-rebase-pr.mdc`） |
 | "合入PR然后发布测试环境" / "合入pr发布测试" / "merge and deploy test" | Run `npm run merge:deploy:test`                                                               |
 | "发布测试环境" / "deploy test" (单独发布，不合入PR)                 | 触发 `tsf-deploy.yml` workflow on master，参数 `render_service_test=true, render_worker_test=true` |
 | "审计店面多语言" / "storefront locale audit"                 | Cursor browser 发现语言并切 locale → `node scripts/storefront-locale-audit.mjs` 落盘（见 Scripts） |
@@ -1446,6 +1448,7 @@ Package-backed root scripts:
  target 的旧 `TURSO_{TEST|PROD}_*`）。
 - `scripts/cursor-push-pr.mjs`: `npm run push:pr` — commit（跳过敏感文件）→ push → 创建 PR；
 成功输出 `PR_URL:`。
+- `scripts/cursor-rebase-pr.mjs`: `npm run rebase:pr` — 按相对 master 的 diff 压成一条中文 commit，改 PR 标题/摘要，`--force-with-lease` 推送；`--message-file` / `--body-file` 避免换行被吃掉。
 - `scripts/merge-deploy-test.mjs`: `npm run merge:deploy:test` — 合入当前分支 PR 并触发
 TSF Web Test + Worker Test 部署；成功输出 `MERGED_PR_URL:` 与 `DEPLOY_RUN_URL:`。
 

@@ -1,0 +1,35 @@
+---
+description: UI token 与共享组件约定；改 UI 或新增组件前必读
+alwaysApply: true
+---
+
+# UI 风格系统
+
+改任何 UI、或新增任何组件之前，按这个顺序找东西：
+
+1. **token**：`app/ui/tokens.ts`（`appColors` / `appAccents` / `appFontSizes` /
+   `appSpace` / `appRadius` / `appShadows`），值指向 `app/styles.css` 的 `--app-*`
+   CSS 变量。
+2. **现成组件**：`app/ui/components/index.ts` —— `AppButton`、`AppSectionCard`、
+   `AppPageHeader`、`AppStatusBadge`、`AppPill`、`AppMetricTile`、
+   `AppMobileListCard`。
+3. **可视化清单**：`/app/ui-library-demo`（仅非生产环境），同时演示组件规范、
+   页面骨架规范和设计 token。
+
+## 必须
+
+- inline style 的颜色/字号/圆角/间距从 `app/ui/tokens.ts` 取。
+- 新组件若会被多处复用，放 `app/ui/components/` 并在 barrel 导出。
+- demo 页 import 真实组件；不要在 demo 里复刻样式，否则会和真实 UI 漂移。
+- 商户可见文案走 i18n（`public/locales/{en,zh-CN}/translation.json`）。
+
+## 禁止
+
+- 写死十六进制色值。ESLint 在 `app/ui/**` 报 error、其它 UI 目录报 warning。
+  确有例外（店面可配色值、token 定义、图标默认色）时加
+  `// eslint-disable-next-line no-restricted-syntax` 并写原因。
+- 造第二套 UI kit。Polaris 是基线，Ant Design 只用于表格/图表/高密度控件。
+- 未经要求就全量重写存量页面；按「碰到就改」推进。
+
+同时生效：`.cursor/rules/polaris-dropdowns.mdc`（下拉选型）与 `AGENTS.md`
+「UI Standards」。

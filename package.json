@@ -22,6 +22,7 @@
     "turso:migrate:test": "node scripts/turso-migrate.cjs test",
     "turso:migrate:prod": "node scripts/turso-migrate.cjs prod",
     "push:pr": "node scripts/cursor-push-pr.mjs",
+    "rebase:pr": "node scripts/cursor-rebase-pr.mjs",
     "merge:deploy:test": "node scripts/merge-deploy-test.mjs",
     "worker:build": "npm run build --prefix worker",
     "worker:dev": "npm run dev --prefix worker",

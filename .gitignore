@@ -36,6 +36,6 @@ app/generated/
 /packages/translation-core/.build/
 /packages/translation-core/dist/
 .agents/
-.cursor/
+.cursor/settings.json
 
 
