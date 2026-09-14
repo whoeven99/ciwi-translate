@@ -938,6 +938,7 @@
   "v4.create.networkError": "Network error",
   "v4.create.noCreditsPricing": "Your free trial has already been used. Subscribe to a paid plan to restore monthly credits and continue creating translation tasks.",
   "v4.create.noCreditsTrial": "No credits left. Start your 5-day free trial",
+  "v4.create.insufficientCredits": "Not enough credits to start this task.",
   "v4.create.partialSuccess": "Created {{created}}, failed {{failed}}",
   "v4.create.quotaCheckPending": "Checking your trial eligibility. Please try again in a moment.",
   "v4.create.quotaUnavailable": "Unable to verify your credits. Please try again in a moment.",

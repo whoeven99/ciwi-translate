@@ -938,6 +938,7 @@
   "v4.create.networkError": "网络错误",
   "v4.create.noCreditsPricing": "你的免费试用已用完。请订阅付费套餐以恢复每月积分，并继续创建翻译任务。",
   "v4.create.noCreditsTrial": "积分已用完，立即开启 5 天免费试用",
+  "v4.create.insufficientCredits": "积分不足，无法开始此任务。",
   "v4.create.partialSuccess": "已创建 {{created}} 个，失败 {{failed}} 个",
   "v4.create.quotaCheckPending": "正在检查你的试用资格，请稍后再试。",
   "v4.create.quotaUnavailable": "暂时无法校验你的积分，请稍后再试。",
