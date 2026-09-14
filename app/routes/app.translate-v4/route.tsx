@@ -28,7 +28,10 @@ import {
 } from "~/lib/createTranslateV4Tasks";
 import type { loader as appLoader } from "~/routes/app";
 import { normalizeShopQuota } from "~/lib/translationQuota";
-import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import {
+  notifyIfCreateTaskBlockedByCredits,
+  shouldBlockCreateTaskByCredits,
+} from "~/lib/createTranslateQuotaGuard";
 import {
   AI_MODEL_OPTIONS,
   CREATE_TASK_MODULE_OPTIONS,
@@ -563,6 +566,16 @@ export default function AppTranslateV4() {
     setIsCover(draft.isCover);
     setIsHandle(draft.isHandle);
     setActiveWorkbenchTab("create");
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      void refreshQuota();
+      return;
+    }
     setCreateConfirmOpen(true);
     void refreshQuota();
     message.info(t("v4.create.draftRestored"));
@@ -575,6 +588,7 @@ export default function AppTranslateV4() {
     shop,
     t,
     targetOptions,
+    remainingCredits,
   ]);
 
   const handleCreateConfirm = useCallback(async () => {
@@ -584,15 +598,21 @@ export default function AppTranslateV4() {
       );
       return;
     }
-    if (createQuotaGateMode !== null) return;
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits: normalizedQuota?.remaining ?? null,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
+      return;
+    }
 
     setCreateConfirmOpen(false);
     const remainingCredits = normalizedQuota?.remaining ?? null;
     if (remainingCredits == null) {
       message.info(t("v4.create.quotaUnavailable"));
-      return;
-    }
-    if (shouldBlockCreateTaskByCredits({ remainingCredits })) {
       return;
     }
 
@@ -702,7 +722,6 @@ export default function AppTranslateV4() {
     refreshQuota,
     normalizedQuota,
     t,
-    createQuotaGateMode,
     createQuotaGatePending,
   ]);
 
@@ -819,12 +838,27 @@ export default function AppTranslateV4() {
       );
       return;
     }
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      return;
+    }
     if (shouldSkipCreateConfirm) {
       void handleCreateConfirm();
       return;
     }
     setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, handleCreateConfirm, shouldSkipCreateConfirm, t]);
+  }, [
+    createQuotaGatePending,
+    handleCreateConfirm,
+    remainingCredits,
+    shouldSkipCreateConfirm,
+    t,
+  ]);
 
   useEffect(() => {
     if (spotlightTaskIds.length === 0) return;

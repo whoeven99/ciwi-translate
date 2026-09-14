@@ -60,7 +60,10 @@ import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
-import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import {
+  notifyIfCreateTaskBlockedByCredits,
+  shouldBlockCreateTaskByCredits,
+} from "~/lib/createTranslateQuotaGuard";
 import { normalizeShopQuota, type ShopQuota } from "~/lib/translationQuota";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 import {
@@ -960,6 +963,15 @@ export default function TranslateV4MvpRoute() {
       message.info(t("v4.create.quotaUnavailable"));
       return;
     }
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      return;
+    }
 
     const cachedCredits = recommendationEstimates[item.id];
     const hasCachedCredits =
@@ -1099,7 +1111,16 @@ export default function TranslateV4MvpRoute() {
       );
       return;
     }
-    if (createQuotaGateMode !== null) return;
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmConfig(null);
+      return;
+    }
     if (remainingCredits == null) {
       message.info(t("v4.create.quotaUnavailable"));
       return;
@@ -1135,7 +1156,6 @@ export default function TranslateV4MvpRoute() {
     }
   }, [
     createConfirmConfig,
-    createQuotaGateMode,
     createQuotaGatePending,
     createTasksWithConfig,
     remainingCredits,

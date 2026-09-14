@@ -87,7 +87,10 @@ import {
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
 import { normalizeShopQuota } from "~/lib/translationQuota";
-import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import {
+  notifyIfCreateTaskBlockedByCredits,
+  shouldBlockCreateTaskByCredits,
+} from "~/lib/createTranslateQuotaGuard";
 import type { ShopQuota } from "~/lib/translationQuota";
 import {
   AI_MODEL_OPTIONS,
@@ -1130,9 +1133,18 @@ const Index = () => {
       );
       return;
     }
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      return;
+    }
     setTranslateModalOpen(false);
     setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, t]);
+  }, [createQuotaGatePending, remainingCredits, t]);
 
   const handleCreateConfirm = useCallback(async () => {
     if (!source?.code) {
@@ -1145,13 +1157,32 @@ const Index = () => {
       );
       return;
     }
-    if (createQuotaGateMode !== null) return;
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
+      return;
+    }
 
     const freshQuota = await refreshQuota();
     const remaining =
       freshQuota?.remainingCredits ?? remainingCredits;
     if (remaining == null) {
       message.info(t("v4.create.quotaUnavailable"));
+      return;
+    }
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits: remaining,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
       return;
     }
 
@@ -1194,7 +1225,7 @@ const Index = () => {
             return;
           }
           await refreshQuota();
-          setCreateConfirmOpen(true);
+          message.warning(t("v4.create.insufficientCredits"));
           return;
         }
         message.error(summary);
@@ -1221,7 +1252,6 @@ const Index = () => {
       setTranslateCreating(false);
     }
   }, [
-    createQuotaGateMode,
     createQuotaGatePending,
     isNew,
     navigate,
@@ -1276,6 +1306,16 @@ const Index = () => {
     setTranslateIsCover(draft.isCover);
     setTranslateIsHandle(draft.isHandle);
     if (restoredTargets.length > 0) {
+      if (
+        notifyIfCreateTaskBlockedByCredits({
+          remainingCredits,
+          t,
+          notify: message.warning,
+        })
+      ) {
+        void refreshQuota();
+        return;
+      }
       setCreateConfirmOpen(true);
       void refreshQuota();
       message.info(t("v4.create.draftRestored"));
@@ -1290,6 +1330,7 @@ const Index = () => {
     shop,
     t,
     targetOptions,
+    remainingCredits,
   ]);
 
   const navigateToManage = (selectedLanguageCode: string) => {

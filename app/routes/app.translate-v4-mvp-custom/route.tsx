@@ -33,7 +33,10 @@ import {
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
 import { normalizeShopQuota, type ShopQuota } from "~/lib/translationQuota";
-import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import {
+  notifyIfCreateTaskBlockedByCredits,
+  shouldBlockCreateTaskByCredits,
+} from "~/lib/createTranslateQuotaGuard";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 import { buildCreateTaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
 import {
@@ -283,6 +286,16 @@ export default function TranslateV4MvpCustomRoute() {
     setAiModel(restoredModel);
     setIsCover(draft.isCover);
     setIsHandle(draft.isHandle);
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      void refreshQuota();
+      return;
+    }
     setCreateConfirmOpen(true);
     void refreshQuota();
     message.info(t("v4.create.draftRestored"));
@@ -295,6 +308,7 @@ export default function TranslateV4MvpCustomRoute() {
     shop,
     t,
     targetOptions,
+    remainingCredits,
   ]);
 
   const handleCreateConfirm = useCallback(async () => {
@@ -304,7 +318,16 @@ export default function TranslateV4MvpCustomRoute() {
       );
       return;
     }
-    if (createQuotaGateMode !== null) return;
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
+      return;
+    }
     if (remainingCredits == null) {
       message.info(t("v4.create.quotaUnavailable"));
       return;
@@ -357,7 +380,6 @@ export default function TranslateV4MvpCustomRoute() {
     }
   }, [
     aiModel,
-    createQuotaGateMode,
     createQuotaGatePending,
     includeLiquid,
     isCover,
@@ -379,8 +401,17 @@ export default function TranslateV4MvpCustomRoute() {
       );
       return;
     }
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      return;
+    }
     setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, t]);
+  }, [createQuotaGatePending, remainingCredits, t]);
 
   return (
     <Page>
