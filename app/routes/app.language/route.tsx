@@ -581,7 +581,7 @@ const Index = () => {
     | "insufficient_paid"
     | "insufficient_trial"
     | "insufficient_pricing" =
-    taskEstimate.needsMoreCredits
+    createShouldGateByCredits
       ? hasPaidPlan
         ? "insufficient_paid"
         : createQuotaGateMode === "trial"
@@ -1133,13 +1133,9 @@ const Index = () => {
       );
       return;
     }
-    if (
-      notifyIfCreateTaskBlockedByCredits({
-        remainingCredits,
-        t,
-        notify: message.warning,
-      })
-    ) {
+    if (shouldBlockCreateTaskByCredits({ remainingCredits })) {
+      setTranslateModalOpen(false);
+      setCreateConfirmOpen(true);
       return;
     }
     setTranslateModalOpen(false);
@@ -1306,16 +1302,6 @@ const Index = () => {
     setTranslateIsCover(draft.isCover);
     setTranslateIsHandle(draft.isHandle);
     if (restoredTargets.length > 0) {
-      if (
-        notifyIfCreateTaskBlockedByCredits({
-          remainingCredits,
-          t,
-          notify: message.warning,
-        })
-      ) {
-        void refreshQuota();
-        return;
-      }
       setCreateConfirmOpen(true);
       void refreshQuota();
       message.info(t("v4.create.draftRestored"));

@@ -566,16 +566,6 @@ export default function AppTranslateV4() {
     setIsCover(draft.isCover);
     setIsHandle(draft.isHandle);
     setActiveWorkbenchTab("create");
-    if (
-      notifyIfCreateTaskBlockedByCredits({
-        remainingCredits,
-        t,
-        notify: message.warning,
-      })
-    ) {
-      void refreshQuota();
-      return;
-    }
     setCreateConfirmOpen(true);
     void refreshQuota();
     message.info(t("v4.create.draftRestored"));
@@ -822,7 +812,7 @@ export default function AppTranslateV4() {
     | "insufficient_paid"
     | "insufficient_trial"
     | "insufficient_pricing" =
-    taskEstimate.needsMoreCredits
+    createShouldGateByCredits
       ? hasPaidPlan
         ? "insufficient_paid"
         : createQuotaGateMode === "trial"
@@ -838,13 +828,8 @@ export default function AppTranslateV4() {
       );
       return;
     }
-    if (
-      notifyIfCreateTaskBlockedByCredits({
-        remainingCredits,
-        t,
-        notify: message.warning,
-      })
-    ) {
+    if (shouldBlockCreateTaskByCredits({ remainingCredits })) {
+      setCreateConfirmOpen(true);
       return;
     }
     if (shouldSkipCreateConfirm) {
