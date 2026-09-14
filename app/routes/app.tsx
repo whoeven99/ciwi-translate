@@ -172,7 +172,7 @@ async function runAppInitialization({
     // 确保 TSF 账户存在；新 TSF 用户只建账户，不在安装时发放试用额度。
     const binding = await resolveBillingBinding(shop);
     console.info(
-      `${initLog} billing-resolved shop=${shop} bound=${binding.bound} persisted=${binding.persisted}`,
+      `${initLog} billing-resolved shop=${shop} bound=${binding.bound} restored=${binding.restored} persisted=${binding.persisted}`,
     );
     scheduleTsfWelcomeEmail(binding, shop, "app-loader-init");
     scheduleFirstInstallFeishuNotify(binding, shop);

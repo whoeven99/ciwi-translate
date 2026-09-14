@@ -78,6 +78,14 @@ export function shouldAutoDismissSetupGuide(state: SetupGuideState): boolean {
   );
 }
 
+/**
+ * 首页 Setup Guide 资格：全页 onboarding 已 skip/complete 的老店不展示。
+ * 不看 firstEnteredAt——打开过 `/app/onboarding` 仍应能看到首页卡。
+ */
+export function isSetupGuideEligibleRow(row: { status: string }): boolean {
+  return row.status !== "skipped" && row.status !== "completed";
+}
+
 /** 首页是否挂载 Setup Guide：默认不渲染，确认仍是资格新人后再出现。 */
 export function shouldRenderSetupGuide(input: {
   eligible: boolean;

@@ -165,7 +165,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
-  if (String(formData.get("intent") ?? "") !== "setup-guide-complete") {
+  const intent = String(formData.get("intent") ?? "");
+  if (intent !== "setup-guide-complete" && intent !== "setup-guide-dismiss") {
     return json({ ok: false }, { status: 400 });
   }
   await persistSetupGuideDismissed(session.shop);
@@ -745,7 +746,13 @@ export default function TranslateV4MvpRoute() {
   ]);
   const handleDismissSetupGuide = useCallback(() => {
     setGuideDismissed(true);
-  }, []);
+    if (setupGuidePersistRef.current) return;
+    setupGuidePersistRef.current = true;
+    setupGuideFetcher.submit(
+      { intent: "setup-guide-dismiss" },
+      { method: "post" },
+    );
+  }, [setupGuideFetcher]);
   const handleSetupGuideOpenCustom = useCallback(() => {
     setHasOpenedCreateFlow(true);
     navigate(

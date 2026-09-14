@@ -253,7 +253,7 @@ without `shop` 302s to the App Store listing (no extra login form).
 ### Main Pages
 
 - `/app`: `app/routes/app._index/route.tsx` 重定向到 `/app/translate-v4-mvp`（`getTranslatePagePath()` 同指向 MVP）。
-- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：Polaris 折叠 Setup Guide（BFS 4.2.2；批量翻译 / 术语表 / 第三方 Liquid；默认不渲染，仅首次建 Account 打标的新人才展示；三项都勾完才写 `setupGuideDismissedAt` 永久关闭；X 只藏本次访问）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。
+- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：Setup Guide（BFS 4.2.2；批量翻译 / 术语表 / 第三方 Liquid；三项默认展开；首次建 Account 或卸载重装打标后展示；点 X 或三项勾完写 `setupGuideDismissedAt` 永久关闭）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。
 - `/app/translate-v4-mvp-custom`: `app/routes/app.translate-v4-mvp-custom/route.tsx`（自定义语言/模块建任务）。
 - `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（全量工作台保留；只展示进行中 /
 暂停 / 失败任务，见 `jobFilters.ts` `isCurrentV4Job`）。
@@ -919,7 +919,8 @@ Currency changes often touch admin, App Proxy, and extension JS.
  需临时改扩展常量或单独分支后再 `deployTest`。
 - Constants: `app/lib/switcherConstants.ts`.
 - `ipOpen` is the live geolocation switch and is stored on Turso
-`SwitcherConfiguration`. The old `IpRedirection` table/model was dropped
+`SwitcherConfiguration`. Free 套餐锁定（BFS 4.3.7：开关 `disabled` + Paid 标记 + 升级链接；Basic+ 可开）。
+The old `IpRedirection` table/model was dropped
 (`prisma/migrations/20260713000000_drop_ip_redirection`). Do not assume the
 removed `api.translate-v4.ip-redirections` / `custom_redirects` path or the
 Prisma model still exist; design a new owner before reviving region-specific
@@ -1106,10 +1107,11 @@ throttle status.
 create-task 编排成一条「店铺理解 → 推荐 → 试用/建首个任务」路径。全部数据复用现有
 能力，任一数据源失败都降级，不阻塞继续；可跳过，跳过/完成后不再打断。
 
-BFS 4.2.2 首页 Setup Guide（Polaris 折叠清单）在 `/app/translate-v4-mvp`，与本全页引导
+BFS 4.2.2 首页 Setup Guide 在 `/app/translate-v4-mvp`，与本全页引导
 相互独立。三项：批量翻译、术语表、第三方 App（主题 embed + Custom Liquid）。默认不渲染；
-仅终身首次建 Account（`bound: true`）写入的 `ShopOnboarding` 才出现。有过 v4 任务只勾
-「批量翻译」，不卸卡；三项都勾完才写 `setupGuideDismissedAt` 永久关闭。X 只藏本次访问。
+仅终身首次建 Account（`bound: true`）或卸载后重装（Account `deletedAt` 恢复）写入/重置
+的 `ShopOnboarding` 才出现。有过 v4 任务只勾「批量翻译」，不卸卡；点 X 或三项都勾完
+都写 `setupGuideDismissedAt` 永久关闭（重装会清空）。三项默认展开。
 展开区为说明 + 未完成子步骤蓝链接（右侧 P0 留空）；批量翻译 / Liquid 链接进
 `/app/translate-v4-mvp-custom`；推荐卡片「立即翻译」仍走一键确认弹窗。
 
@@ -1308,7 +1310,7 @@ written on deduct (App) or quota flush (Worker).
 - `SupportConversation`, `SupportMessage`: support chat.
 - `ShopOnboarding`: 首次翻译新手引导状态（status/skipped/completed/试用/建首任务来源、
  推荐语言与模块快照、积分与耗时预估、来源 scan id）；`setupGuideDismissedAt` 在首页
- Setup Guide 三项都勾完时写入（永久关闭）。独立于 `Account.isNew`。
+ Setup Guide 点 X 或三项勾完时写入（永久关闭；卸载重装清空）。独立于 `Account.isNew`。
 - `UserPicture`: product/shop image translation metadata and translated image
 URLs used by admin pages and storefront App Proxy reads.
 
@@ -1391,7 +1393,7 @@ For "合入PR然后发布测试环境", the script will:
 | NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
 | 上下文保存栏离开拦截（BFS 4.1.5） | `app/hooks/useContextualSaveBar.ts`                   | `app/lib/saveBarNavigation.ts`、`app.switcher/route.tsx`、`AppSubpageTitleBar`                           |
 | 主题扩展状态 / BFS 4.2.3          | `app/lib/themeAppExtensions.ts`                       | mvp `ThemeExtensionStatusCard`、switcher `switcherSettingCard`、`shopify.app.extensions()`；打开主题编辑器用 `openSwitcherThemeEditor`（`_top`），不要用 Polaris `Button url`（会把 iframe 带到不可嵌入的 Admin） |
-| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldRenderSetupGuide`（默认不渲染；仅首次 Account 打标新人；三项齐才写 `setupGuideDismissedAt`）、`app/server/setupGuide.server.ts`；X 仅本次访问；推荐卡片「立即翻译」仍一键确认 |
+| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldRenderSetupGuide`（默认不渲染；首次 Account 或卸载重装打标；点 X / 三项齐写 `setupGuideDismissedAt`）、`app/server/setupGuide.server.ts`；推荐卡片「立即翻译」仍一键确认 |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
 | Language 页 Translate 确认      | `app/routes/app.language/route.tsx`                 | `CreateTaskConfirmModal` / `CreditsConfirmPanel` / `useCreateTaskEstimate`                               |

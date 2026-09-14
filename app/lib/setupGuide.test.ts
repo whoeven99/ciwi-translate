@@ -5,6 +5,7 @@ import {
   firstIncompleteSetupGuideTask,
   shouldAutoDismissSetupGuide,
   shouldRenderSetupGuide,
+  isSetupGuideEligibleRow,
   type SetupGuideInput,
 } from "./setupGuide.ts";
 
@@ -187,6 +188,19 @@ describe("shouldRenderSetupGuide", () => {
       }),
       false,
     );
+  });
+});
+
+describe("isSetupGuideEligibleRow", () => {
+  it("hides shops that skipped or completed full-page onboarding", () => {
+    assert.equal(isSetupGuideEligibleRow({ status: "skipped" }), false);
+    assert.equal(isSetupGuideEligibleRow({ status: "completed" }), false);
+  });
+
+  it("shows not_started and in-progress statuses even if onboarding was opened", () => {
+    assert.equal(isSetupGuideEligibleRow({ status: "not_started" }), true);
+    assert.equal(isSetupGuideEligibleRow({ status: "preparing" }), true);
+    assert.equal(isSetupGuideEligibleRow({ status: "recommended" }), true);
   });
 });
 

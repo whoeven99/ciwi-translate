@@ -1,15 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useState } from "react";
-import { Badge, Button, Collapsible, Icon, Link, Text } from "@shopify/polaris";
+import { Badge, Button, Icon, Link, Text } from "@shopify/polaris";
 import { CheckIcon, XIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { APP_NAV_ITEMS } from "~/lib/appNav";
-import {
-  firstIncompleteSetupGuideTask,
-  type SetupGuideState,
-  type SetupGuideTaskId,
-} from "~/lib/setupGuide";
+import type { SetupGuideState } from "~/lib/setupGuide";
 import { openSwitcherThemeEditor } from "~/lib/themeAppExtensions";
 import { appColors } from "~/ui/tokens";
 import { v4CardStyle } from "~/routes/app.translate-v4/v4Styles";
@@ -50,17 +45,13 @@ const taskListStyle: CSSProperties = {
   gap: 4,
 };
 
-const taskHeaderButtonStyle: CSSProperties = {
+const taskHeaderStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 8,
   width: "100%",
   margin: 0,
   padding: "8px 0",
-  border: "none",
-  background: "transparent",
-  cursor: "pointer",
-  textAlign: "left",
 };
 
 const expandedPanelStyle: CSSProperties = {
@@ -174,20 +165,6 @@ export function SetupGuideCard({
 }: SetupGuideCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [expandedId, setExpandedId] = useState<SetupGuideTaskId | null>(() =>
-    firstIncompleteSetupGuideTask(state),
-  );
-  const [userPicked, setUserPicked] = useState(false);
-
-  useEffect(() => {
-    if (userPicked) return;
-    setExpandedId(firstIncompleteSetupGuideTask(state));
-  }, [state, userPicked]);
-
-  const toggleTask = (id: SetupGuideTaskId) => {
-    setUserPicked(true);
-    setExpandedId((current) => (current === id ? null : id));
-  };
 
   const openThemeEditor = () => {
     if (themeEditorUrl) {
@@ -222,12 +199,9 @@ export function SetupGuideCard({
 
         <div style={taskListStyle}>
           <TaskBlock
-            id="setup-guide-translate"
             complete={state.translate.complete}
-            expanded={expandedId === "translate"}
             title={t("v4Mvp.setupGuide.translate.title")}
             description={t("v4Mvp.setupGuide.translate.description")}
-            onToggle={() => toggleTask("translate")}
           >
             <StepRow
               done={state.translate.steps.clickTranslate}
@@ -242,12 +216,9 @@ export function SetupGuideCard({
           </TaskBlock>
 
           <TaskBlock
-            id="setup-guide-glossary"
             complete={state.glossary.complete}
-            expanded={expandedId === "glossary"}
             title={t("v4Mvp.setupGuide.glossary.title")}
             description={t("v4Mvp.setupGuide.glossary.description")}
-            onToggle={() => toggleTask("glossary")}
           >
             <StepRow
               done={state.glossary.steps.addRule}
@@ -257,12 +228,9 @@ export function SetupGuideCard({
           </TaskBlock>
 
           <TaskBlock
-            id="setup-guide-third-party"
             complete={state.thirdParty.complete}
-            expanded={expandedId === "thirdParty"}
             title={t("v4Mvp.setupGuide.thirdParty.title")}
             description={t("v4Mvp.setupGuide.thirdParty.description")}
-            onToggle={() => toggleTask("thirdParty")}
           >
             <StepRow
               done={state.thirdParty.steps.themeEmbed}
@@ -282,47 +250,33 @@ export function SetupGuideCard({
 }
 
 function TaskBlock({
-  id,
   complete,
-  expanded,
   title,
   description,
-  onToggle,
   children,
 }: {
-  id: string;
   complete: boolean;
-  expanded: boolean;
   title: string;
   description: string;
-  onToggle: () => void;
   children: ReactNode;
 }) {
   return (
     <div>
-      <button
-        type="button"
-        style={taskHeaderButtonStyle}
-        aria-expanded={expanded}
-        aria-controls={id}
-        onClick={onToggle}
-      >
+      <div style={taskHeaderStyle}>
         <TaskStatusIcon complete={complete} />
-        <Text as="span" variant="headingSm">
+        <Text as="h3" variant="headingSm">
           {title}
         </Text>
-      </button>
-      <Collapsible open={expanded} id={id}>
-        <div style={expandedPanelStyle}>
-          <div style={expandedMainStyle}>
-            <Text as="p" variant="bodyMd" tone="subdued">
-              {description}
-            </Text>
-            {children}
-          </div>
-          <div style={expandedMediaStyle} aria-hidden />
+      </div>
+      <div style={expandedPanelStyle}>
+        <div style={expandedMainStyle}>
+          <Text as="p" variant="bodyMd" tone="subdued">
+            {description}
+          </Text>
+          {children}
         </div>
-      </Collapsible>
+        <div style={expandedMediaStyle} aria-hidden />
+      </div>
     </div>
   );
 }

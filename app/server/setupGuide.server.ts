@@ -3,6 +3,7 @@
  * 失败降级为不渲染，不阻塞首页。
  */
 import prisma from "~/db.server";
+import { isSetupGuideEligibleRow } from "~/lib/setupGuide";
 
 export type SetupGuideSnapshot = {
   eligible: boolean;
@@ -20,17 +21,6 @@ const EMPTY_SNAPSHOT: SetupGuideSnapshot = {
 
 /** 首次安装 Account 尚未落库 / 打标竞态窗口。 */
 const NEW_ACCOUNT_ELIGIBLE_MS = 15 * 60 * 1000;
-
-function isSetupGuideEligibleRow(row: {
-  status: string;
-  firstEnteredAt: Date | null;
-}): boolean {
-  return (
-    row.status !== "skipped" &&
-    row.status !== "completed" &&
-    row.firstEnteredAt == null
-  );
-}
 
 /** 终身首次建 Account 时打标；已有行不覆盖。 */
 export async function markSetupGuideEligible(shop: string): Promise<void> {
@@ -71,6 +61,25 @@ export async function persistSetupGuideDismissed(shop: string): Promise<void> {
   }
 }
 
+/** 卸载后重装：清永久关闭并恢复可展示资格（Account 从 deletedAt 恢复时调用）。 */
+export async function resetSetupGuideOnReinstall(shop: string): Promise<void> {
+  try {
+    await prisma.shopOnboarding.upsert({
+      where: { shop },
+      create: { shop, status: "not_started" },
+      update: {
+        status: "not_started",
+        firstEnteredAt: null,
+        skippedAt: null,
+        completedAt: null,
+        setupGuideDismissedAt: null,
+      },
+    });
+  } catch (err) {
+    console.error("[setup-guide] reset on reinstall failed:", err);
+  }
+}
+
 export async function loadSetupGuideSnapshot(
   shop: string,
 ): Promise<SetupGuideSnapshot> {
@@ -82,17 +91,20 @@ export async function loadSetupGuideSnapshot(
         where: { shop },
         select: {
           status: true,
-          firstEnteredAt: true,
           setupGuideDismissedAt: true,
         },
       }),
       prisma.account.findUnique({
         where: { shop },
-        select: { createdAt: true },
+        select: { createdAt: true, deletedAt: true },
       }),
     ]);
 
     let row = onboarding;
+    if (account?.deletedAt) {
+      await resetSetupGuideOnReinstall(shop);
+      row = { status: "not_started", setupGuideDismissedAt: null };
+    }
     if (!row && !account) {
       return {
         eligible: true,
@@ -107,7 +119,7 @@ export async function loadSetupGuideSnapshot(
       Date.now() - account.createdAt.getTime() < NEW_ACCOUNT_ELIGIBLE_MS
     ) {
       await markSetupGuideEligible(shop);
-      row = { status: "not_started", firstEnteredAt: null, setupGuideDismissedAt: null };
+      row = { status: "not_started", setupGuideDismissedAt: null };
     }
 
     const eligible = Boolean(row && isSetupGuideEligibleRow(row));
