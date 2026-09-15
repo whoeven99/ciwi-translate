@@ -891,7 +891,7 @@
   "v4.createTask.confirmTrialAndStart": "Commencer l'essai gratuit",
   "v4.createTask.confirmTrialFeatureCredits": "Crédits d'essai\n1,5M",
   "v4.createTask.confirmTrialFeatureModel": "1 500 000 crédits/mois",
-  "v4.createTask.confirmTrialFeatureSpeed": "4 000 000 de crédits",
+  "v4.createTask.confirmTrialFeatureSpeed": "1,000,000 credits (30-day trial)",
   "v4.createTask.confirmTrialOfferDesc": "L'essai gratuit conserve la configuration actuelle. Vous pouvez également ignorer l'essai et acheter des crédits directement.",
   "v4.createTask.confirmTrialOfferTitle": "Essai gratuit de 5 jours",
   "v4.createTask.confirmTrialSummary": "Vous n'êtes pas encore sur un forfait payant et l'essai gratuit est toujours disponible. Commencez l'essai pour continuer avec la configuration actuelle.",
@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Environ {{credits}} crédits nécessaires",
   "pricing.launchCredits": "+{{credits}} crédits de lancement (premier abonnement uniquement)",
   "pricing.launchCreditsRow": "Crédits de lancement (premier abonnement)",
-  "pricing.includesLaunchCredits": "Inclut {{credits}} crédits de lancement / d'essai",
   "pricing.migrate.button": "Transférer les crédits vers Spark",
   "pricing.migrate.title": "Transférer les crédits vers Spark",
   "pricing.migrate.help": "Seuls les crédits achetés non utilisés peuvent être transférés. L’usage consomme d’abord les crédits d’abonnement et de lancement/essai ; le reliquat occupe les crédits achetés et ne peut pas être transféré. Les crédits d’abonnement et de lancement/essai restent dans cette app. Cette action est irréversible.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Guide utilisateur",
   "pricing.compare.scrollHint": "Faites glisser pour voir tous les forfaits",
   "Shop Profile": "Profil de la boutique",
-  "Arrow": "Flèche"
+  "Arrow": "Flèche",
+  "customLiquid.noMatchingRules": "Aucune règle correspondante",
+  "customLiquid.searchPlaceholder": "Rechercher le texte source",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
+  "pricing.firstPayBonusRow": "Prime de premier versement (salaire de base uniquement ; pas pendant la période d'essai)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
+  "pricing.includesLaunchCredits": "Inclut {{credits}} crédits bonus / d'essai"
 }

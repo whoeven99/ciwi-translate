@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Приблизно {{credits}} кредитів потрібно",
   "pricing.launchCredits": "+{{credits}} стартових кредитів (лише при першій підписці)",
   "pricing.launchCreditsRow": "Стартові кредити (перша підписка)",
-  "pricing.includesLaunchCredits": "Включає {{credits}} стартових / пробних кредитів",
   "pricing.migrate.button": "Перенести кредити в Spark",
   "pricing.migrate.title": "Перенести кредити в Spark",
   "pricing.migrate.help": "Можна перенести лише невикористані куплені кредити. Використання спочатку списує кредити підписки та запуску/пробного періоду; залишок займає куплені кредити й не переноситься. Кредити підписки та запуску/пробного періоду лишаються в цьому застосунку. Цю дію не можна скасувати.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Посібник користувача",
   "pricing.compare.scrollHint": "Проведіть, щоб переглянути всі плани",
   "Shop Profile": "Профіль магазину",
-  "Arrow": "Стрілка"
+  "Arrow": "Стрілка",
+  "customLiquid.noMatchingRules": "Немає відповідних правил",
+  "customLiquid.searchPlaceholder": "Пошук вихідного тексту",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
+  "pricing.firstPayBonusRow": "Бонус за першу виплату (лише базовий; не під час пробного періоду)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
+  "pricing.includesLaunchCredits": "Включає бонусні / пробні кредити ({{credits}})"
 }

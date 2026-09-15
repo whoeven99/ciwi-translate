@@ -25,7 +25,7 @@ import {
 import { fetchShopContact } from "./shopEmail.js";
 import { sendSubscriptionRenewalEmail } from "./workerEmail.js";
 import { notifyLifetimeFirstSubscribeFeishu } from "./lifecycleFeishuNotify.js";
-import { grantLaunchCreditsIfEligible } from "./grantLaunchCredits.js";
+import { grantBasicFirstPayBonusIfEligible } from "./grantBasicFirstPayBonus.js";
 import { buildShopifyAdminGraphqlUrl } from "./shopifyAdminApiVersion.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -80,6 +80,7 @@ type LocalSubscription = {
   billingInterval: string;
   status: string;
   creditsPerPeriod: number;
+  trialEndsAt: Date | null;
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
 };
@@ -90,6 +91,8 @@ type ShopifySubscriptionSnapshot = {
   status: string;
   currentPeriodEnd: Date | null;
   intervalRaw: string | null;
+  trialDays: number;
+  createdAt: Date | null;
 };
 
 let running = false;
@@ -131,6 +134,26 @@ function datesDiffer(
   return Math.abs(local.getTime() - remote.getTime()) > toleranceMs;
 }
 
+function shopifyTrialEndsAt(sub: ShopifySubscriptionSnapshot): Date | null {
+  if (sub.trialDays > 0 && sub.createdAt) {
+    return new Date(sub.createdAt.getTime() + sub.trialDays * DAY_MS);
+  }
+  return null;
+}
+
+async function maybeGrantBasicFirstPayBonus(params: {
+  shop: string;
+  planKey: string;
+  trialEndsAt?: Date | null;
+}): Promise<void> {
+  const bonus = await grantBasicFirstPayBonusIfEligible(params);
+  if (bonus.granted) {
+    console.info(
+      `[billing reconcile] basic first-pay bonus granted shop=${params.shop} planKey=${params.planKey} permanent=${bonus.permanentCredits} expiring=${bonus.expiringCredits}`,
+    );
+  }
+}
+
 async function shopifyGraphql<T>(
   shop: string,
   accessToken: string,
@@ -164,6 +187,8 @@ function parseShopifySubscription(node: {
   name?: string;
   status?: string;
   currentPeriodEnd?: string | null;
+  trialDays?: number | null;
+  createdAt?: string | null;
   lineItems?: Array<{
     plan?: { pricingDetails?: { interval?: string } };
   }>;
@@ -178,6 +203,8 @@ function parseShopifySubscription(node: {
     status: node.status,
     currentPeriodEnd: parseDate(node.currentPeriodEnd),
     intervalRaw,
+    trialDays: Number(node.trialDays) || 0,
+    createdAt: parseDate(node.createdAt),
   };
 }
 
@@ -201,7 +228,7 @@ async function fetchShopifyActiveSubscription(
     `query ActiveAppSubscriptions {
       currentAppInstallation {
         activeSubscriptions {
-          id name status currentPeriodEnd
+          id name status currentPeriodEnd trialDays createdAt
           lineItems {
             plan {
               pricingDetails {
@@ -238,7 +265,7 @@ async function fetchShopifySubscription(
     `query AppSubscriptionById($id: ID!) {
       node(id: $id) {
         ... on AppSubscription {
-          id name status currentPeriodEnd
+          id name status currentPeriodEnd trialDays createdAt
           lineItems {
             plan {
               pricingDetails {
@@ -474,13 +501,14 @@ async function activateOrReplaceSubscription(params: {
             shop, planKey, shopifySubscriptionId, billingInterval, status,
             creditsPerPeriod, trialEndsAt, currentPeriodStart, currentPeriodEnd,
             cancelledAt, rawPayload, createdAt, updatedAt
-          ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, NULL, ?, ?, NULL, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, NULL, ?, ?, ?)
           ON CONFLICT(shop) DO UPDATE SET
             planKey = excluded.planKey,
             shopifySubscriptionId = excluded.shopifySubscriptionId,
             billingInterval = excluded.billingInterval,
             status = 'ACTIVE',
             creditsPerPeriod = excluded.creditsPerPeriod,
+            trialEndsAt = excluded.trialEndsAt,
             currentPeriodStart = excluded.currentPeriodStart,
             currentPeriodEnd = excluded.currentPeriodEnd,
             cancelledAt = NULL,
@@ -492,6 +520,7 @@ async function activateOrReplaceSubscription(params: {
       shopifySub.id,
       billingInterval,
       creditsPerPeriod,
+      toSqlDate(shopifyTrialEndsAt(shopifySub)),
       toSqlDate(currentPeriodStart),
       toSqlDate(currentPeriodEnd),
       JSON.stringify({ source: "worker_reconcile", name: shopifySub.name }),
@@ -531,12 +560,11 @@ async function activateOrReplaceSubscription(params: {
         now,
       ],
     });
-    const launch = await grantLaunchCreditsIfEligible({ shop, planKey });
-    if (launch.granted) {
-      console.info(
-        `[billing reconcile] launch credits granted shop=${shop} planKey=${planKey} credits=${launch.credits}`,
-      );
-    }
+    await maybeGrantBasicFirstPayBonus({
+      shop,
+      planKey,
+      trialEndsAt: shopifyTrialEndsAt(shopifySub),
+    });
     void notifyLifetimeFirstSubscribeFeishu(shop).catch((err) => {
       console.error(
         `[billing reconcile] first-subscribe feishu failed shop=${shop}`,
@@ -880,6 +908,11 @@ async function reconcileOneShop(
           currentPeriodEnd,
         },
       });
+      await maybeGrantBasicFirstPayBonus({
+        shop,
+        planKey: plan.planKey,
+        trialEndsAt: shopifyTrialEndsAt(shopifySub) ?? local.trialEndsAt,
+      });
     }
     return resultWithSnapshot(
       { shop, action: "renewed", reason: "shopify_period_advanced" },
@@ -1139,7 +1172,7 @@ async function listLocalSubscriptions(params: {
 
   const rs = await db.execute({
     sql: `SELECT s.shop, s.planKey, s.shopifySubscriptionId, s.billingInterval, s.status,
-                 s.creditsPerPeriod, s.currentPeriodStart, s.currentPeriodEnd
+                 s.creditsPerPeriod, s.trialEndsAt, s.currentPeriodStart, s.currentPeriodEnd
           FROM AppSubscription s
           JOIN Account a ON a.shop = s.shop AND a.deletedAt IS NULL
           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -1153,6 +1186,7 @@ async function listLocalSubscriptions(params: {
     billingInterval: String(row.billingInterval),
     status: String(row.status),
     creditsPerPeriod: Number(row.creditsPerPeriod) || 0,
+    trialEndsAt: parseDate(row.trialEndsAt),
     currentPeriodStart: parseDate(row.currentPeriodStart),
     currentPeriodEnd: parseDate(row.currentPeriodEnd),
   }));

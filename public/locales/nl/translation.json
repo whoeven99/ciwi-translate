@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Ongeveer {{credits}} credits nodig",
   "pricing.launchCredits": "+{{credits}} Launch Credits (alleen bij eerste abonnement)",
   "pricing.launchCreditsRow": "Startcredits (eerste abonnement)",
-  "pricing.includesLaunchCredits": "Inclusief {{credits}} Launch-/proefcredits",
   "pricing.migrate.button": "Credits naar Spark overzetten",
   "pricing.migrate.title": "Credits naar Spark overzetten",
   "pricing.migrate.help": "Alleen ongebruikte gekochte credits kunnen worden overgezet. Verbruik gaat eerst van abonnements- en launch-/proefcredits af; het restant bezet gekochte credits en kan niet worden overgezet. Abonnements- en launch-/proefcredits blijven in deze app. Dit kan niet ongedaan worden gemaakt.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Gebruikershandleiding",
   "pricing.compare.scrollHint": "Veeg om alle abonnementen te zien",
   "Shop Profile": "Winkelprofiel",
-  "Arrow": "Pijl"
+  "Arrow": "Pijl",
+  "customLiquid.noMatchingRules": "Geen overeenkomende regels",
+  "customLiquid.searchPlaceholder": "Zoek in de brontekst",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
+  "pricing.firstPayBonusRow": "Bonus bij eerste betaling (alleen basisabonnement; niet tijdens de proefperiode)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
+  "pricing.includesLaunchCredits": "Inclusief {{credits}} bonus-/proefcredits"
 }

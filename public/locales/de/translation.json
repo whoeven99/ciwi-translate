@@ -891,7 +891,7 @@
   "v4.createTask.confirmTrialAndStart": "Kostenlose Testversion starten",
   "v4.createTask.confirmTrialFeatureCredits": "Testcredits\n1,5M",
   "v4.createTask.confirmTrialFeatureModel": "1.500.000 Credits/Monat",
-  "v4.createTask.confirmTrialFeatureSpeed": "4.000.000 Credits",
+  "v4.createTask.confirmTrialFeatureSpeed": "1,000,000 credits (30-day trial)",
   "v4.createTask.confirmTrialOfferDesc": "Die kostenlose Testversion behält das aktuelle Setup bei. Sie können die Testversion auch überspringen und direkt Credits kaufen.",
   "v4.createTask.confirmTrialOfferTitle": "Kostenlose 5-Tage-Testversion",
   "v4.createTask.confirmTrialSummary": "Sie haben noch keinen kostenpflichtigen Plan und die kostenlose Testphase ist noch verfügbar. Starten Sie die Testphase, um mit der aktuellen Einrichtung fortzufahren.",
@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Ungefähr {{credits}} Credits erforderlich",
   "pricing.launchCredits": "+{{credits}} Launch-Credits (nur beim ersten Abonnement)",
   "pricing.launchCreditsRow": "Start-Credits (erstes Abonnement)",
-  "pricing.includesLaunchCredits": "Enthält {{credits}} Launch-/Test-Credits",
   "pricing.migrate.button": "Credits zu Spark übertragen",
   "pricing.migrate.title": "Credits zu Spark übertragen",
   "pricing.migrate.help": "Es können nur ungenutzte gekaufte Credits übertragen werden. Der Verbrauch belastet zuerst Abonnement- und Launch-/Testcredits; der Rest belegt gekaufte Credits und kann nicht übertragen werden. Abonnement- und Launch-/Testcredits bleiben in dieser App. Dies kann nicht rückgängig gemacht werden.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Benutzerhandbuch",
   "pricing.compare.scrollHint": "Wische, um alle Pläne zu sehen",
   "Shop Profile": "Shop-Profil",
-  "Arrow": "Pfeil"
+  "Arrow": "Pfeil",
+  "customLiquid.noMatchingRules": "Keine passenden Regeln",
+  "customLiquid.searchPlaceholder": "Quelltext durchsuchen",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
+  "pricing.firstPayBonusRow": "Bonus für die erste Zahlung (nur Basic; nicht während der Testphase)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
+  "pricing.includesLaunchCredits": "Beinhaltet {{credits}} Bonus-/Testguthaben"
 }

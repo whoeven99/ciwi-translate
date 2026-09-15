@@ -56,6 +56,8 @@ const priceTable: Record<
   string,
   { base: number; Premium: number; Pro: number; Basic: number }
 > = {
+  "100K": { base: 1.99, Premium: 0.99, Pro: 1.49, Basic: 1.79 },
+  "300K": { base: 2.99, Premium: 1.49, Pro: 2.24, Basic: 2.69 },
   "500K": { base: 3.99, Premium: 1.99, Pro: 2.99, Basic: 3.59 },
   "1M": { base: 7.99, Premium: 3.99, Pro: 5.99, Basic: 7.19 },
   "2M": { base: 15.99, Premium: 7.99, Pro: 11.99, Basic: 14.39 },
@@ -307,6 +309,26 @@ const Index = () => {
   const creditOptions: OptionType[] = useMemo(
     () => [
       {
+        key: "option-100k",
+        name: "100K",
+        Credits: 100000,
+        price: eNumPlanType({
+          planType: plan?.type,
+          optionName: "100K",
+          isInTrial: plan?.isInFreePlanTime,
+        }),
+      },
+      {
+        key: "option-300k",
+        name: "300K",
+        Credits: 300000,
+        price: eNumPlanType({
+          planType: plan?.type,
+          optionName: "300K",
+          isInTrial: plan?.isInFreePlanTime,
+        }),
+      },
+      {
         key: "option-1",
         name: "500K",
         Credits: 500000,
@@ -391,7 +413,7 @@ const Index = () => {
   );
 
   //当前选择价格
-  const [selectedOptionKey, setSelectedOption] = useState<string>("option-1");
+  const [selectedOptionKey, setSelectedOption] = useState<string>("option-100k");
 
   //是否为年费计划
   const [yearly, setYearly] = useState(false);
@@ -607,7 +629,9 @@ const Index = () => {
         disabled: plan.type === "Basic" && yearly === !!(plan.feeType === 2),
         features: [
           t("{{credits}} credits/month", { credits: "1,500,000" }),
-          t("pricing.launchCredits", { credits: "4,000,000" }),
+          t("pricing.firstPayBonus", {
+            expiring: "1,000,000",
+          }),
           t("Glossary ({{count}} entries)", { count: 10 }),
           t("basic_features1"),
           t("basic_features2"),
@@ -635,7 +659,6 @@ const Index = () => {
         features: [
           t("all in Basic Plan"),
           t("{{credits}} credits/month", { credits: "3,000,000" }),
-          t("pricing.launchCredits", { credits: "8,000,000" }),
           t("Glossary ({{count}} entries)", { count: 50 }),
           t("pro_features1"),
           t("pro_features2"),
@@ -663,7 +686,6 @@ const Index = () => {
         features: [
           t("all in Pro Plan"),
           t("{{credits}} credits/month", { credits: "8,000,000" }),
-          t("pricing.launchCredits", { credits: "16,000,000" }),
           t("Glossary ({{count}} entries)", { count: 100 }),
           t("premium_features1"),
           t("premium_features2"),
@@ -728,12 +750,14 @@ const Index = () => {
         type: "text",
       },
       {
-        key: "launch_credits",
-        features: t("pricing.launchCreditsRow"),
+        key: "first_pay_bonus",
+        features: t("pricing.firstPayBonusRow"),
         free: "—",
-        basic: "4,000,000",
-        pro: "8,000,000",
-        premium: "16,000,000",
+        basic: t("pricing.firstPayBonusTable", {
+          expiring: "1,000,000",
+        }),
+        pro: "—",
+        premium: "—",
         type: "text",
       },
       {

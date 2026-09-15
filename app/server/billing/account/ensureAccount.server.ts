@@ -30,6 +30,7 @@ export async function ensureAccount(shop: string): Promise<Account> {
         subscriptionCredits: 0,
         purchasedCredits: 0,
         trialCredits: 0,
+        trialCreditsExpiresAt: null,
         usedCredits: 0,
       },
     });

@@ -5,6 +5,7 @@ import {
   settlePoolsAtRenewal,
 } from "../accountBalance.server";
 import { appendBillingLog } from "../billingLog.server";
+import { grantBasicFirstPayBonusIfEligible } from "../grant/grantBasicFirstPayBonus.server";
 import { APP_SUBSCRIPTION_STATUS, BILLING_LOG_EVENT } from "../types.server";
 
 export type SubscriptionPeriodSnapshot = {
@@ -97,6 +98,17 @@ export async function archivePeriodAndRenew(params: {
       },
     }),
   ]);
+
+  const bonus = await grantBasicFirstPayBonusIfEligible({
+    shop,
+    planKey: next.planKey,
+    trialEndsAt: subscription.trialEndsAt,
+  });
+  if (bonus.granted) {
+    console.info(
+      `[billing] basic first-pay bonus granted on renewal shop=${shop} planKey=${next.planKey} permanent=${bonus.permanentCredits} expiring=${bonus.expiringCredits}`,
+    );
+  }
 }
 
 /** 判定 webhook 是否为续费（同一订阅、状态 ACTIVE、周期末推后）。 */
