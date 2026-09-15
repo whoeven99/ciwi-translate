@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Yaklaşık {{credits}} kredi gerekli",
   "pricing.launchCredits": "+{{credits}} Başlangıç Kredisi (yalnızca ilk abonelikte)",
   "pricing.launchCreditsRow": "Başlangıç kredileri (ilk abonelik)",
-  "pricing.includesLaunchCredits": "{{credits}} Başlangıç / deneme kredisi içerir",
   "pricing.migrate.button": "Kredileri Spark’a aktar",
   "pricing.migrate.title": "Kredileri Spark’a aktar",
   "pricing.migrate.help": "Yalnızca kullanılmamış satın alınan krediler aktarılabilir. Kullanım önce abonelik ve lansman/deneme kredilerini tüketir; kalan kısım satın alınan kredileri doldurur ve aktarılamaz. Abonelik ve lansman/deneme kredileri bu uygulamada kalır. Bu işlem geri alınamaz.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Kullanıcı kılavuzu",
   "pricing.compare.scrollHint": "Tüm planları görmek için kaydırın",
   "Shop Profile": "Mağaza profili",
-  "Arrow": "Ok"
+  "Arrow": "Ok",
+  "customLiquid.noMatchingRules": "Eşleştirme kuralları yok",
+  "customLiquid.searchPlaceholder": "Arama kaynak metni",
+  "pricing.firstPayBonus": "+{{permanent}} süresi dolmayan + {{expiring}} (30 günlük) ilk ödenen Temel bonus",
+  "pricing.firstPayBonusRow": "İlk maaş bonusu (Sadece temel maaş paketinde; deneme süresi boyunca geçerli değil)",
+  "pricing.firstPayBonusTable": "{{permanent}} asla sona ermez + {{expiring}} (30 gün)",
+  "pricing.includesLaunchCredits": "{{credits}} bonus/deneme kredisi içerir."
 }

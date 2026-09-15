@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Ungefär {{credits}} krediter behövs",
   "pricing.launchCredits": "+{{credits}} lanseringskrediter (endast vid första prenumerationen)",
   "pricing.launchCreditsRow": "Startkrediter (första prenumerationen)",
-  "pricing.includesLaunchCredits": "Inkluderar {{credits}} lanserings-/provkrediter",
   "pricing.migrate.button": "Flytta krediter till Spark",
   "pricing.migrate.title": "Flytta krediter till Spark",
   "pricing.migrate.help": "Endast oanvända köpta krediter kan flyttas. Förbrukning dras först från prenumerations- och lanserings-/provkrediter; överskottet belägger köpta krediter och kan inte flyttas. Prenumerations- och lanserings-/provkrediter stannar i den här appen. Detta kan inte ångras.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Användarguide",
   "pricing.compare.scrollHint": "Svep för att se alla planer",
   "Shop Profile": "Butiksprofil",
-  "Arrow": "Pil"
+  "Arrow": "Pil",
+  "customLiquid.noMatchingRules": "Inga matchande regler",
+  "customLiquid.searchPlaceholder": "Sök i källtexten",
+  "pricing.firstPayBonus": "+{{permanent}} går aldrig ut + {{expiring}} (30 dagars) första utbetalda grundbonus",
+  "pricing.firstPayBonusRow": "Första utbetalningsbonus (endast grundläggande; inte under provperioden)",
+  "pricing.firstPayBonusTable": "{{permanent}} aldrig-utgångs + {{expiring}} (30 dagar)",
+  "pricing.includesLaunchCredits": "Inkluderar {{credits}} bonus / provpoäng"
 }

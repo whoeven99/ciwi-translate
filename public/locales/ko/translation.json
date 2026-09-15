@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "약 {{credits}} 크레딧 필요",
   "pricing.launchCredits": "+{{credits}} 런치 크레딧 (최초 구독 시에만)",
   "pricing.launchCreditsRow": "시작 크레딧(첫 구독)",
-  "pricing.includesLaunchCredits": "런치/체험 크레딧 {{credits}}개 포함",
   "pricing.migrate.button": "크레딧을 Spark로 이전",
   "pricing.migrate.title": "크레딧을 Spark로 이전",
   "pricing.migrate.help": "사용되지 않은 구매 크레딧만 이전할 수 있습니다. 사용량은 먼저 구독 및 런치/체험 크레딧을 소모하며, 남는 사용량은 구매 크레딧을 차지해 이전할 수 없습니다. 구독 및 런치/체험 크레딧은 이 앱에 남습니다. 이 작업은 취소할 수 없습니다.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "사용 가이드",
   "pricing.compare.scrollHint": "밀어 모든 플랜 보기",
   "Shop Profile": "스토어 프로필",
-  "Arrow": "화살표"
+  "Arrow": "화살표",
+  "customLiquid.noMatchingRules": "일치하는 규칙이 없습니다.",
+  "customLiquid.searchPlaceholder": "원문 검색",
+  "pricing.firstPayBonus": "+{{permanent}} 만료 없음 + {{expiring}} (30일) 최초 지급 기본 보너스",
+  "pricing.firstPayBonusRow": "첫 지급 보너스 (기본 급여에만 해당, 체험 기간에는 적용되지 않음)",
+  "pricing.firstPayBonusTable": "{{permanent}} 만료되지 않음 + {{expiring}} (30일)",
+  "pricing.includesLaunchCredits": "보너스/체험 크레딧 {{credits}}개가 포함되어 있습니다."
 }

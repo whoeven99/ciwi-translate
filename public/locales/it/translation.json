@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Servono circa {{credits}} crediti",
   "pricing.launchCredits": "+{{credits}} crediti di lancio (solo al primo abbonamento)",
   "pricing.launchCreditsRow": "Crediti di lancio (primo abbonamento)",
-  "pricing.includesLaunchCredits": "Include {{credits}} crediti di lancio / prova",
   "pricing.migrate.button": "Migra i crediti su Spark",
   "pricing.migrate.title": "Migra i crediti su Spark",
   "pricing.migrate.help": "Puoi migrare solo i crediti acquistati non utilizzati. L’uso consuma prima i crediti di abbonamento e di lancio/prova; il resto occupa i crediti acquistati e non può essere migrato. I crediti di abbonamento e di lancio/prova restano in questa app. L’operazione non può essere annullata.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Guida utente",
   "pricing.compare.scrollHint": "Scorri per vedere tutti i piani",
   "Shop Profile": "Profilo del negozio",
-  "Arrow": "Freccia"
+  "Arrow": "Freccia",
+  "customLiquid.noMatchingRules": "Nessuna regola di corrispondenza",
+  "customLiquid.searchPlaceholder": "Cerca nel testo sorgente",
+  "pricing.firstPayBonus": "+{{permanent}} senza scadenza + {{expiring}} (30 giorni) primo bonus base pagato",
+  "pricing.firstPayBonusRow": "Bonus sulla prima busta paga (solo per la retribuzione base; non durante il periodo di prova)",
+  "pricing.firstPayBonusTable": "{{permanent}} senza scadenza + {{expiring}} (30 giorni)",
+  "pricing.includesLaunchCredits": "Include {{credits}} crediti bonus/di prova"
 }

@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Environ {{credits}} crédits nécessaires",
   "pricing.launchCredits": "+{{credits}} crédits de lancement (premier abonnement uniquement)",
   "pricing.launchCreditsRow": "Crédits de lancement (premier abonnement)",
-  "pricing.includesLaunchCredits": "Inclut {{credits}} crédits de lancement / d'essai",
   "pricing.migrate.button": "Transférer les crédits vers Spark",
   "pricing.migrate.title": "Transférer les crédits vers Spark",
   "pricing.migrate.help": "Seuls les crédits achetés non utilisés peuvent être transférés. L’usage consomme d’abord les crédits d’abonnement et de lancement/essai ; le reliquat occupe les crédits achetés et ne peut pas être transféré. Les crédits d’abonnement et de lancement/essai restent dans cette app. Cette action est irréversible.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Guide utilisateur",
   "pricing.compare.scrollHint": "Faites glisser pour voir tous les forfaits",
   "Shop Profile": "Profil de la boutique",
-  "Arrow": "Flèche"
+  "Arrow": "Flèche",
+  "customLiquid.noMatchingRules": "Aucune règle correspondante",
+  "customLiquid.searchPlaceholder": "Rechercher le texte source",
+  "pricing.firstPayBonus": "+ {{permanent}} sans date d'expiration + {{expiring}} (30 jours) premier bonus de base versé",
+  "pricing.firstPayBonusRow": "Prime de premier versement (salaire de base uniquement ; pas pendant la période d'essai)",
+  "pricing.firstPayBonusTable": "{{permanent}} sans date d'expiration + {{expiring}} (30 jours)",
+  "pricing.includesLaunchCredits": "Inclut {{credits}} crédits bonus / d'essai"
 }

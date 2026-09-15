@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Aproximadamente {{credits}} créditos necessários",
   "pricing.launchCredits": "+{{credits}} Créditos de Lançamento (apenas na primeira subscrição)",
   "pricing.launchCreditsRow": "Créditos de lançamento (primeira subscrição)",
-  "pricing.includesLaunchCredits": "Inclui {{credits}} créditos de Lançamento / teste",
   "pricing.migrate.button": "Migrar créditos para o Spark",
   "pricing.migrate.title": "Migrar créditos para o Spark",
   "pricing.migrate.help": "Só podem ser migrados os créditos comprados ainda não utilizados. O consumo usa primeiro os créditos de subscrição e de lançamento/teste; o restante ocupa créditos comprados e não pode ser migrado. Os créditos de subscrição e de lançamento/teste ficam nesta app. Esta ação não pode ser anulada.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Guia do utilizador",
   "pricing.compare.scrollHint": "Deslize para ver todos os planos",
   "Shop Profile": "Perfil da loja",
-  "Arrow": "Seta"
+  "Arrow": "Seta",
+  "customLiquid.noMatchingRules": "Nenhuma regra correspondente",
+  "customLiquid.searchPlaceholder": "Pesquisar texto de origem",
+  "pricing.firstPayBonus": "+{{permanent}} nunca expira + {{expiring}} (30 dias) primeiro bônus básico pago",
+  "pricing.firstPayBonusRow": "Bônus do primeiro pagamento (somente salário base; não válido durante o período de experiência)",
+  "pricing.firstPayBonusTable": "{{permanent}} nunca expira + {{expiring}} (30 dias)",
+  "pricing.includesLaunchCredits": "Inclui créditos bônus/de teste de {{credits}}"
 }

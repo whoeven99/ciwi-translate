@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "Требуется примерно {{credits}} кредитов",
   "pricing.launchCredits": "+{{credits}} стартовых кредитов (только при первой подписке)",
   "pricing.launchCreditsRow": "Стартовые кредиты (первая подписка)",
-  "pricing.includesLaunchCredits": "Включает {{credits}} стартовых / пробных кредитов",
   "pricing.migrate.button": "Перенести кредиты в Spark",
   "pricing.migrate.title": "Перенести кредиты в Spark",
   "pricing.migrate.help": "Можно перенести только неиспользованные купленные кредиты. Расход сначала списывается с кредитов подписки и запуска/пробного периода; остаток занимает купленные кредиты и не переносится. Кредиты подписки и запуска/пробного периода остаются в этом приложении. Отменить действие нельзя.",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "Руководство пользователя",
   "pricing.compare.scrollHint": "Проведите, чтобы увидеть все планы",
   "Shop Profile": "Профиль магазина",
-  "Arrow": "Стрелка"
+  "Arrow": "Стрелка",
+  "customLiquid.noMatchingRules": "Нет правил сопоставления",
+  "customLiquid.searchPlaceholder": "Поиск исходного текста",
+  "pricing.firstPayBonus": "+{{permanent}} никогда не истекает + {{expiring}} (30 дней) первый выплаченный базовый бонус",
+  "pricing.firstPayBonusRow": "Бонус за первую выплату (только для базовой заработной платы; не во время испытательного срока)",
+  "pricing.firstPayBonusTable": "{{permanent}} never-expire + {{expiring}} (30 day)",
+  "pricing.includesLaunchCredits": "Включает бонусные / пробные кредиты в размере {{credits}}"
 }

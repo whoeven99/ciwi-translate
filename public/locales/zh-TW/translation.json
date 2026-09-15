@@ -1426,7 +1426,6 @@
   "onboarding.action.scopeCredits": "大約需要 {{credits}} 點數",
   "pricing.launchCredits": "+{{credits}} 啟動點數（僅首次訂閱）",
   "pricing.launchCreditsRow": "啟動點數（首次訂閱）",
-  "pricing.includesLaunchCredits": "包含 {{credits}} 啟動／試用點數",
   "pricing.migrate.button": "將點數遷移到 Spark",
   "pricing.migrate.title": "將點數遷移到 Spark",
   "pricing.migrate.help": "只能遷移尚未被用量占用的購買點數。已用會先消耗訂閱和試用；超出部分占用購買點數，占用掉的不能遷移。訂閱與試用本身也不能遷移。遷移後不可撤銷。",
@@ -1491,5 +1490,11 @@
   "v4Mvp.videoCard.guideTitle": "使用指南",
   "pricing.compare.scrollHint": "左右滑動查看全部方案",
   "Shop Profile": "商店概況",
-  "Arrow": "箭頭"
+  "Arrow": "箭頭",
+  "customLiquid.noMatchingRules": "沒有符合規則",
+  "customLiquid.searchPlaceholder": "搜尋來源文字",
+  "pricing.firstPayBonus": "+{{permanent}} 永不過期 + {{expiring}}（30 天）首次付費 Basic 贈送",
+  "pricing.firstPayBonusRow": "首付獎勵（僅限基本套餐；試用期不包含）",
+  "pricing.firstPayBonusTable": "{{permanent}} 永不過期 + {{expiring}} (30 天)",
+  "pricing.includesLaunchCredits": "包含 {{credits}} 獎勵/試用積分"
 }
