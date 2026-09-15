@@ -31,9 +31,9 @@ export type GrantBasicFirstPayBonusResult =
     };
 
 /**
- * 店铺终身首次付费且当时是 Basic：1.5M 进 purchasedCredits（永不过期），
- * 1M 进 trialCredits（30 天到期）。试用中不发；Pro/Premium 不发。
- * 已拿过 Launch Credits 或本礼包则跳过。
+ * 店铺终身首次付费且当时是 Basic：只发 1M trialCredits（30 天到期）。
+ * 不再加 purchasedCredits。试用中不发；Pro/Premium 不发。
+ * 已拿过 Launch Credits 或本礼包则跳过；已发出的永久包不追回。
  */
 export async function grantBasicFirstPayBonusIfEligible(params: {
   shop: string;
@@ -67,7 +67,6 @@ export async function grantBasicFirstPayBonusIfEligible(params: {
   await prisma.account.update({
     where: { shop },
     data: {
-      purchasedCredits: { increment: BASIC_FIRST_PAY_PERMANENT_CREDITS },
       trialCredits: { increment: BASIC_FIRST_PAY_EXPIRING_CREDITS },
       trialCreditsExpiresAt: expiresAt,
     },

@@ -891,7 +891,7 @@
   "v4.createTask.confirmTrialAndStart": "Iniciar prueba gratuita",
   "v4.createTask.confirmTrialFeatureCredits": "Créditos de prueba\n1.5M",
   "v4.createTask.confirmTrialFeatureModel": "1.500.000 créditos/mes",
-  "v4.createTask.confirmTrialFeatureSpeed": "4.000.000 de créditos",
+  "v4.createTask.confirmTrialFeatureSpeed": "1,000,000 credits (30-day trial)",
   "v4.createTask.confirmTrialOfferDesc": "La prueba gratuita mantiene la configuración actual. También puede omitir la prueba y comprar créditos directamente.",
   "v4.createTask.confirmTrialOfferTitle": "Prueba gratuita de 5 días",
   "v4.createTask.confirmTrialSummary": "Aún no tienes un plan de pago y la prueba gratuita sigue disponible. Inicia la prueba para continuar con la configuración actual.",
@@ -1493,8 +1493,8 @@
   "Arrow": "Flecha",
   "customLiquid.noMatchingRules": "No hay reglas de coincidencia",
   "customLiquid.searchPlaceholder": "Buscar texto fuente",
-  "pricing.firstPayBonus": "+{{permanent}} nunca caduca + {{expiring}} (30 días) primer bono básico pagado",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "Bonificación por primer pago (solo para el plan básico; no durante el período de prueba)",
-  "pricing.firstPayBonusTable": "{{permanent}} nunca caduca + {{expiring}} (30 días)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "Incluye {{credits}} créditos de bonificación/prueba"
 }

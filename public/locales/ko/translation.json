@@ -1493,8 +1493,8 @@
   "Arrow": "화살표",
   "customLiquid.noMatchingRules": "일치하는 규칙이 없습니다.",
   "customLiquid.searchPlaceholder": "원문 검색",
-  "pricing.firstPayBonus": "+{{permanent}} 만료 없음 + {{expiring}} (30일) 최초 지급 기본 보너스",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "첫 지급 보너스 (기본 급여에만 해당, 체험 기간에는 적용되지 않음)",
-  "pricing.firstPayBonusTable": "{{permanent}} 만료되지 않음 + {{expiring}} (30일)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "보너스/체험 크레딧 {{credits}}개가 포함되어 있습니다."
 }

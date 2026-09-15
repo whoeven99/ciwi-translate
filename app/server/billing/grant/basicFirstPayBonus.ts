@@ -1,7 +1,8 @@
 export const LAUNCH_CREDITS_REFERENCE_ID = "launch_credits";
 export const BASIC_FIRST_PAY_BONUS_REFERENCE_ID = "basic_first_pay_bonus";
 
-export const BASIC_FIRST_PAY_PERMANENT_CREDITS = 1_500_000;
+/** 已停发；存量 purchasedCredits 不追回。新发放只走试用池。 */
+export const BASIC_FIRST_PAY_PERMANENT_CREDITS = 0;
 export const BASIC_FIRST_PAY_EXPIRING_CREDITS = 1_000_000;
 export const BASIC_FIRST_PAY_TTL_DAYS = 30;
 

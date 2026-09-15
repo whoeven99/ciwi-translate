@@ -1493,8 +1493,8 @@
   "Arrow": "Seta",
   "customLiquid.noMatchingRules": "Nenhuma regra correspondente",
   "customLiquid.searchPlaceholder": "Pesquisar texto de origem",
-  "pricing.firstPayBonus": "+{{permanent}} nunca expira + {{expiring}} (30 dias) primeiro bônus básico pago",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "Bônus do primeiro pagamento (somente salário base; não válido durante o período de experiência)",
-  "pricing.firstPayBonusTable": "{{permanent}} nunca expira + {{expiring}} (30 dias)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "Inclui créditos bônus/de teste de {{credits}}"
 }

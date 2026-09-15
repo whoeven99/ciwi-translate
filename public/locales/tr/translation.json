@@ -1493,8 +1493,8 @@
   "Arrow": "Ok",
   "customLiquid.noMatchingRules": "Eşleştirme kuralları yok",
   "customLiquid.searchPlaceholder": "Arama kaynak metni",
-  "pricing.firstPayBonus": "+{{permanent}} süresi dolmayan + {{expiring}} (30 günlük) ilk ödenen Temel bonus",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "İlk maaş bonusu (Sadece temel maaş paketinde; deneme süresi boyunca geçerli değil)",
-  "pricing.firstPayBonusTable": "{{permanent}} asla sona ermez + {{expiring}} (30 gün)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "{{credits}} bonus/deneme kredisi içerir."
 }

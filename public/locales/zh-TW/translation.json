@@ -1493,8 +1493,8 @@
   "Arrow": "箭頭",
   "customLiquid.noMatchingRules": "沒有符合規則",
   "customLiquid.searchPlaceholder": "搜尋來源文字",
-  "pricing.firstPayBonus": "+{{permanent}} 永不過期 + {{expiring}}（30 天）首次付費 Basic 贈送",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "首付獎勵（僅限基本套餐；試用期不包含）",
-  "pricing.firstPayBonusTable": "{{permanent}} 永不過期 + {{expiring}} (30 天)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "包含 {{credits}} 獎勵/試用積分"
 }

@@ -257,10 +257,9 @@ export function CreateTaskConfirmModal({
     scenario === "insufficient_pricing" &&
     recommendedPlan.bonusCredits > 0
       ? t("pricing.firstPayBonus", {
-          permanent: formatConfirmCredits(recommendedPlan.bonusPermanentCredits),
           expiring: formatConfirmCredits(recommendedPlan.bonusExpiringCredits),
           defaultValue:
-            "+{{permanent}} never-expire + {{expiring}} (30-day) first paid Basic bonus",
+            "+{{expiring}} credits (30-day trial) on first paid Basic",
         })
       : null;
   const subscriptionBenefitCaption =
@@ -534,15 +533,13 @@ const PLAN_RECOMMENDATIONS = [
     title: "Basic",
     tier: "basic",
     monthlyCredits: 1500000,
-    bonusPermanentCredits: 1500000,
     bonusExpiringCredits: 1000000,
-    bonusCredits: 2500000,
+    bonusCredits: 1000000,
   },
   {
     title: "Pro",
     tier: "pro",
     monthlyCredits: 3000000,
-    bonusPermanentCredits: 0,
     bonusExpiringCredits: 0,
     bonusCredits: 0,
   },
@@ -550,7 +547,6 @@ const PLAN_RECOMMENDATIONS = [
     title: "Premium",
     tier: "premium",
     monthlyCredits: 8000000,
-    bonusPermanentCredits: 0,
     bonusExpiringCredits: 0,
     bonusCredits: 0,
   },

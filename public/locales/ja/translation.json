@@ -891,7 +891,7 @@
   "v4.createTask.confirmTrialAndStart": "無料トライアルを開始",
   "v4.createTask.confirmTrialFeatureCredits": "トライアルクレジット\n1.5M",
   "v4.createTask.confirmTrialFeatureModel": "1,500,000クレジット/月",
-  "v4.createTask.confirmTrialFeatureSpeed": "4,000,000クレジット",
+  "v4.createTask.confirmTrialFeatureSpeed": "1,000,000 credits (30-day trial)",
   "v4.createTask.confirmTrialOfferDesc": "無料トライアルは現在の設定を維持します。トライアルをスキップして直接クレジットを購入することもできます。",
   "v4.createTask.confirmTrialOfferTitle": "5日間の無料トライアル",
   "v4.createTask.confirmTrialSummary": "まだ有料プランに登録されておらず、無料トライアルがまだ利用可能です。トライアルを開始して、現在の設定で続行してください。",
@@ -1493,8 +1493,8 @@
   "Arrow": "矢印",
   "customLiquid.noMatchingRules": "一致するルールはありません",
   "customLiquid.searchPlaceholder": "検索ソーステキスト",
-  "pricing.firstPayBonus": "+{{permanent}} 有効期限なし + {{expiring}} (30日間) 初回支給 基本ボーナス",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "初回給与ボーナス（基本給のみ。試用期間中は対象外）",
-  "pricing.firstPayBonusTable": "{{permanent}} 有効期限なし + {{expiring}} (30日間)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "{{credits}}のボーナス／トライアルクレジットが含まれています"
 }

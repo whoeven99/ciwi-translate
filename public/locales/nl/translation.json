@@ -1493,8 +1493,8 @@
   "Arrow": "Pijl",
   "customLiquid.noMatchingRules": "Geen overeenkomende regels",
   "customLiquid.searchPlaceholder": "Zoek in de brontekst",
-  "pricing.firstPayBonus": "+{{permanent}} nooit verlopend + {{expiring}} (30 dagen) eerste betaalde basisbonus",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "Bonus bij eerste betaling (alleen basisabonnement; niet tijdens de proefperiode)",
-  "pricing.firstPayBonusTable": "{{permanent}} nooit verlopen + {{expiring}} (30 dagen)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "Inclusief {{credits}} bonus-/proefcredits"
 }

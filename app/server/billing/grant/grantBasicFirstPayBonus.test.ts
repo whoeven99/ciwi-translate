@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  BASIC_FIRST_PAY_EXPIRING_CREDITS,
+  BASIC_FIRST_PAY_PERMANENT_CREDITS,
   isBasicPlanKey,
   isInTrialPeriod,
 } from "./basicFirstPayBonus";
+
+describe("basic first-pay bonus amounts", () => {
+  it("grants only the 1M 30-day trial pack, not a never-expire purchased pack", () => {
+    assert.equal(BASIC_FIRST_PAY_PERMANENT_CREDITS, 0);
+    assert.equal(BASIC_FIRST_PAY_EXPIRING_CREDITS, 1_000_000);
+  });
+});
 
 describe("isBasicPlanKey", () => {
   it("matches monthly and annual Basic keys", () => {

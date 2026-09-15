@@ -1493,8 +1493,8 @@
   "Arrow": "Стрілка",
   "customLiquid.noMatchingRules": "Немає відповідних правил",
   "customLiquid.searchPlaceholder": "Пошук вихідного тексту",
-  "pricing.firstPayBonus": "+{{permanent}} ніколи не закінчується + {{expiring}} (30-денний) перший виплачений базовий бонус",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "Бонус за першу виплату (лише базовий; не під час пробного періоду)",
-  "pricing.firstPayBonusTable": "{{permanent}} ніколи не закінчується + {{expiring}} (30 днів)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "Включає бонусні / пробні кредити ({{credits}})"
 }

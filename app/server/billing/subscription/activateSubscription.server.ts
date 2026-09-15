@@ -121,7 +121,7 @@ export async function applyActiveSubscription(
         grantKind: "shopify_period",
       },
     });
-    // 终身首次付费 Basic：1.5M 永久 + 1M/30 天（试用中跳过，转正走续费路径）。
+    // 终身首次付费 Basic：只发 1M/30 天试用（试用中跳过，转正走续费路径）。
     const bonus = await grantBasicFirstPayBonusIfEligible({
       shop,
       planKey,

@@ -630,7 +630,6 @@ const Index = () => {
         features: [
           t("{{credits}} credits/month", { credits: "1,500,000" }),
           t("pricing.firstPayBonus", {
-            permanent: "1,500,000",
             expiring: "1,000,000",
           }),
           t("Glossary ({{count}} entries)", { count: 10 }),
@@ -755,7 +754,6 @@ const Index = () => {
         features: t("pricing.firstPayBonusRow"),
         free: "—",
         basic: t("pricing.firstPayBonusTable", {
-          permanent: "1,500,000",
           expiring: "1,000,000",
         }),
         pro: "—",

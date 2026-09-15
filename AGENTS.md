@@ -857,7 +857,7 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
-- Basic 首次付费赠送：终身首次付费且当时是 Basic 时写入 `purchasedCredits += 1.5M`（永不过期）+ `trialCredits += 1M`（`trialCreditsExpiresAt = now+30d`）。试用中不发；Pro/Premium 不发；已有 `launch_credits` 或 `basic_first_pay_bonus` 流水则跳过。App `grantBasicFirstPayBonus.server.ts` 与 Worker `grantBasicFirstPayBonus.ts` 双路径；激活与试用转正（续费）都会尝试发放。到期结算 `settleExpiredInstallTrialCredits`（试用先抵 used，剩余清零）。读额度惰性结算：App `getAccountQuota`、Worker `getTsfAccountRemaining` / 扣费前都会先跑到期写库；Worker `expireInstallTrialJob.ts` 默认 12h 扫描兜底。存量 Launch Credits（`expiresAt = null`）不追回、不过期。
+- Basic 首次付费赠送：终身首次付费且当时是 Basic 时写入 `trialCredits += 1M`（`trialCreditsExpiresAt = now+30d`）。**不再**写入 `purchasedCredits`。试用中不发；Pro/Premium 不发；已有 `launch_credits` 或 `basic_first_pay_bonus` 流水则跳过。已发出的 1.5M 永久包**不追回**。App `grantBasicFirstPayBonus.server.ts` 与 Worker `grantBasicFirstPayBonus.ts` 双路径；激活与试用转正（续费）都会尝试发放。到期结算 `settleExpiredInstallTrialCredits`（试用先抵 used，剩余清零）。读额度惰性结算：App `getAccountQuota`、Worker `getTsfAccountRemaining` / 扣费前都会先跑到期写库；Worker `expireInstallTrialJob.ts` 默认 12h 扫描兜底。存量 Launch Credits（`expiresAt = null`）不追回、不过期。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
 (MONTHLY ≈ +30d, ANNUAL ≈ +365d). `currentPeriodStart = end - intervalDays`.

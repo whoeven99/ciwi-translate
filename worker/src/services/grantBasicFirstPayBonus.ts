@@ -1,6 +1,6 @@
 /**
  * Worker 侧 Basic 首付赠送（对齐 App grantBasicFirstPayBonus.server.ts）。
- * 首次付费且当时是 Basic：1.5M purchasedCredits + 1M trialCredits（30 天）。
+ * 首次付费且当时是 Basic：只发 1M trialCredits（30 天）。停发永久包，存量不追回。
  */
 
 import { randomUUID } from "node:crypto";
@@ -8,7 +8,8 @@ import { getTsfDb } from "./tsfDb.js";
 
 export const LAUNCH_CREDITS_REFERENCE_ID = "launch_credits";
 export const BASIC_FIRST_PAY_BONUS_REFERENCE_ID = "basic_first_pay_bonus";
-export const BASIC_FIRST_PAY_PERMANENT_CREDITS = 1_500_000;
+/** 已停发；存量 purchasedCredits 不追回。新发放只走试用池。 */
+export const BASIC_FIRST_PAY_PERMANENT_CREDITS = 0;
 export const BASIC_FIRST_PAY_EXPIRING_CREDITS = 1_000_000;
 export const BASIC_FIRST_PAY_TTL_DAYS = 30;
 
@@ -68,13 +69,11 @@ export async function grantBasicFirstPayBonusIfEligible(params: {
   const expiresAt = basicFirstPayBonusExpiresAt(now);
   await db.execute({
     sql: `UPDATE Account
-          SET purchasedCredits = purchasedCredits + ?,
-              trialCredits = trialCredits + ?,
+          SET trialCredits = trialCredits + ?,
               trialCreditsExpiresAt = ?,
               updatedAt = ?
           WHERE shop = ?`,
     args: [
-      BASIC_FIRST_PAY_PERMANENT_CREDITS,
       BASIC_FIRST_PAY_EXPIRING_CREDITS,
       expiresAt.toISOString(),
       nowIso,

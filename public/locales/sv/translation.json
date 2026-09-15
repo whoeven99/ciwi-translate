@@ -1493,8 +1493,8 @@
   "Arrow": "Pil",
   "customLiquid.noMatchingRules": "Inga matchande regler",
   "customLiquid.searchPlaceholder": "Sök i källtexten",
-  "pricing.firstPayBonus": "+{{permanent}} går aldrig ut + {{expiring}} (30 dagars) första utbetalda grundbonus",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "Första utbetalningsbonus (endast grundläggande; inte under provperioden)",
-  "pricing.firstPayBonusTable": "{{permanent}} aldrig-utgångs + {{expiring}} (30 dagar)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "Inkluderar {{credits}} bonus / provpoäng"
 }

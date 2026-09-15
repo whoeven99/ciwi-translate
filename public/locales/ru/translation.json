@@ -1493,8 +1493,8 @@
   "Arrow": "Стрелка",
   "customLiquid.noMatchingRules": "Нет правил сопоставления",
   "customLiquid.searchPlaceholder": "Поиск исходного текста",
-  "pricing.firstPayBonus": "+{{permanent}} никогда не истекает + {{expiring}} (30 дней) первый выплаченный базовый бонус",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "Бонус за первую выплату (только для базовой заработной платы; не во время испытательного срока)",
-  "pricing.firstPayBonusTable": "{{permanent}} never-expire + {{expiring}} (30 day)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "Включает бонусные / пробные кредиты в размере {{credits}}"
 }

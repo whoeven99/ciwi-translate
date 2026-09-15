@@ -1493,8 +1493,8 @@
   "Arrow": "Freccia",
   "customLiquid.noMatchingRules": "Nessuna regola di corrispondenza",
   "customLiquid.searchPlaceholder": "Cerca nel testo sorgente",
-  "pricing.firstPayBonus": "+{{permanent}} senza scadenza + {{expiring}} (30 giorni) primo bonus base pagato",
+  "pricing.firstPayBonus": "+{{expiring}} credits (30-day trial) on first paid Basic",
   "pricing.firstPayBonusRow": "Bonus sulla prima busta paga (solo per la retribuzione base; non durante il periodo di prova)",
-  "pricing.firstPayBonusTable": "{{permanent}} senza scadenza + {{expiring}} (30 giorni)",
+  "pricing.firstPayBonusTable": "{{expiring}} (30-day trial)",
   "pricing.includesLaunchCredits": "Include {{credits}} crediti bonus/di prova"
 }
