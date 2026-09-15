@@ -1,4 +1,5 @@
 import prisma from "../../../db.server";
+import { expireInstallTrialCreditsIfDue } from "../grant/grantBasicFirstPayBonus.server";
 import { getAccountQuota, type AccountQuota } from "./getAccountQuota.server";
 
 /**
@@ -11,6 +12,7 @@ export async function deductCredits(
   credits: number,
 ): Promise<AccountQuota | null> {
   const amount = Math.max(0, Math.floor(credits));
+  await expireInstallTrialCreditsIfDue(shop);
   if (amount > 0) {
     await prisma.account.update({
       where: { shop },

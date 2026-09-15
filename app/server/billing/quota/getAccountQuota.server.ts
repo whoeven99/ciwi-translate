@@ -5,6 +5,7 @@ import {
   getRemainingCredits,
   getTotalCredits,
 } from "../accountBalance.server";
+import { expireInstallTrialCreditsIfDue } from "../grant/grantBasicFirstPayBonus.server";
 
 export type AccountQuota = {
   totalCredits: number;
@@ -21,6 +22,7 @@ export type AccountQuota = {
 export async function getAccountQuota(
   shop: string,
 ): Promise<AccountQuota | null> {
+  await expireInstallTrialCreditsIfDue(shop);
   const account = await prisma.account.findUnique({ where: { shop } });
   if (!account) return null;
 

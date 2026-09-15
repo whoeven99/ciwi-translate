@@ -52,6 +52,7 @@ import {
   runBillingSubscriptionNearDueReconcile,
   runBillingSubscriptionReconcile,
 } from "./services/billingSubscriptionReconcile.js";
+import { runInstallTrialExpiryScan } from "./services/expireInstallTrialJob.js";
 import {
   getRenderErrorDigestIntervalMs,
   getRenderErrorDigestScheduleMinute,
@@ -105,6 +106,20 @@ const BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INITIAL_DELAY_MS = Math.max(
   Number(process.env.BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INITIAL_DELAY_MS) ||
     5 * 60_000,
 );
+/** 试用赠送到期扫描：默认每 12 小时。 */
+const INSTALL_TRIAL_EXPIRY_INTERVAL_MS = Math.max(
+  60_000,
+  Number(process.env.INSTALL_TRIAL_EXPIRY_INTERVAL_MS) || 12 * 60 * 60_000,
+);
+const INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS = Math.max(
+  0,
+  Number(process.env.INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS) || 2 * 60_000,
+);
+const INSTALL_TRIAL_EXPIRY_JITTER_MS = (() => {
+  const n = Number(process.env.INSTALL_TRIAL_EXPIRY_JITTER_MS);
+  if (!Number.isFinite(n)) return 60_000;
+  return Math.min(60_000, Math.max(0, Math.floor(n)));
+})();
 
 /** 店铺画像扫描轮询间隔（默认 10 秒；hint 立即唤醒，轮询兜底）。 */
 const SHOP_SCAN_POLL_INTERVAL_MS = Math.max(
@@ -238,6 +253,25 @@ function scheduleBillingSubscriptionNearDueReconcile(): void {
     tick();
     setInterval(tick, BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS);
   }, BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INITIAL_DELAY_MS);
+}
+
+function scheduleInstallTrialExpiryScan(): void {
+  const tick = () => {
+    safeRun("installTrialExpiry", runInstallTrialExpiryScan);
+  };
+  const jitterMs =
+    INSTALL_TRIAL_EXPIRY_JITTER_MS > 0
+      ? Math.floor(Math.random() * (INSTALL_TRIAL_EXPIRY_JITTER_MS + 1))
+      : 0;
+  const firstDelayMs = INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS + jitterMs;
+  const nextAt = new Date(Date.now() + firstDelayMs);
+  console.log(
+    `[scheduler] installTrialExpiry 下次 ${nextAt.toISOString()} (interval=${INSTALL_TRIAL_EXPIRY_INTERVAL_MS}ms, initialDelay=${INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS}ms, jitter=${jitterMs}ms)`,
+  );
+  setTimeout(() => {
+    tick();
+    setInterval(tick, INSTALL_TRIAL_EXPIRY_INTERVAL_MS);
+  }, firstDelayMs);
 }
 
 function scheduleRenderErrorDigest(): void {
@@ -457,6 +491,7 @@ export function startScheduler(): void {
   // 订阅对账：仅 worker 调度；直连 Turso，不打 TSF Web。
   scheduleBillingSubscriptionNearDueReconcile();
   scheduleBillingSubscriptionReconcile();
+  scheduleInstallTrialExpiryScan();
 
   // Render prod error 汇总 → 飞书（独立于 pipeline stages）。
   scheduleRenderErrorDigest();

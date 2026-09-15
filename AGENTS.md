@@ -703,6 +703,8 @@ Code: `worker/src/services/shopifyFetch.ts` `chunkResources`.
 `AUTO_EMPTY_JOB_CLEANUP_INTERVAL_MS`,
 `BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`, and
 `BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`.
+- Basic 首付 100 万试用积分到期扫描（默认 12h）：`INSTALL_TRIAL_EXPIRY_INTERVAL_MS` /
+`INSTALL_TRIAL_EXPIRY_MAX_PER_RUN`。Code: `expireInstallTrialJob.ts`。
 - Scheduled shop scan（计量复扫，与 auto 同一时区 / slots；目标槽
 `(currentSlot - 1) % slots`，即相对同店 auto 延后 1h）：
 `SHOP_SCAN_SCHEDULE_ENABLED` (default true),
@@ -855,10 +857,7 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
-- Launch Credits（新手礼包）：店铺终身首次 `SUBSCRIPTION_ACTIVATED` 时按档写入
-  `trialCredits`（Basic 4M / Pro 8M / Premium 16M），`BillingLog` `TRIAL_GRANTED`
-  + `referenceId=launch_credits` 幂等；续费结转、不随月额度替换；App
-  `grantLaunchCredits.server.ts` 与 Worker `grantLaunchCredits.ts` 双路径发放。
+- Basic 首次付费赠送：终身首次付费且当时是 Basic 时写入 `purchasedCredits += 1.5M`（永不过期）+ `trialCredits += 1M`（`trialCreditsExpiresAt = now+30d`）。试用中不发；Pro/Premium 不发；已有 `launch_credits` 或 `basic_first_pay_bonus` 流水则跳过。App `grantBasicFirstPayBonus.server.ts` 与 Worker `grantBasicFirstPayBonus.ts` 双路径；激活与试用转正（续费）都会尝试发放。到期结算 `settleExpiredInstallTrialCredits`（试用先抵 used，剩余清零）；Worker `expireInstallTrialJob.ts` 默认 12h 扫描，扣额度前也会惰性结算。存量 Launch Credits（`expiresAt = null`）不追回、不过期。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
 (MONTHLY ≈ +30d, ANNUAL ≈ +365d). `currentPeriodStart = end - intervalDays`.

@@ -1,4 +1,8 @@
 import { createClient, type Client, type InStatement, type ResultSet } from "@libsql/client/web";
+import { randomUUID } from "node:crypto";
+import { settleExpiredInstallTrialCredits } from "./accountBalance.js";
+
+const BASIC_FIRST_PAY_BONUS_REFERENCE_ID = "basic_first_pay_bonus";
 
 /** Turso 网关瞬时错误（502/503/504）短退避重试次数，与 shopifyFetch 默认一致。 */
 const TSF_DB_5XX_MAX_RETRIES = Math.max(
@@ -239,9 +243,100 @@ export async function getOfflineAccessTokenFromTsf(shop: string): Promise<string
   return token ? String(token) : null;
 }
 
+/** 到期写库结算：试用优先抵 used，剩余试用清零。必写 TRIAL_EXPIRED。可重复调用。 */
+export async function expireInstallTrialCreditsIfDue(
+  shop: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!hasTsfDbCredentials()) return false;
+  const nowIso = now.toISOString();
+  const rs = await tsfExecute({
+    sql: `SELECT trialCredits, usedCredits, trialCreditsExpiresAt, deletedAt
+          FROM Account WHERE shop = ? LIMIT 1`,
+    args: [shop],
+  });
+  const row = rs.rows[0];
+  if (!row || row.deletedAt != null) return false;
+
+  const expiresRaw = row.trialCreditsExpiresAt;
+  const expiresAt =
+    expiresRaw == null || expiresRaw === ""
+      ? null
+      : expiresRaw instanceof Date
+        ? expiresRaw
+        : new Date(String(expiresRaw));
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) return false;
+
+  const trialCredits = Number(row.trialCredits ?? 0);
+  const usedCredits = Number(row.usedCredits ?? 0);
+  const settled = settleExpiredInstallTrialCredits(
+    {
+      trialCredits,
+      usedCredits,
+      trialCreditsExpiresAt: expiresAt,
+    },
+    now,
+  );
+  if (!settled.settled) return false;
+
+  const updated = await tsfExecute({
+    sql: `UPDATE Account
+          SET usedCredits = ?,
+              trialCredits = 0,
+              updatedAt = ?
+          WHERE shop = ?
+            AND deletedAt IS NULL
+            AND trialCredits = ?
+            AND usedCredits = ?
+            AND trialCreditsExpiresAt IS NOT NULL
+            AND trialCreditsExpiresAt <= ?`,
+    args: [
+      settled.usedCredits,
+      nowIso,
+      shop,
+      trialCredits,
+      usedCredits,
+      nowIso,
+    ],
+  });
+  if (Number(updated.rowsAffected ?? 0) <= 0) return false;
+
+  const prior = await tsfExecute({
+    sql: `SELECT id FROM BillingLog
+          WHERE shop = ? AND eventType = 'TRIAL_EXPIRED' AND referenceId = ?
+          LIMIT 1`,
+    args: [shop, BASIC_FIRST_PAY_BONUS_REFERENCE_ID],
+  });
+  if (!prior.rows[0]) {
+    await tsfExecute({
+      sql: `INSERT INTO BillingLog (
+              id, shop, eventType, planKey, referenceId, creditsDelta, usedCredits, metadata, createdAt
+            ) VALUES (?, ?, 'TRIAL_EXPIRED', NULL, ?, ?, ?, ?, ?)`,
+      args: [
+        randomUUID(),
+        shop,
+        BASIC_FIRST_PAY_BONUS_REFERENCE_ID,
+        -settled.leftover,
+        settled.usedCredits,
+        JSON.stringify({
+          grantKind: "basic_first_pay_bonus_expired",
+          leftover: settled.leftover,
+          consumed: settled.consumed,
+          trialCreditsExpiresAt: expiresAt?.toISOString() ?? null,
+          source: "worker",
+        }),
+        nowIso,
+      ],
+    });
+  }
+
+  return true;
+}
+
 /** 读 tsf 账户剩余额度（三池之和 - 已用）。无账户返回 null。 */
 export async function getTsfAccountRemaining(shop: string): Promise<number | null> {
   if (!hasTsfDbCredentials()) return null;
+  await expireInstallTrialCreditsIfDue(shop);
   const rs = await tsfExecute({
     sql: "SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits FROM Account WHERE shop = ? AND deletedAt IS NULL LIMIT 1",
     args: [shop],
@@ -274,6 +369,7 @@ export async function deductTsfAccountCredits(
   amount: number,
 ): Promise<number | null> {
   if (!hasTsfDbCredentials()) return null;
+  await expireInstallTrialCreditsIfDue(shop);
   const amt = Math.max(0, Math.ceil(amount));
   if (amt > 0) {
     const res = await tsfExecute({

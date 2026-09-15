@@ -254,10 +254,13 @@ export function CreateTaskConfirmModal({
     recommendedPaidUpgradePlan != null;
   const subscriptionBenefitValue =
     recommendedPlan &&
-    scenario === "insufficient_pricing"
-      ? t("pricing.launchCredits", {
-          credits: formatConfirmCredits(recommendedPlan.launchCredits),
-          defaultValue: "+{{credits}} Launch Credits (first subscribe only)",
+    scenario === "insufficient_pricing" &&
+    recommendedPlan.bonusCredits > 0
+      ? t("pricing.firstPayBonus", {
+          permanent: formatConfirmCredits(recommendedPlan.bonusPermanentCredits),
+          expiring: formatConfirmCredits(recommendedPlan.bonusExpiringCredits),
+          defaultValue:
+            "+{{permanent}} never-expire + {{expiring}} (30-day) first paid Basic bonus",
         })
       : null;
   const subscriptionBenefitCaption =
@@ -527,15 +530,36 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 }
 
 const PLAN_RECOMMENDATIONS = [
-  { title: "Basic", tier: "basic", monthlyCredits: 1500000, launchCredits: 4000000 },
-  { title: "Pro", tier: "pro", monthlyCredits: 3000000, launchCredits: 8000000 },
-  { title: "Premium", tier: "premium", monthlyCredits: 8000000, launchCredits: 16000000 },
+  {
+    title: "Basic",
+    tier: "basic",
+    monthlyCredits: 1500000,
+    bonusPermanentCredits: 1500000,
+    bonusExpiringCredits: 1000000,
+    bonusCredits: 2500000,
+  },
+  {
+    title: "Pro",
+    tier: "pro",
+    monthlyCredits: 3000000,
+    bonusPermanentCredits: 0,
+    bonusExpiringCredits: 0,
+    bonusCredits: 0,
+  },
+  {
+    title: "Premium",
+    tier: "premium",
+    monthlyCredits: 8000000,
+    bonusPermanentCredits: 0,
+    bonusExpiringCredits: 0,
+    bonusCredits: 0,
+  },
 ] as const;
 
 function recommendPlanForShortfall(shortfallCredits: number) {
   return (
     PLAN_RECOMMENDATIONS.find(
-      (plan) => plan.monthlyCredits + plan.launchCredits >= shortfallCredits,
+      (plan) => plan.monthlyCredits + plan.bonusCredits >= shortfallCredits,
     ) ??
     PLAN_RECOMMENDATIONS[PLAN_RECOMMENDATIONS.length - 1] ??
     null

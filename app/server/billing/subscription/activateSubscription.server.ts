@@ -2,7 +2,7 @@ import type { AppSubscription, Prisma } from "../../../generated/prisma";
 import prisma from "../../../db.server";
 import { ensureAccount } from "../account/ensureAccount.server";
 import { appendBillingLog } from "../billingLog.server";
-import { grantLaunchCreditsIfEligible } from "../grant/grantLaunchCredits.server";
+import { grantBasicFirstPayBonusIfEligible } from "../grant/grantBasicFirstPayBonus.server";
 import { APP_SUBSCRIPTION_STATUS, BILLING_LOG_EVENT } from "../types.server";
 import {
   archivePeriodAndRenew,
@@ -121,11 +121,15 @@ export async function applyActiveSubscription(
         grantKind: "shopify_period",
       },
     });
-    // 终身首次激活：额外发放 Launch Credits → trialCredits（幂等）。
-    const launch = await grantLaunchCreditsIfEligible({ shop, planKey });
-    if (launch.granted) {
+    // 终身首次付费 Basic：1.5M 永久 + 1M/30 天（试用中跳过，转正走续费路径）。
+    const bonus = await grantBasicFirstPayBonusIfEligible({
+      shop,
+      planKey,
+      trialEndsAt: trialEndsAt ?? null,
+    });
+    if (bonus.granted) {
       console.info(
-        `[billing] launch credits granted shop=${shop} planKey=${planKey} credits=${launch.credits}`,
+        `[billing] basic first-pay bonus granted shop=${shop} planKey=${planKey} permanent=${bonus.permanentCredits} expiring=${bonus.expiringCredits}`,
       );
     }
     return { outcome: "activated" };
