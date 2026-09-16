@@ -113,12 +113,10 @@ function extractTarget(metadata: unknown): string | null {
 
 function buildWhere(
   shop: string,
-  periodStart: Date | null,
   cursor: { createdAt: Date; id: string } | null,
 ): Prisma.CreditUsageWhereInput {
   return {
     shop,
-    ...(periodStart ? { createdAt: { gte: periodStart } } : {}),
     ...(cursor
       ? {
           OR: [
@@ -209,23 +207,16 @@ function toGrantItem(row: {
   };
 }
 
-function buildGrantWhere(
-  shop: string,
-  periodStart: Date | null,
-): Prisma.BillingLogWhereInput {
+function buildGrantWhere(shop: string): Prisma.BillingLogWhereInput {
   return {
     shop,
     eventType: { in: [...GRANT_EVENT_TYPES] },
     creditsDelta: { gt: 0 },
-    ...(periodStart ? { createdAt: { gte: periodStart } } : {}),
   };
 }
 
-async function loadPeriodGrants(
-  shop: string,
-  periodStart: Date | null,
-): Promise<typeof EMPTY_GRANTS> {
-  const where = buildGrantWhere(shop, periodStart);
+async function loadPeriodGrants(shop: string): Promise<typeof EMPTY_GRANTS> {
+  const where = buildGrantWhere(shop);
   const [grouped, rows] = await Promise.all([
     prisma.billingLog.groupBy({
       by: ["eventType"],
@@ -264,7 +255,7 @@ async function loadPeriodGrants(
   };
 }
 
-/** 本周期积分用量 + BillingLog 正数入账：账本 usedCredits、分类汇总、明细分页。 */
+/** 历史积分用量 + BillingLog 正数入账：账本 usedCredits、分类汇总、明细分页（不按当前账期切割）。 */
 export async function listCreditUsage(params: {
   shop: string;
   cursor?: string;
@@ -273,11 +264,11 @@ export async function listCreditUsage(params: {
   const pageSize = clampPageSize(params.pageSize);
   const cursor = decodeCursor(params.cursor);
   const period = await loadPeriod(params.shop);
-  const where = buildWhere(params.shop, period.periodStart, cursor);
-  const periodWhere = buildWhere(params.shop, period.periodStart, null);
+  const where = buildWhere(params.shop, cursor);
+  const allUsageWhere = buildWhere(params.shop, null);
 
   const [bySource, rows, grants] = await Promise.all([
-    cursor ? Promise.resolve(EMPTY_BY_SOURCE) : sumBySource(periodWhere),
+    cursor ? Promise.resolve(EMPTY_BY_SOURCE) : sumBySource(allUsageWhere),
     prisma.creditUsage.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -290,9 +281,7 @@ export async function listCreditUsage(params: {
         metadata: true,
       },
     }),
-    cursor
-      ? Promise.resolve(EMPTY_GRANTS)
-      : loadPeriodGrants(params.shop, period.periodStart),
+    cursor ? Promise.resolve(EMPTY_GRANTS) : loadPeriodGrants(params.shop),
   ]);
 
   const hasMore = rows.length > pageSize;

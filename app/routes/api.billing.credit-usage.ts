@@ -3,7 +3,7 @@ import { authenticate } from "~/shopify.server";
 import { listCreditUsage } from "~/server/billing/quota/listCreditUsage.server";
 
 /**
- * GET /api/billing/credit-usage —— 本周期积分使用情况。
+ * GET /api/billing/credit-usage —— 历史积分使用情况（不按当前账期切割）。
  * 首屏：消耗汇总/明细分页 + BillingLog 正数入账（已获汇总与明细）。
  * 带 cursor 的 load-more 只翻消耗，已获字段为空。
  * query: cursor? pageSize?（默认 20）

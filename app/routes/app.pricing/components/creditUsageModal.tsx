@@ -300,6 +300,7 @@ function CreditUsageBody({
   onLoadMore: () => void;
 }) {
   const { t } = useTranslation();
+  const usageTotal = bySource.v4_job + bySource.single + bySource.image;
   const emptyKey =
     usedCredits > 0 ? "pricing.usage.emptyPartial" : "pricing.usage.empty";
   return (
@@ -314,7 +315,7 @@ function CreditUsageBody({
       ) : (
         <GrantList items={grants} />
       )}
-      <UsageBreakdown usedCredits={usedCredits} bySource={bySource} />
+      <UsageBreakdown usedCredits={usageTotal} bySource={bySource} />
       <Text>{t("pricing.usage.recent")}</Text>
       {items.length === 0 ? (
         <Text type="secondary">{t(emptyKey)}</Text>

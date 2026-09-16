@@ -281,7 +281,7 @@ real `route.tsx` or route module is added.
 `app/routes/app.tsx` 与 Redux `userConfig` 共用）。
 - `/api/billing/active-subscription`: `app/routes/api.billing.active-subscription.ts`.
 - `/api/billing/credit-usage`: `app/routes/api.billing.credit-usage.ts`
-  （定价页「历史使用情况」弹窗：本周期 `Account.usedCredits` + `CreditUsage` 按 source 汇总与明细分页；已获读 `BillingLog` 正数入账，与消耗分页分离）。
+  （定价页「历史使用情况」弹窗：`CreditUsage` / `BillingLog` 全量历史汇总与明细分页，不按 `currentPeriodStart` 切割；`Account.usedCredits` 仅用于「账本有用量但无明细」空态）。
 - `/api/billing/migrate-credits-to-spark`: `app/routes/api.billing.migrate-credits-to-spark.ts`
   （定价页迁剩余积分到 Spark：先加 Spark `purchasedTokens`，再加翻译 `usedCredits`；成败写 `BillingLog` 并异步飞书）。
 - `/api/shop-profile`: `app/routes/api.shop-profile.ts`.
@@ -772,7 +772,7 @@ Code:
 - `app/server/billing/quota/quotaRouter.server.ts`: quota query/deduct routing
   (`deductShopCredits` optional audit → `CreditUsage`).
 - `app/server/billing/quota/recordCreditUsage.server.ts`: App-side `CreditUsage` writer.
-- `app/server/billing/quota/listCreditUsage.server.ts`: 定价页本周期用量只读查询（账本总量 + 分类汇总 + cursor 分页；已获汇总/明细读 BillingLog 正数入账）。
+- `app/server/billing/quota/listCreditUsage.server.ts`: 定价页历史用量只读查询（CreditUsage 分类汇总 + cursor 分页；已获汇总/明细读 BillingLog 正数入账；不按当前账期切割）。
 - `app/server/billing/quota/createTaskQuotaGuard.server.ts`: create-task guard.
 - `app/server/billing/quota/deductCredits.server.ts`: TSF credit deduction.
 - `app/server/billing/webhooks/handleBillingWebhook.server.ts`: TSF webhook handling
