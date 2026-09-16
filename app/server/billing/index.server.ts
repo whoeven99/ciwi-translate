@@ -44,12 +44,14 @@ export {
 } from "./lifecycleFeishuNotify.server";
 export { applyTokenPackPurchase } from "./purchase/applyTokenPack.server";
 export {
-  grantLaunchCreditsIfEligible,
-  resolveLaunchCreditsForPlanKey,
-  LAUNCH_CREDITS_BY_TIER,
-  LAUNCH_CREDITS_REFERENCE_ID,
-  type GrantLaunchCreditsResult,
-} from "./grant/grantLaunchCredits.server";
+  grantInstallCreditsIfEligible,
+  expireInstallTrialCreditsIfDue,
+  installCreditsExpiresAt,
+  INSTALL_CREDITS,
+  INSTALL_CREDITS_TTL_DAYS,
+  INSTALL_CREDITS_REFERENCE_ID,
+  type GrantInstallCreditsResult,
+} from "./grant/grantInstallCredits.server";
 export {
   resolveBillingBinding,
   type BindingResolution,

@@ -402,7 +402,7 @@ Common edits:
 `npm run check:auto-translate-modules --prefix worker`; filter validation is a
 separate concern.
 - Change create-task UX or request body: start in `app/lib/createTranslateV4Tasks.ts`,
-then `api.translate-v4.tasks.ts`.
+then `api.translate-v4.tasks.ts`. Remaining ≤ 0：客户端 `notifyIfCreateTaskBlockedByCredits` toast，不打开 `CreateTaskConfirmModal`；服务端 `evaluateCreateTaskQuotaGuard` 仍拦。
 - Billing return after buy-credits / subscribe from create confirm: draft in
   `app/utils/createTaskDraft.ts` (sessionStorage); return flag via
   `app/utils/billingReturn.ts`; restore + reopen confirm in
@@ -520,8 +520,8 @@ and auto-translate; also runs scheduled shop-scan enqueue (target slot =
 `(currentSlot - 1) % slots`, i.e. 1h after the shop's auto slot), deploy
 wake/stale reset, empty auto-job cleanup, hourly v4 job retention cleanup
 (`cleanupOldJobs`，默认每小时 :40), shop_scan_jobs retention
-(`cleanupOldShopScanJobs`，默认每小时 :50), and subscription reconciliation
-schedules.
+(`cleanupOldShopScanJobs`，默认每小时 :50), subscription reconciliation
+schedules, and install-gift expiry scan (`expireInstallTrialJob`，默认 12h；每轮最多 200 店).
 - `worker/src/env.ts`: required env diagnostics.
 - `worker/src/shutdown.ts`: shared shutdown flag; `index.ts` releases jobs
 claimed by the current process on SIGTERM/SIGINT before exit.
@@ -701,8 +701,13 @@ Code: `worker/src/services/shopifyFetch.ts` `chunkResources`.
 `EMAIL_FALLBACK_SCAN_INTERVAL_MS`（默认 5min；邮件 worker 跨分区 DISTINCT 兜底
 间隔，平时走 Redis 标记快路径），
 `AUTO_EMPTY_JOB_CLEANUP_INTERVAL_MS`,
-`BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`, and
-`BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`.
+`BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`,
+`BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`,
+`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`（默认 12h）/
+`INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS`（默认 2min）/
+`INSTALL_TRIAL_EXPIRY_JITTER_MS`（默认 0–60s 启动抖动）/
+`INSTALL_TRIAL_EXPIRY_MAX_PER_RUN`（默认 200，剩的下轮继续）/
+`INSTALL_TRIAL_EXPIRY_DELAY_MS`（默认 50ms 店间间隔）。
 - Scheduled shop scan（计量复扫，与 auto 同一时区 / slots；目标槽
 `(currentSlot - 1) % slots`，即相对同店 auto 延后 1h）：
 `SHOP_SCAN_SCHEDULE_ENABLED` (default true),
@@ -748,7 +753,7 @@ variables consumed by `workerEmail.ts` and TSF email helpers.
 
 Models:
 
-- `Account`: TSF credit pools: subscription, purchased, trial, used.
+- `Account`: TSF credit pools: subscription, purchased, trial, used；安装赠送带 `trialCreditsExpiresAt`。
 - `PlanCatalog`, `AppSubscription`, `BillingLog`, `AccountPeriodUsage`.
 - `TranslateV4JobUsage`: per v4 job usage snapshot (Worker writes on terminal status).
 - `CreditUsage`: per-deduction credit audit (`single` / `image` / `v4_job`);
@@ -855,10 +860,23 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
-- Launch Credits（新手礼包）：店铺终身首次 `SUBSCRIPTION_ACTIVATED` 时按档写入
-  `trialCredits`（Basic 4M / Pro 8M / Premium 16M），`BillingLog` `TRIAL_GRANTED`
-  + `referenceId=launch_credits` 幂等；续费结转、不随月额度替换；App
-  `grantLaunchCredits.server.ts` 与 Worker `grantLaunchCredits.ts` 双路径发放。
+  Install-gift expiry is **not** checked on quota reads. Worker scans due
+  accounts every 12h (`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`, first delay 2min +
+  0–60s jitter; max 200 shops/run, 50ms inter-shop delay).
+  Deduct and subscription renewal still settle first so expired gift is not
+  spent. Leftover `trialCredits` are zeroed and `usedCredits` is reduced by
+  the gift already consumed (gift used first; paid pools not charged for
+  leftover).
+- 安装赠送：终身首次建 `Account` 写入 `trialCredits=200000`，
+  `trialCreditsExpiresAt = now+30d`；`BillingLog` `TRIAL_GRANTED` +
+  `referenceId=install_credits` 幂等。卸载重装不补发。存量 Launch Credits
+  （`expiresAt` 为空）不追回、不过期。App `grantInstallCredits.server.ts`，
+  Worker 新建 Account 时 `grantInstallCredits.ts`。  到期扫描
+  `expireInstallTrialJob.ts`（`scheduler.ts`，每轮 LIMIT 200）；单店结算
+  `expireInstallTrialCreditsIfDue`（App 扣费/续费、Worker `tsfDb` 扣费）。
+  到期写 `BillingLog` `TRIAL_EXPIRED` + `referenceId=install_credits`
+  （`creditsDelta` 为负 leftover；用完则为 0）。
+- 已停发首订 Launch Credits（Basic 4M / Pro 8M / Premium 16M）。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
 (MONTHLY ≈ +30d, ANNUAL ≈ +365d). `currentPeriodStart = end - intervalDays`.
@@ -1078,13 +1096,12 @@ AI model `Select` + optional prompt + credit estimate) →
 the real system prompt (glossary + shop profile + custom prompt) via
 `estimateSingleTranslateLlmTokens`, then ceil(tokens × model multiplier)
 (DeepSeek default 1, GPT/Google default 1.5).
-- 单字段额度不足：打开弹窗时先预估 + 读剩余额度；积分区/试用优惠复用 `CreditsConfirmPanel`（Required / Available，无 Precise estimate）。额度不够留在本弹窗展示 trial / 买积分，点买积分才开共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
-`openCreditsPurchaseModal({ kind: "single_translate", … })`）。翻译失败后的
-额度类报错统一走 `app/hooks/useSingleTranslateQuotaGate.tsx` +
-`app/lib/singleTranslateQuotaFeedback.ts`（`v4.create.noCreditsPricing` → 补额度
-弹窗，`noCreditsTrial` → toast 提示试用、再次打开单条弹窗即可开试用，其余落
-`v4.error.singleQuotaInsufficient`）。20 多个 manage 页共用这一套，不要在单页
-自己拼额度文案。
+- 单字段额度不足：点 Translate 先读剩余额度；remaining ≤ 0 时 toast
+  `v4.create.insufficientCredits`，不打开翻译弹窗。弹窗仅在有额度时出现（Required /
+  Available + 模型/提示词，无试用/买积分推销）。失败后的额度类报错同样 toast，走
+  `app/hooks/useSingleTranslateQuotaGate.tsx` +
+  `app/lib/singleTranslateQuotaFeedback.ts`。20 多个 manage 页共用这一套，不要在单页
+  自己拼额度文案。服务端 `evaluateCreateTaskQuotaGuard` 仍拦 remaining ≤ 0。
 
 Image translation, PageFly, and some summary/count behavior may still be
 separate from the save path.
@@ -1171,7 +1188,7 @@ Language:
 
 - Page: `app/routes/app.language/route.tsx`.
 - Publish 列表开关只跟 Shopify `shopLocale.published`（桌面/移动一致）；域名 `alternateLocales` 只在 `publishModal` 里改。`publishAction` 分别回传 `shopLocaleUpdate` / `webPresenceUpdate` 成败，部分失败弹窗不关。
-- Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗，再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate / trial / 买积分，积分区走 `CreditsConfirmPanel`）。
+- Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗。剩余积分 ≤ 0 时 toast（`v4.create.insufficientCredits`）拦住、不打开确认弹窗；额度足够再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate，积分区走 `CreditsConfirmPanel`）。服务端 `evaluateCreateTaskQuotaGuard` 仍拦 remaining ≤ 0。
 - Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
 - Server: `app/server/translateV4/targetLocale.server.ts`,
@@ -1957,4 +1974,3 @@ translation, but auto-translate still does not set it. Empty Turso
 7. Run the validation command that matches the change.
 8. Final response should include changed files, validation result, residual
  risk, and unfinished P1 items when applicable.
-
