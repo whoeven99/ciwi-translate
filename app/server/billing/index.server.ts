@@ -76,6 +76,12 @@ export {
   type CreditUsageSource,
   type RecordCreditUsageParams,
 } from "./quota/recordCreditUsage.server";
+export {
+  listCreditUsage,
+  type CreditUsageListItem,
+  type ListCreditUsageParams,
+  type ListCreditUsageResult,
+} from "./quota/listCreditUsage.server";
 export { getTsfBootstrapData } from "./bootstrap/getTsfBootstrapData.server";
 export {
   resolveShopPlanEntitlements,
