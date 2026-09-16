@@ -1524,6 +1524,14 @@ const Index = () => {
     [t],
   );
 
+  const editAutoLocaleLabel = useMemo(() => {
+    if (!editAutoLocale) return "";
+    const row = dataSource.find((item: any) => item.locale === editAutoLocale);
+    if (!row) return editAutoLocale;
+    const name = row.name || row.localeName || "";
+    return name ? `${name} (${editAutoLocale})` : editAutoLocale;
+  }, [dataSource, editAutoLocale]);
+
   const allDraftModulesSelected =
     autoModuleChips.length > 0 &&
     autoModuleChips.every((mod) => draftAutoModules.includes(mod.value));
@@ -1858,7 +1866,7 @@ const Index = () => {
         open={autoSettingsModalOpen}
         heading={t("v4.autoSettings.title")}
         onClose={closeAutoSettingsModal}
-        size="large"
+        size="base"
         primaryAction={{
           content: t("v4.autoSettings.save"),
           loading: autoSettingsSaving,
@@ -1876,53 +1884,40 @@ const Index = () => {
         ]}
       >
         <div className={styles.autoSettingsModalBody}>
-          <div className={styles.autoSettingsModalSection}>
-            <Flex align="center" justify="space-between" gap="middle">
-              <div>
-                <Typography.Text strong>
-                  {t("v4.autoSettings.localeToggle")}
-                </Typography.Text>
-                <Typography.Text
-                  type="secondary"
-                  style={{ display: "block", fontSize: 12, marginTop: 2 }}
-                >
-                  {editAutoLocale}
-                </Typography.Text>
+          <p className={styles.autoSettingsModalHint}>
+            {t("v4.autoSettings.help")}
+          </p>
+
+          <div className={styles.autoSettingsModalRow}>
+            <div className={styles.autoSettingsModalRowLabel}>
+              <div className={styles.autoSettingsModalLabel}>
+                {t("v4.autoSettings.localeToggle")}
               </div>
-              <Switch
-                checked={draftLocaleAuto}
-                onChange={setDraftLocaleAuto}
-              />
-            </Flex>
-          </div>
-          <div className={styles.autoSettingsModalSection}>
-            <div style={{ maxWidth: 280 }}>
-              <InFlowSelect
-                label={t("v4.autoSettings.hour")}
-                options={autoHourOptions}
-                value={String(draftAutoHour)}
-                onChange={(value) => setDraftAutoHour(Number(value))}
-                active={autoSettingsModalOpen}
-              />
-              <Typography.Text
-                type="secondary"
-                style={{ fontSize: 12, display: "block", marginTop: 4 }}
-              >
-                {t("v4.autoSettings.timezone")}
-              </Typography.Text>
+              <div className={styles.autoSettingsModalMeta}>
+                {editAutoLocaleLabel}
+              </div>
             </div>
+            <Switch
+              checked={draftLocaleAuto}
+              onChange={setDraftLocaleAuto}
+            />
           </div>
-          <div className={styles.autoSettingsModalSection}>
-            <Flex
-              align="center"
-              justify="space-between"
-              wrap="wrap"
-              gap="small"
-              style={{ marginBottom: 8 }}
-            >
-              <Typography.Text strong>
+
+          <div className={styles.autoSettingsModalField}>
+            <InFlowSelect
+              label={`${t("v4.autoSettings.hour")} · ${t("v4.autoSettings.timezone")}`}
+              options={autoHourOptions}
+              value={String(draftAutoHour)}
+              onChange={(value) => setDraftAutoHour(Number(value))}
+              active={autoSettingsModalOpen}
+            />
+          </div>
+
+          <div className={styles.autoSettingsModalModules}>
+            <div className={styles.autoSettingsModalModulesHead}>
+              <span className={styles.autoSettingsModalLabel}>
                 {t("v4.autoSettings.modules")}
-              </Typography.Text>
+              </span>
               <Checkbox
                 checked={allDraftModulesSelected}
                 indeterminate={someDraftModulesSelected}
@@ -1930,7 +1925,7 @@ const Index = () => {
               >
                 {t("Check all")}
               </Checkbox>
-            </Flex>
+            </div>
             <div className={styles.autoModuleGrid}>
               {autoModuleChips.map((mod) => {
                 const selected = draftAutoModules.includes(mod.value);
@@ -1950,12 +1945,6 @@ const Index = () => {
                 );
               })}
             </div>
-            <Typography.Text
-              type="secondary"
-              style={{ fontSize: 12, display: "block", marginTop: 8 }}
-            >
-              {t("v4.autoSettings.help")}
-            </Typography.Text>
           </div>
         </div>
       </AppSModal>
