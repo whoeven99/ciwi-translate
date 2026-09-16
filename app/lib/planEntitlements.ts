@@ -119,15 +119,15 @@ export function filterV2ModulesForPlan(
   return keys.filter((key) => isV2ModuleAllowedForPlan(key, entitlements));
 }
 
-/** 套餐默认间隔 = 最短（最快）。 */
+/** 未配置时默认 24h（各档套餐均允许）；可选更短间隔仍按套餐最短闸。 */
 export function defaultAutoTranslateIntervalHours(
-  entitlements: PlanEntitlements,
+  _entitlements: PlanEntitlements,
 ): AutoTranslateIntervalHours {
-  return entitlements.minAutoTranslateIntervalHours;
+  return 24;
 }
 
 /**
- * 将商户所选间隔钳到套餐允许集；非法/过短 → 套餐最短。
+ * 将商户所选间隔钳到套餐允许集；非法 → 默认 24h（若套餐不允许则回退最短）。
  */
 export function clampAutoTranslateIntervalHours(
   hours: unknown,
@@ -141,7 +141,7 @@ export function clampAutoTranslateIntervalHours(
   ) {
     return n as AutoTranslateIntervalHours;
   }
-  return entitlements.minAutoTranslateIntervalHours;
+  return defaultAutoTranslateIntervalHours(entitlements);
 }
 
 export function autoTranslateCooldownMsForInterval(

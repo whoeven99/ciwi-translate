@@ -100,6 +100,13 @@ export function filterAutoV2ModulesForPlan(
   });
 }
 
+/** 未配置时默认 24h（各档套餐均允许）；可选更短间隔仍按套餐最短闸。 */
+export function defaultAutoTranslateIntervalHours(
+  _entitlements: PlanEntitlements,
+): AutoTranslateIntervalHours {
+  return 24;
+}
+
 export function clampAutoTranslateIntervalHours(
   hours: unknown,
   entitlements: PlanEntitlements,
@@ -112,7 +119,7 @@ export function clampAutoTranslateIntervalHours(
   ) {
     return n as AutoTranslateIntervalHours;
   }
-  return entitlements.minAutoTranslateIntervalHours;
+  return defaultAutoTranslateIntervalHours(entitlements);
 }
 
 export function autoTranslateCooldownMsForInterval(
