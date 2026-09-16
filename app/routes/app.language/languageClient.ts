@@ -43,3 +43,26 @@ export async function setAutoTranslateCompat(args: {
   });
   return res.json();
 }
+
+/** 读取整店自动更新设置（小时 + 模块）。 */
+export async function getAutoTranslateSettingsCompat() {
+  const res = await fetch("/api/translate-v4/target-locale");
+  return res.json();
+}
+
+/** 保存整店自动更新小时 + 模块（不含 liquid）。 */
+export async function setAutoTranslateSettingsCompat(args: {
+  hour: number;
+  modules: string[];
+}) {
+  const res = await fetch("/api/translate-v4/target-locale", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      intent: "setAutoSettings",
+      hour: args.hour,
+      modules: args.modules,
+    }),
+  });
+  return res.json();
+}

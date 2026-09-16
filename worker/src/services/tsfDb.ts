@@ -156,13 +156,40 @@ export type AutoTranslateShop = {
   shop: string;
   primaryLocale: string;
   targets: string[];
+  /** 0–23；null=沿用 hash 分槽 */
+  autoTranslateHour: number | null;
+  /** 原始 JSON / string；null=沿用默认 AUTO_TRANSLATE_V4_MODULES */
+  autoTranslateModules: unknown;
 };
+
+function parseNullableHour(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 23) return null;
+  return n;
+}
+
+function parseModulesJson(raw: unknown): unknown {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return raw;
+}
 
 /** 自动扫描用：开了自动翻译的店。 */
 export async function listAutoTranslateShops(): Promise<AutoTranslateShop[]> {
   // 按语言精确取：该语言开了自动翻译（ShopTargetLocale）
   const rs = await tsfExecute(
-    `SELECT s.shop AS shop, s.primaryLocale AS primaryLocale, t.locale AS target
+    `SELECT s.shop AS shop,
+            s.primaryLocale AS primaryLocale,
+            s.autoTranslateHour AS autoTranslateHour,
+            s.autoTranslateModules AS autoTranslateModules,
+            t.locale AS target
      FROM ShopTranslationSettings s
      JOIN ShopTargetLocale t ON t.shop = s.shop
      WHERE t.autoTranslate = 1`,
@@ -172,7 +199,13 @@ export async function listAutoTranslateShops(): Promise<AutoTranslateShop[]> {
     const shop = String(r.shop);
     const primaryLocale = String(r.primaryLocale);
     const target = String(r.target);
-    const entry = byShop.get(shop) ?? { shop, primaryLocale, targets: [] };
+    const entry = byShop.get(shop) ?? {
+      shop,
+      primaryLocale,
+      targets: [],
+      autoTranslateHour: parseNullableHour(r.autoTranslateHour),
+      autoTranslateModules: parseModulesJson(r.autoTranslateModules),
+    };
     entry.targets.push(target);
     byShop.set(shop, entry);
   }

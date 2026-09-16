@@ -40,6 +40,20 @@ export function getAutoTranslateScheduleMinute(): number {
   return Math.floor(n);
 }
 
+/**
+ * 把一个店稳定映射到 [0, slotsPerDay) 的槽位（FNV-1a）。
+ * 与 worker `shopSlotIndex` 同算法，供存量 hour 回填 / UI 默认值。
+ */
+export function shopSlotIndex(shop: string, slotsPerDay = 24): number {
+  const slots = Math.max(1, Math.min(1440, Math.floor(slotsPerDay)));
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < shop.length; i++) {
+    hash ^= shop.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) % slots;
+}
+
 export async function readAutoScanLastAt(): Promise<string | null> {
   try {
     const v = await getTranslateV4RedisClient().get(AUTO_SCAN_LAST_AT_KEY);

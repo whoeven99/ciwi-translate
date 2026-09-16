@@ -109,7 +109,8 @@ make a focused build/type check more useful for small changes.
 - `npm run core:build`: build shared `packages/translation-core` into `.build`.
 - `npm run turso:migrate:test` / `npm run turso:migrate:prod`: run Turso migrations.
 - `npm run deployTest` / `npm run deployProd`: Shopify app deploy with matching config.
-- `npm run push:pr`: commit (skips secrets) → push → create/reuse PR (`PR_URL:`).
+- `npm run push:pr`: AI 写中文标题/摘要后 commit → push → create/update PR（`PR_URL:`）。
+- `npm run rebase:pr`: 相对 master 压成一条中文 commit，改 PR 标题正文，`--force-with-lease` 推送。
 - `npm run merge:deploy:test`: squash-merge current PR to master, then trigger
 test web + worker deploy (`MERGED_PR_URL:`, `DEPLOY_RUN_URL:`).
 
@@ -1192,8 +1193,10 @@ Language:
 - Client: `app/routes/app.language/languageClient.ts`.
 - Server: `app/server/translateV4/targetLocale.server.ts`,
 `shopLocales.server.ts`, `languageStatus.server.ts`（语言页 status 0..4，
-由 `/api/translate-v4/target-locale` 调用）。
-- Models: `ShopTranslationSettings`, `ShopTargetLocale`（含语言级覆盖率汇总
+由 `/api/translate-v4/target-locale` 调用）、
+`autoTranslateSettings.server.ts`（整店自动更新小时 + 模块；不含 liquid）。
+- Models: `ShopTranslationSettings`（含 `autoTranslateHour` /
+  `autoTranslateModules`）、`ShopTargetLocale`（含语言级覆盖率汇总
   `coverageTranslated` / `coverageTotal` / `coveragePercent` /
   `coverageUpdatedAt` / `coverageSource`；权威在 Turso，与 autoTranslate 同表）。
 - Coverage 写入：`app/server/translateV4/coverageStore.server.ts`（App refresh）、
@@ -1204,6 +1207,8 @@ Language:
   `cacheEmpty` 触发语言页后台 refresh。
 - 线上 Redis→Turso 回填：`scripts/backfill-locale-coverage-from-redis.mjs`
   （默认 dry-run；`--write` 写入；`--shop=` / `--only-missing`）。
+- 自动更新 hour/modules 回填：`scripts/backfill-auto-translate-settings.mjs`
+  （默认 dry-run；`--write`；null hour→hash 槽位；null modules→默认 auto 模块集）。
 
 Glossary:
 
@@ -1386,7 +1391,8 @@ corresponding script without asking for confirmation:
 
 | User says                                             | Action                                                                                        |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| "提个pr" / "提pr" / "创建PR" / "push and create PR"        | Run `npm run push:pr`（或 `npm run push:pr -- --message "说明"`）                                  |
+| "提个pr" / "提pr" / "创建PR" / "push and create PR"        | 按 diff 写中文标题/commit/摘要 → `npm run push:pr -- --title … --message-file … --body-file …` |
+| "rebase" / "压一下提交" / "rebase pr"                      | 按 `origin/master...HEAD` diff 写中文 → `npm run rebase:pr -- --title … --message-file … --body-file …` |
 | "合入PR然后发布测试环境" / "合入pr发布测试" / "merge and deploy test" | Run `npm run merge:deploy:test`                                                               |
 | "发布测试环境" / "deploy test" (单独发布，不合入PR)                 | 触发 `tsf-deploy.yml` workflow on master，参数 `render_service_test=true, render_worker_test=true` |
 | "审计店面多语言" / "storefront locale audit"                 | Cursor browser 发现语言并切 locale → `node scripts/storefront-locale-audit.mjs` 落盘（见 Scripts） |
@@ -1437,7 +1443,8 @@ For "合入PR然后发布测试环境", the script will:
 | 安装 / 首次订阅 / 卸载飞书       | `app/server/billing/lifecycleFeishuNotify.server.ts`  | `uninstallSnapshot.server.ts`, `app.tsx` loader, `handleBillingWebhook.server.ts`, worker `lifecycleFeishuNotify.ts` |
 | 卸载挽回邮件                     | `app/server/billing/email/uninstallEmail.server.ts`   | `webhooks.tsx` `APP_UNINSTALLED`、腾讯云模板 `212617`/`212612`/`212616`、飞书按分群发元数据（不含邮件正文） |
 | First-time onboarding            | `app/routes/app.onboarding/route.tsx`                 | `app/server/onboarding/onboarding.server.ts`, `app/routes/app._index/route.tsx`, `ShopOnboarding`      |
-| Auto translate                   | `worker/src/services/autoTranslate.ts`                | `autoScanSchedule.ts`, `ShopTargetLocale`, module catalog                                               |
+| Auto translate                   | `worker/src/services/autoTranslate.ts`                | `autoScanSchedule.ts`, `ShopTargetLocale`, `ShopTranslationSettings.autoTranslateHour/Modules`, module catalog |
+| 语言页自动更新设置               | `app/server/translateV4/autoTranslateSettings.server.ts` | `api.translate-v4.target-locale` `setAutoSettings`、`app.language/route.tsx` |
 | Scheduled shop scan              | `worker/src/services/scheduledShopScan.ts`            | `autoScanSchedule.ts`, `shopScanCosmos.ts`, `shopScanWorker.ts`                                         |
 | Public storefront locale audit   | `scripts/storefront-locale-audit.mjs`                 | Cursor browser locale discovery; local tree under `scripts/tmp/storefront-audit/`                       |
 | Translation core/filter rule     | `packages/translation-core/src/*`                     | App and Worker runtime adapters, focused builds                                                         |
@@ -1461,8 +1468,11 @@ Package-backed root scripts:
  `test` 读 `.env`+`.env.test`，`prod` 读 `.env`+`.env.prod`；文件内同一对
  `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（短期兼容 `TSF_TURSO_*` 与该
  target 的旧 `TURSO_{TEST|PROD}_*`）。
-- `scripts/cursor-push-pr.mjs`: `npm run push:pr` — commit（跳过敏感文件）→ push → 创建 PR；
-成功输出 `PR_URL:`。
+- `scripts/cursor-push-pr.mjs`: `npm run push:pr` — 按传入的中文标题/commit/正文
+  提交（跳过敏感文件）→ push → 创建或更新仍打开的 PR；`--message-file` /
+  `--body-file` 避免换行被吃掉；成功输出 `PR_URL:`。
+- `scripts/cursor-rebase-pr.mjs`: `npm run rebase:pr` — 相对 master soft-reset
+  压成一条中文 commit → `--force-with-lease` → 改/建 PR；成功输出 `PR_URL:`。
 - `scripts/merge-deploy-test.mjs`: `npm run merge:deploy:test` — 合入当前分支 PR 并触发
 TSF Web Test + Worker Test 部署；成功输出 `MERGED_PR_URL:` 与 `DEPLOY_RUN_URL:`。
 
@@ -1495,6 +1505,10 @@ recent 72-hour window.
 - `scripts/backfill-locale-coverage-from-redis.mjs`: Redis `items_count` →
   Turso `ShopTargetLocale.coverage*`（默认 dry-run；`--write` 写线上；
   支持 `--shop=` / `--only-missing`；MOVED 重连重试；Redis 源用 `RENDER_KV`）。
+- `scripts/backfill-auto-translate-settings.mjs`: 回填
+  `ShopTranslationSettings.autoTranslateHour` / `autoTranslateModules`
+  （默认 dry-run；`--write`；null hour→`shopSlotIndex`；null modules→默认
+  auto v2 模块集，不含 liquid）。
 - `scripts/storefront-locale-audit.mjs`: public storefront multi-locale product
 field audit (competitor research). Paginates `/products.json` (or
 `/{locale}/products.json`), writes a local tree mirroring v4 blob layout under

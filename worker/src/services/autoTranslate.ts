@@ -15,7 +15,7 @@ import {
   hasTsfAccount,
 } from "./tsfDb.js";
 import { fetchShopPrimaryLocale } from "./shopifyFetch.js";
-import { AUTO_TRANSLATE_V4_MODULES } from "./moduleCatalog.js";
+import { AUTO_TRANSLATE_V4_MODULES, expandAutoTranslateV2ModuleKeys, normalizeAutoTranslateV2Modules } from "./moduleCatalog.js";
 import {
   getAutoScanLastSuccessAt,
   setAutoScanLastAt,
@@ -38,8 +38,15 @@ import {
   quotaEnforceEnabled,
 } from "./tsfQuota.js";
 
-/** 自动任务模块（不含 EMAIL_TEMPLATE、ONLINE_STORE_THEME_LOCALE_CONTENT）。 */
-const AUTO_MODULES = [...AUTO_TRANSLATE_V4_MODULES];
+/** 自动任务模块默认集（不含 EMAIL / LOCALE_CONTENT / liquid）。 */
+const DEFAULT_AUTO_MODULES = [...AUTO_TRANSLATE_V4_MODULES];
+
+function resolveAutoModules(raw: unknown): string[] {
+  const keys = normalizeAutoTranslateV2Modules(raw);
+  if (!keys) return DEFAULT_AUTO_MODULES;
+  const expanded = expandAutoTranslateV2ModuleKeys(keys);
+  return expanded.length > 0 ? expanded : DEFAULT_AUTO_MODULES;
+}
 
 export type AutoTranslateScanMode = "scheduled" | "catchup";
 
@@ -111,7 +118,7 @@ export async function runAutoTranslateScan(
   let skippedNoAccount = 0;
   let cappedOut = false;
 
-  for (const { shop, primaryLocale, targets } of shops) {
+  for (const { shop, primaryLocale, targets, autoTranslateHour, autoTranslateModules } of shops) {
     if (maxNewJobs > 0 && created >= maxNewJobs) {
       cappedOut = true;
       break;
@@ -120,8 +127,13 @@ export async function runAutoTranslateScan(
     let source = primaryLocale?.trim();
     if (!source || !Array.isArray(targets) || targets.length === 0) continue;
 
-    // 分槽打散：整店按 hash 固定到某槽位，只在当前槽位处理（该店所有语言一起建）。
-    if (sharding && shopSlotIndex(shop, slotsPerDay) !== curSlot) {
+    // 商户已选小时：仅在该小时跑；否则沿用 hash 分槽（兼容存量）。
+    if (autoTranslateHour != null) {
+      if (curSlot !== autoTranslateHour) {
+        skippedSlot++;
+        continue;
+      }
+    } else if (sharding && shopSlotIndex(shop, slotsPerDay) !== curSlot) {
       skippedSlot++;
       continue;
     }
@@ -166,6 +178,8 @@ export async function runAutoTranslateScan(
       );
     }
 
+    const autoModules = resolveAutoModules(autoTranslateModules);
+
     for (const rawTarget of targets) {
       if (maxNewJobs > 0 && created >= maxNewJobs) {
         cappedOut = true;
@@ -187,11 +201,13 @@ export async function runAutoTranslateScan(
           shopName: shop,
           source,
           target,
-          modules: AUTO_MODULES,
+          modules: autoModules,
           aiModel: autoAiModel(),
           limitPerType: Number.MAX_SAFE_INTEGER,
           isCover: false,
           isHandle: false,
+          // auto 永不带 liquid
+          includeLiquid: false,
           taskSource: TSF_AUTO_TASK_SOURCE,
           status: "INIT_QUEUED",
           blobPrefix: `tasks/v4/${shop}/${jobId}`,
@@ -200,7 +216,8 @@ export async function runAutoTranslateScan(
         await pushHint("init", { taskId: jobId, shopName: shop }, "auto");
         created++;
         console.log(
-          `${prefix} 建任务 id=${jobId} shop=${shop} ${source}→${target}`,
+          `${prefix} 建任务 id=${jobId} shop=${shop} ${source}→${target}` +
+            ` hour=${autoTranslateHour ?? "hash"} modules=${autoModules.length}`,
         );
       } catch (err) {
         console.error(

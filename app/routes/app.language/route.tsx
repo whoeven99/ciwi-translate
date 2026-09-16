@@ -52,6 +52,7 @@ import { invalidateShopLocalesCache, loadShopLocalesForTranslation } from "~/ser
 import {
   setAutoTranslateCompat,
   listLanguageCoverageCompat,
+  setAutoTranslateSettingsCompat,
 } from "./languageClient";
 import TranslatedIcon from "~/components/translateIcon";
 import { useTranslation } from "react-i18next";
@@ -70,6 +71,7 @@ import AppSubpageTitleBar, {
   useAppHomeBackAction,
 } from "~/ui/components/AppSubpageTitleBar";
 import AppSectionCard from "~/ui/components/AppSectionCard";
+import { InFlowSelect } from "~/ui/components/InFlowSelect";
 import { getTranslatePagePath } from "~/lib/translateNavigation";
 import { message } from "~/ui/message";
 import {
@@ -97,7 +99,11 @@ import {
   DEFAULT_AI_MODEL,
   DEFAULT_MODULE_KEYS,
 } from "../app.translate-v4/constants";
-import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
+import {
+  AUTO_TRANSLATE_V2_MODULE_KEYS,
+  expandV2ModuleKeys,
+} from "~/server/translateV4/moduleCatalog";
+import { getAutoTranslateShopSettings } from "~/server/translateV4/autoTranslateSettings.server";
 import { CreateTaskCard } from "../app.translate-v4/components/CreateTaskCard";
 import { CreateTaskConfirmModal } from "../app.translate-v4/components/CreateTaskConfirmModal";
 import {
@@ -106,6 +112,7 @@ import {
 } from "../app.translate-v4/useCreateTaskEstimate";
 import {
   formatV4CreateTasksMessage,
+  getV4ModuleLabel,
   translateV4Message,
 } from "../app.translate-v4/v4I18n";
 import { localeRegionCode } from "../app.translate-v4/localeDisplay";
@@ -257,10 +264,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.error("[language] loader shopLanguages failed:", err);
   }
 
+  let autoSettings = {
+    hour: 0,
+    modules: [...AUTO_TRANSLATE_V2_MODULE_KEYS],
+  };
+  try {
+    const settings = await getAutoTranslateShopSettings(shop);
+    autoSettings = { hour: settings.hour, modules: settings.modules };
+  } catch (err) {
+    console.error("[language] loader autoSettings failed:", err);
+  }
+
   return json({
     mobile: isMobile as boolean,
     shop,
     shopLanguages,
+    autoSettings,
   });
 };
 
@@ -466,8 +485,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 const Index = () => {
-  const { shop, mobile, shopLanguages: loaderShopLanguages } =
-    useLoaderData<typeof loader>();
+  const {
+    shop,
+    mobile,
+    shopLanguages: loaderShopLanguages,
+    autoSettings: loaderAutoSettings,
+  } = useLoaderData<typeof loader>();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const homeBackAction = useAppHomeBackAction();
@@ -512,6 +535,14 @@ const Index = () => {
     useState<string>("");
   const [showWarnModal, setShowWarnModal] = useState(false);
   const [autoTranslateAlert, setAutoTranslateAlert] = useState<string>("");
+  const [autoHour, setAutoHour] = useState<number>(
+    () => loaderAutoSettings?.hour ?? 0,
+  );
+  const [autoModules, setAutoModules] = useState<string[]>(
+    () => loaderAutoSettings?.modules ?? [...AUTO_TRANSLATE_V2_MODULE_KEYS],
+  );
+  const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
+  const [autoSettingsDirty, setAutoSettingsDirty] = useState(false);
   const [translateModalOpen, setTranslateModalOpen] = useState(false);
   const [translateTargets, setTranslateTargets] = useState<string[]>([]);
   const [translateModuleKeys, setTranslateModuleKeys] =
@@ -1458,6 +1489,86 @@ const Index = () => {
     );
   };
 
+  const autoHourOptions = useMemo(
+    () =>
+      Array.from({ length: 24 }, (_, hour) => ({
+        value: String(hour),
+        label: `${String(hour).padStart(2, "0")}:00`,
+      })),
+    [],
+  );
+
+  const autoModuleChips = useMemo(
+    () =>
+      AUTO_TRANSLATE_V2_MODULE_KEYS.map((mod) => ({
+        value: mod,
+        label: getV4ModuleLabel(mod, t),
+      })),
+    [t],
+  );
+
+  const allAutoModulesSelected =
+    autoModuleChips.length > 0 &&
+    autoModuleChips.every((mod) => autoModules.includes(mod.value));
+  const someAutoModulesSelected =
+    autoModules.length > 0 && !allAutoModulesSelected;
+
+  const toggleAutoModule = (value: string) => {
+    setAutoSettingsDirty(true);
+    setAutoModules((prev) =>
+      prev.includes(value) ? prev.filter((m) => m !== value) : [...prev, value],
+    );
+  };
+
+  const toggleAllAutoModules = () => {
+    setAutoSettingsDirty(true);
+    setAutoModules(
+      allAutoModulesSelected ? [] : AUTO_TRANSLATE_V2_MODULE_KEYS.slice(),
+    );
+  };
+
+  const handleSaveAutoSettings = async () => {
+    if (autoModules.length === 0) {
+      message.warning(t("v4.autoSettings.selectModule"));
+      return;
+    }
+    setAutoSettingsSaving(true);
+    try {
+      const data = await setAutoTranslateSettingsCompat({
+        hour: autoHour,
+        modules: autoModules,
+      });
+      if (data?.success) {
+        setAutoHour(data.response?.hour ?? autoHour);
+        setAutoModules(
+          Array.isArray(data.response?.modules)
+            ? data.response.modules
+            : autoModules,
+        );
+        setAutoSettingsDirty(false);
+        message.success(t("v4.autoSettings.saved"));
+        reportClick("language_auto_settings_save");
+      } else {
+        message.error(
+          getTranslateV4ErrorMessage(
+            t,
+            data?.errorMsg,
+            TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_AUTO_SETTINGS_INVALID,
+          ),
+        );
+      }
+    } catch {
+      message.error(
+        getTranslateV4ErrorMessage(
+          t,
+          TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_SAVE_FAILED,
+        ),
+      );
+    } finally {
+      setAutoSettingsSaving(false);
+    }
+  };
+
   const handleDelete = () => {
     setDeleteConfirmModalVisible(false);
     if (dontPromptAgain) {
@@ -1517,6 +1628,88 @@ const Index = () => {
               description={<PrimaryLanguage />}
               backAction={homeBackAction}
             />
+            <AppSectionCard
+              bodyPadding="16px"
+              style={{ width: "100%", overflow: "visible" }}
+            >
+              <div className={styles.autoSettingsBlock}>
+                <Typography.Text strong>
+                  {t("v4.autoSettings.title")}
+                </Typography.Text>
+                <Typography.Paragraph
+                  type="secondary"
+                  style={{ marginBottom: 12, marginTop: 4 }}
+                >
+                  {t("v4.autoSettings.help")}
+                </Typography.Paragraph>
+                <div className={styles.autoSettingsRow}>
+                  <div style={{ minWidth: 200, maxWidth: 280, flex: "1 1 200px" }}>
+                    <InFlowSelect
+                      label={t("v4.autoSettings.hour")}
+                      options={autoHourOptions}
+                      value={String(autoHour)}
+                      onChange={(value) => {
+                        setAutoSettingsDirty(true);
+                        setAutoHour(Number(value));
+                      }}
+                    />
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: 12, display: "block", marginTop: 4 }}
+                    >
+                      {t("v4.autoSettings.timezone")}
+                    </Typography.Text>
+                  </div>
+                  <Button
+                    type="primary"
+                    loading={autoSettingsSaving}
+                    disabled={!autoSettingsDirty || autoModules.length === 0}
+                    onClick={() => void handleSaveAutoSettings()}
+                  >
+                    {t("v4.autoSettings.save")}
+                  </Button>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <Flex
+                    align="center"
+                    justify="space-between"
+                    wrap="wrap"
+                    gap="small"
+                    style={{ marginBottom: 8 }}
+                  >
+                    <Typography.Text>
+                      {t("v4.autoSettings.modules")}
+                    </Typography.Text>
+                    <Checkbox
+                      checked={allAutoModulesSelected}
+                      indeterminate={someAutoModulesSelected}
+                      onChange={() => toggleAllAutoModules()}
+                    >
+                      {t("Check all")}
+                    </Checkbox>
+                  </Flex>
+                  <div className={styles.autoModuleGrid}>
+                    {autoModuleChips.map((mod) => {
+                      const selected = autoModules.includes(mod.value);
+                      return (
+                        <button
+                          key={mod.value}
+                          type="button"
+                          className={
+                            selected
+                              ? styles.autoModuleChipSelected
+                              : styles.autoModuleChip
+                          }
+                          onClick={() => toggleAutoModule(mod.value)}
+                        >
+                          {mod.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </AppSectionCard>
             <AppSectionCard bodyPadding="16px" style={{ width: "100%" }}>
               <div className={styles.languageTable_action}>
                 <div className={styles.languageToolbar}>

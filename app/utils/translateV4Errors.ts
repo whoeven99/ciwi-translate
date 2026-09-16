@@ -32,6 +32,7 @@ export const TRANSLATE_V4_ERROR_KEYS = {
   TARGET_LOCALE_REQUIRED: "TARGET_LOCALE_REQUIRED",
   TARGET_LOCALE_LIST_FAILED: "TARGET_LOCALE_LIST_FAILED",
   TARGET_LOCALE_SAVE_FAILED: "TARGET_LOCALE_SAVE_FAILED",
+  TARGET_LOCALE_AUTO_SETTINGS_INVALID: "TARGET_LOCALE_AUTO_SETTINGS_INVALID",
   LANGUAGE_PUBLISH_PARTIAL_FAILED: "LANGUAGE_PUBLISH_PARTIAL_FAILED",
   LANGUAGE_PUBLISH_FAILED: "LANGUAGE_PUBLISH_FAILED",
 } as const;
@@ -281,6 +282,14 @@ const TRANSLATE_V4_ERROR_DEFINITIONS: Record<
     i18nKey: "v4.error.targetLocaleSaveFailed",
     defaultMessage: "Failed to update language settings.",
     status: 500,
+  },
+  TARGET_LOCALE_AUTO_SETTINGS_INVALID: {
+    errorCode: 44912,
+    errorMsg: "TARGET_LOCALE_AUTO_SETTINGS_INVALID",
+    i18nKey: "v4.error.autoSettingsInvalid",
+    defaultMessage:
+      "Choose a valid update hour (0–23) and at least one auto-translate module.",
+    status: 400,
   },
   LANGUAGE_PUBLISH_PARTIAL_FAILED: {
     errorCode: 45010,
