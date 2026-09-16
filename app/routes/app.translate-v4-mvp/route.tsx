@@ -33,6 +33,10 @@ import {
   DEFAULT_MODULE_KEYS,
 } from "~/routes/app.translate-v4/constants";
 import {
+  entitlementsForPlanType,
+  filterV2ModulesForPlan,
+} from "~/lib/planEntitlements";
+import {
   buildUntranslatedRatioByLocale,
   type CreateTaskEstimateView,
   formatEstimateCredits,
@@ -440,13 +444,24 @@ export default function TranslateV4MvpRoute() {
   const themeEditorUrl = buildSwitcherThemeEditorUrl(shop, ciwiSwitcherId);
   const coverageRef = useRef<CoverageSummary>(EMPTY_COVERAGE);
   const planType = plan?.type?.trim() || null;
+  const planEntitlements = useMemo(
+    () => entitlementsForPlanType(planType),
+    [planType],
+  );
+  const planModules = useMemo(
+    () => filterV2ModulesForPlan(DEFAULT_MODULE_KEYS, planEntitlements),
+    [planEntitlements],
+  );
 
   const customTargets = useMemo(
     () =>
-      targetOptions.map((option) => option.value),
-    [targetOptions],
+      Number.isFinite(planEntitlements.maxTargetsPerTask) &&
+      planEntitlements.maxTargetsPerTask <= 1
+        ? targetOptions.slice(0, 1).map((option) => option.value)
+        : targetOptions.map((option) => option.value),
+    [targetOptions, planEntitlements],
   );
-  const customModules = DEFAULT_MODULE_KEYS;
+  const customModules = planModules;
 
   const untranslatedRatioByLocale = useMemo(
     () => buildUntranslatedRatioByLocale(coverage.locales),
@@ -780,10 +795,11 @@ export default function TranslateV4MvpRoute() {
       buildCustomTranslationPath({
         targets: customTargets,
         modules: customModules,
-        includeLiquid: true,
+        includeLiquid: planEntitlements.allowLiquid,
       }),
     );
-  }, [customModules, customTargets, navigate]);
+  }, [customModules, customTargets, navigate, planEntitlements.allowLiquid]);
+
   const createConfirmScenario:
     | "ready"
     | "insufficient_paid"
@@ -813,14 +829,27 @@ export default function TranslateV4MvpRoute() {
     nextIncludeLiquid?: boolean;
   }) => {
     try {
+      const safeModules = filterV2ModulesForPlan(
+        nextModules,
+        planEntitlements,
+      );
+      const safeTargets =
+        Number.isFinite(planEntitlements.maxTargetsPerTask) &&
+        planEntitlements.maxTargetsPerTask <= 1
+          ? nextTargets.slice(0, 1)
+          : nextTargets;
+      const safeLiquid =
+        Boolean(nextIncludeLiquid) && planEntitlements.allowLiquid;
       const result = await createTranslateV4Tasks({
         source: primaryLocale,
-        targets: nextTargets,
-        modules: expandV2ModuleKeys(nextModules),
+        targets: safeTargets,
+        modules: expandV2ModuleKeys(
+          safeModules.length > 0 ? safeModules : planModules,
+        ),
         aiModel: nextAiModel,
         isCover: nextIsCover,
         isHandle: nextIsHandle,
-        includeLiquid: nextIncludeLiquid,
+        includeLiquid: safeLiquid,
         targetOptions,
         shop,
       });
@@ -863,6 +892,8 @@ export default function TranslateV4MvpRoute() {
       return false;
     }
   }, [
+    planEntitlements,
+    planModules,
     primaryLocale,
     refreshCoverage,
     refreshQuota,

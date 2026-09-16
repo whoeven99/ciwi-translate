@@ -29,6 +29,10 @@ import { CreateTaskConfirmModal } from "~/routes/app.translate-v4/components/Cre
 import { v4ContentStyle } from "~/routes/app.translate-v4/v4Styles";
 import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import {
+  entitlementsForPlanType,
+  filterV2ModulesForPlan,
+} from "~/lib/planEntitlements";
+import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
@@ -110,6 +114,10 @@ export default function TranslateV4MvpCustomRoute() {
   const [searchParams] = useSearchParams();
   const plan = useSelector((state: RootState) => state.userConfig.plan);
   const isNew = useSelector((state: RootState) => state.userConfig.isNew);
+  const planEntitlements = useMemo(
+    () => entitlementsForPlanType(plan?.type),
+    [plan?.type],
+  );
   const billingDraftRestoredRef = useRef(false);
 
   const targetOptions = useMemo(
@@ -128,15 +136,27 @@ export default function TranslateV4MvpCustomRoute() {
     const parsed = parseListParam(searchParams.get("targets")).filter((item) =>
       validTargets.has(item),
     );
-    return parsed.length > 0 ? parsed : targetOptions.map((item) => item.value);
-  }, [searchParams, targetOptions, validTargets]);
+    const base =
+      parsed.length > 0 ? parsed : targetOptions.map((item) => item.value);
+    if (
+      Number.isFinite(planEntitlements.maxTargetsPerTask) &&
+      planEntitlements.maxTargetsPerTask <= 1
+    ) {
+      return base.slice(0, 1);
+    }
+    return base;
+  }, [searchParams, targetOptions, validTargets, planEntitlements]);
 
   const initialModules = useMemo(() => {
     const parsed = parseListParam(searchParams.get("modules")).filter((item) =>
       validModules.has(item),
     );
-    return parsed.length > 0 ? parsed : DEFAULT_MODULE_KEYS;
-  }, [searchParams, validModules]);
+    const base = parsed.length > 0 ? parsed : DEFAULT_MODULE_KEYS;
+    const filtered = filterV2ModulesForPlan(base, planEntitlements);
+    return filtered.length > 0
+      ? filtered
+      : filterV2ModulesForPlan(DEFAULT_MODULE_KEYS, planEntitlements);
+  }, [searchParams, validModules, planEntitlements]);
 
   const initialAiModel = useMemo(() => {
     const value = searchParams.get("aiModel");
@@ -158,8 +178,25 @@ export default function TranslateV4MvpCustomRoute() {
   const [isCover, setIsCover] = useState(parseBooleanParam(searchParams.get("isCover")));
   const [isHandle, setIsHandle] = useState(parseBooleanParam(searchParams.get("isHandle")));
   const [includeLiquid, setIncludeLiquid] = useState(
-    parseBooleanParam(searchParams.get("includeLiquid")),
+    parseBooleanParam(searchParams.get("includeLiquid")) &&
+      entitlementsForPlanType(plan?.type).allowLiquid,
   );
+
+  useEffect(() => {
+    if (!planEntitlements.allowLiquid) setIncludeLiquid(false);
+    setModules((prev) => {
+      const next = filterV2ModulesForPlan(prev, planEntitlements);
+      return next.length > 0
+        ? next
+        : filterV2ModulesForPlan(DEFAULT_MODULE_KEYS, planEntitlements);
+    });
+    if (
+      Number.isFinite(planEntitlements.maxTargetsPerTask) &&
+      planEntitlements.maxTargetsPerTask <= 1
+    ) {
+      setTargets((prev) => (prev.length > 1 ? prev.slice(0, 1) : prev));
+    }
+  }, [planEntitlements]);
 
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
   const remainingCredits = normalizedQuota?.remaining ?? null;
@@ -427,6 +464,7 @@ export default function TranslateV4MvpCustomRoute() {
             onIsHandleChange={setIsHandle}
             includeLiquid={includeLiquid}
             onIncludeLiquidChange={setIncludeLiquid}
+            planEntitlements={planEntitlements}
             estimate={taskEstimate}
           />
         </BlockStack>

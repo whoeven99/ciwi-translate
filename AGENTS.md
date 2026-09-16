@@ -1194,9 +1194,9 @@ Language:
 - Server: `app/server/translateV4/targetLocale.server.ts`,
 `shopLocales.server.ts`, `languageStatus.server.ts`（语言页 status 0..4，
 由 `/api/translate-v4/target-locale` 调用）、
-`autoTranslateSettings.server.ts`（整店自动更新小时 + 模块；不含 liquid）。
+`autoTranslateSettings.server.ts`（整店自动更新对齐时刻 + 间隔 + 模块；不含 liquid）。
 - Models: `ShopTranslationSettings`（含 `autoTranslateHour` /
-  `autoTranslateModules`）、`ShopTargetLocale`（含语言级覆盖率汇总
+ `autoTranslateIntervalHours` / `autoTranslateModules`）、`ShopTargetLocale`（含语言级覆盖率汇总
   `coverageTranslated` / `coverageTotal` / `coveragePercent` /
   `coverageUpdatedAt` / `coverageSource`；权威在 Turso，与 autoTranslate 同表）。
 - Coverage 写入：`app/server/translateV4/coverageStore.server.ts`（App refresh）、
@@ -1443,8 +1443,9 @@ For "合入PR然后发布测试环境", the script will:
 | 安装 / 首次订阅 / 卸载飞书       | `app/server/billing/lifecycleFeishuNotify.server.ts`  | `uninstallSnapshot.server.ts`, `app.tsx` loader, `handleBillingWebhook.server.ts`, worker `lifecycleFeishuNotify.ts` |
 | 卸载挽回邮件                     | `app/server/billing/email/uninstallEmail.server.ts`   | `webhooks.tsx` `APP_UNINSTALLED`、腾讯云模板 `212617`/`212612`/`212616`、飞书按分群发元数据（不含邮件正文） |
 | First-time onboarding            | `app/routes/app.onboarding/route.tsx`                 | `app/server/onboarding/onboarding.server.ts`, `app/routes/app._index/route.tsx`, `ShopOnboarding`      |
-| Auto translate                   | `worker/src/services/autoTranslate.ts`                | `autoScanSchedule.ts`, `ShopTargetLocale`, `ShopTranslationSettings.autoTranslateHour/Modules`, module catalog |
-| 语言页自动更新设置               | `app/server/translateV4/autoTranslateSettings.server.ts` | `api.translate-v4.target-locale` `setAutoSettings`、`app.language/route.tsx` |
+| Auto translate                   | `worker/src/services/autoTranslate.ts`                | `planEntitlements`（间隔可选：Free/Basic 24h；Pro 12/24；Premium 1/12/24；槽位 `(cur−align)%interval` + 冷却=间隔）、`autoScanSchedule.ts`、`ShopTargetLocale`、`ShopTranslationSettings.autoTranslateHour/IntervalHours/Modules`、module catalog |
+| 套餐能力闸（语/模块/Liquid）     | `app/lib/planEntitlements.ts` + `app/server/billing/planEntitlements.server.ts` | `api.translate-v4.tasks`、`CreateTaskCard`、Worker `planEntitlements.ts` |
+| 语言页自动更新设置               | `app/server/translateV4/autoTranslateSettings.server.ts` | `api.translate-v4.target-locale` `setAutoSettings`（hour+intervalHours+modules）、`app.language/route.tsx` |
 | Scheduled shop scan              | `worker/src/services/scheduledShopScan.ts`            | `autoScanSchedule.ts`, `shopScanCosmos.ts`, `shopScanWorker.ts`                                         |
 | Public storefront locale audit   | `scripts/storefront-locale-audit.mjs`                 | Cursor browser locale discovery; local tree under `scripts/tmp/storefront-audit/`                       |
 | Translation core/filter rule     | `packages/translation-core/src/*`                     | App and Worker runtime adapters, focused builds                                                         |
@@ -1506,9 +1507,10 @@ recent 72-hour window.
   Turso `ShopTargetLocale.coverage*`（默认 dry-run；`--write` 写线上；
   支持 `--shop=` / `--only-missing`；MOVED 重连重试；Redis 源用 `RENDER_KV`）。
 - `scripts/backfill-auto-translate-settings.mjs`: 回填
-  `ShopTranslationSettings.autoTranslateHour` / `autoTranslateModules`
-  （默认 dry-run；`--write`；null hour→`shopSlotIndex`；null modules→默认
-  auto v2 模块集，不含 liquid）。
+ `ShopTranslationSettings.autoTranslateHour` / `autoTranslateModules`
+ （默认 dry-run；`--write`；null hour→`shopSlotIndex`；null modules→默认
+ auto v2 模块集，不含 liquid）。`autoTranslateIntervalHours` 未回填时由
+ 套餐默认最短间隔解析（不写库）。
 - `scripts/storefront-locale-audit.mjs`: public storefront multi-locale product
 field audit (competitor research). Paginates `/products.json` (or
 `/{locale}/products.json`), writes a local tree mirroring v4 blob layout under

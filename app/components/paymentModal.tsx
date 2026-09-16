@@ -35,6 +35,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [selectedKey, setSelectedKey] = useState<string>("option-1");
   const [buyButtonLoading, setBuyButtonLoading] = useState<boolean>(false);
   const paySubmittingRef = useRef(false);
+  const payRedirectedRef = useRef(false);
   const { t } = useTranslation();
   const payFetcher = useFetcher<{
     success?: boolean;
@@ -82,6 +83,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   );
 
   useEffect(() => {
+    const confirmationUrl = payFetcher.data?.response?.confirmationUrl;
+    if (
+      payFetcher.data?.success &&
+      confirmationUrl &&
+      !payRedirectedRef.current
+    ) {
+      payRedirectedRef.current = true;
+      redirectToBillingConfirmation(confirmationUrl);
+    }
+
     if (payFetcher.state === "submitting" || payFetcher.state === "loading") {
       return;
     }
@@ -92,9 +103,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
     if (!payFetcher.data) return;
 
-    const confirmationUrl = payFetcher.data.response?.confirmationUrl;
     if (payFetcher.data.success && confirmationUrl) {
-      redirectToBillingConfirmation(confirmationUrl);
       return;
     }
 
@@ -120,6 +129,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const onClick = () => {
     setBuyButtonLoading(true);
     paySubmittingRef.current = true;
+    payRedirectedRef.current = false;
     if (taskContext?.taskId && typeof shop === "string" && shop.trim()) {
       saveResumeTaskDraft(shop, taskContext.taskId);
     }

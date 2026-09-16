@@ -33,6 +33,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       response: rows,
       autoSettings: {
         hour: autoSettings.hour,
+        intervalHours: autoSettings.intervalHours,
+        allowedIntervalHours: [...autoSettings.allowedIntervalHours],
         modules: autoSettings.modules,
       },
     });
@@ -56,7 +58,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 /**
  * POST /api/translate-v4/target-locale
  * - { intent: "setAuto", locale, autoTranslate }
- * - { intent: "setAutoSettings", hour, modules }
+ * - { intent: "setAutoSettings", hour, intervalHours, modules }
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -65,6 +67,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     locale?: string;
     autoTranslate?: boolean;
     hour?: number;
+    intervalHours?: number;
     modules?: string[];
   };
 
@@ -91,12 +94,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       try {
         const saved = await setAutoTranslateShopSettings(session.shop, {
           hour: Number(body.hour),
+          intervalHours: Number(body.intervalHours),
           modules: Array.isArray(body.modules) ? body.modules : [],
         });
         return json({
           success: true,
           response: {
             hour: saved.hour,
+            intervalHours: saved.intervalHours,
+            allowedIntervalHours: [...saved.allowedIntervalHours],
             modules: saved.modules,
           },
         });
@@ -104,7 +110,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const msg = err instanceof Error ? err.message : String(err);
         if (
           msg === "INVALID_AUTO_TRANSLATE_HOUR" ||
-          msg === "INVALID_AUTO_TRANSLATE_MODULES"
+          msg === "INVALID_AUTO_TRANSLATE_MODULES" ||
+          msg === "INVALID_AUTO_TRANSLATE_INTERVAL"
         ) {
           const appError = buildTranslateV4Error(
             TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_AUTO_SETTINGS_INVALID,

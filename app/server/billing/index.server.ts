@@ -78,6 +78,23 @@ export {
 } from "./quota/recordCreditUsage.server";
 export { getTsfBootstrapData } from "./bootstrap/getTsfBootstrapData.server";
 export {
+  resolveShopPlanEntitlements,
+  resolveShopPlanType,
+  evaluateCreateTaskPlanGate,
+  entitlementsForPlanType,
+  FREE_ALLOWED_V2_MODULES,
+  isV2ModuleAllowedForPlan,
+  filterV2ModulesForPlan,
+  normalizePlanTier,
+  defaultAutoTranslateIntervalHours,
+  clampAutoTranslateIntervalHours,
+  autoTranslateCooldownMsForInterval,
+  isAutoTranslateHourSlotMatch,
+  type AutoTranslateIntervalHours,
+  type PlanEntitlements,
+  type PlanTier,
+} from "./planEntitlements.server";
+export {
   handleTsfSubscriptionWebhook,
   handleTsfPurchaseWebhook,
 } from "./webhooks/handleBillingWebhook.server";

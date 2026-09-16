@@ -2,6 +2,10 @@ import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-r
 import { authenticate } from "~/shopify.server";
 import { evaluateCreateTaskQuotaGuard } from "~/server/billing/quota/createTaskQuotaGuard.server";
 import {
+  evaluateCreateTaskPlanGate,
+  resolveShopPlanEntitlements,
+} from "~/server/billing/planEntitlements.server";
+import {
   createV4Job,
   existsBlockingV4Job,
 } from "~/server/translateV4/cosmos.server";
@@ -46,6 +50,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     aiModel?: string;
     /** 同一次创建点击共用；缺省则该 job 走旧整店邮件聚合。 */
     batchId?: string;
+    /** 同一次创建点击的目标语总数（套餐闸 Free 单语）。 */
+    batchTargetCount?: number;
   };
 
   const batchIdRaw = typeof body.batchId === "string" ? body.batchId.trim() : "";
@@ -56,7 +62,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     body.source?.trim() ||
     (await resolveShopPrimaryLocale({
       shop: session.shop,
-      accessToken: session.accessToken,
+      accessToken: session.accessToken as string,
     })) ||
     FALLBACK_SOURCE_LOCALE;
   const target = body.target?.trim() || "";
@@ -64,16 +70,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (target === source)
     return json({ ok: false, error: "v4.validation.sameAsSource" }, { status: 400 });
 
-  const includeLiquid = Boolean(body.includeLiquid);
+  const includeLiquidRequested = Boolean(body.includeLiquid);
   const allowedSet = new Set<string>(TRANSLATION_V4_MODULES);
-  const modules = (body.modules ?? (includeLiquid ? [] : defaultManualV4Modules()))
+  const modulesRaw = (body.modules ?? (includeLiquidRequested ? [] : defaultManualV4Modules()))
     .map((m) => m.trim().toUpperCase())
     .filter((m) => allowedSet.has(m)) as TranslationV4Module[];
 
-  if (!modules.length && !includeLiquid)
+  if (!modulesRaw.length && !includeLiquidRequested)
     return json({ ok: false, error: "v4.validation.selectModule" }, { status: 400 });
 
   const shopName = session.shop;
+  const entitlements = await resolveShopPlanEntitlements(shopName);
+  const batchTargetCountRaw = Number(body.batchTargetCount);
+  const batchTargetCount =
+    Number.isFinite(batchTargetCountRaw) && batchTargetCountRaw >= 1
+      ? Math.floor(batchTargetCountRaw)
+      : 1;
+
+  const planGate = evaluateCreateTaskPlanGate({
+    entitlements,
+    batchTargetCount,
+    modules: modulesRaw,
+    includeLiquid: includeLiquidRequested,
+  });
+  if (!planGate.ok) {
+    return json({ ok: false, error: planGate.error }, { status: planGate.status });
+  }
+  const { modules, includeLiquid } = planGate;
+
   const quotaGuard = await evaluateCreateTaskQuotaGuard(shopName);
   if (!quotaGuard.ok) {
     return json({ ok: false, error: quotaGuard.error }, { status: quotaGuard.status });

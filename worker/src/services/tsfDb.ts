@@ -158,6 +158,8 @@ export type AutoTranslateShop = {
   targets: string[];
   /** 0–23；null=沿用 hash 分槽 */
   autoTranslateHour: number | null;
+  /** 1/12/24；null=套餐最短 */
+  autoTranslateIntervalHours: number | null;
   /** 原始 JSON / string；null=沿用默认 AUTO_TRANSLATE_V4_MODULES */
   autoTranslateModules: unknown;
 };
@@ -166,6 +168,13 @@ function parseNullableHour(raw: unknown): number | null {
   if (raw == null || raw === "") return null;
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isInteger(n) || n < 0 || n > 23) return null;
+  return n;
+}
+
+function parseNullableIntervalHours(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(n) || ![1, 12, 24].includes(n)) return null;
   return n;
 }
 
@@ -188,6 +197,7 @@ export async function listAutoTranslateShops(): Promise<AutoTranslateShop[]> {
     `SELECT s.shop AS shop,
             s.primaryLocale AS primaryLocale,
             s.autoTranslateHour AS autoTranslateHour,
+            s.autoTranslateIntervalHours AS autoTranslateIntervalHours,
             s.autoTranslateModules AS autoTranslateModules,
             t.locale AS target
      FROM ShopTranslationSettings s
@@ -204,6 +214,9 @@ export async function listAutoTranslateShops(): Promise<AutoTranslateShop[]> {
       primaryLocale,
       targets: [],
       autoTranslateHour: parseNullableHour(r.autoTranslateHour),
+      autoTranslateIntervalHours: parseNullableIntervalHours(
+        r.autoTranslateIntervalHours,
+      ),
       autoTranslateModules: parseModulesJson(r.autoTranslateModules),
     };
     entry.targets.push(target);

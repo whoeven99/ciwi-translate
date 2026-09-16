@@ -35,6 +35,10 @@ export const TRANSLATE_V4_ERROR_KEYS = {
   TARGET_LOCALE_AUTO_SETTINGS_INVALID: "TARGET_LOCALE_AUTO_SETTINGS_INVALID",
   LANGUAGE_PUBLISH_PARTIAL_FAILED: "LANGUAGE_PUBLISH_PARTIAL_FAILED",
   LANGUAGE_PUBLISH_FAILED: "LANGUAGE_PUBLISH_FAILED",
+  PLAN_FREE_SINGLE_TARGET: "PLAN_FREE_SINGLE_TARGET",
+  PLAN_MODULE_NOT_ALLOWED: "PLAN_MODULE_NOT_ALLOWED",
+  PLAN_METAFIELD_REQUIRES_PRO: "PLAN_METAFIELD_REQUIRES_PRO",
+  PLAN_LIQUID_REQUIRES_PRO: "PLAN_LIQUID_REQUIRES_PRO",
 } as const;
 
 export type TranslateV4ErrorKey =
@@ -306,6 +310,36 @@ const TRANSLATE_V4_ERROR_DEFINITIONS: Record<
     defaultMessage:
       "Failed to update language publish settings. Please try again.",
     status: 500,
+  },
+  PLAN_FREE_SINGLE_TARGET: {
+    errorCode: 45100,
+    errorMsg: "PLAN_FREE_SINGLE_TARGET",
+    i18nKey: "v4.plan.freeSingleTargetOnly",
+    defaultMessage:
+      "Free plan can translate only one language per task. Upgrade to select multiple.",
+    status: 403,
+  },
+  PLAN_MODULE_NOT_ALLOWED: {
+    errorCode: 45101,
+    errorMsg: "PLAN_MODULE_NOT_ALLOWED",
+    i18nKey: "v4.plan.moduleNotAllowed",
+    defaultMessage:
+      "Some selected modules are not available on your plan. Upgrade to unlock more.",
+    status: 403,
+  },
+  PLAN_METAFIELD_REQUIRES_PRO: {
+    errorCode: 45102,
+    errorMsg: "PLAN_METAFIELD_REQUIRES_PRO",
+    i18nKey: "v4.plan.metafieldRequiresPro",
+    defaultMessage: "Metafield translation requires Pro or Premium.",
+    status: 403,
+  },
+  PLAN_LIQUID_REQUIRES_PRO: {
+    errorCode: 45103,
+    errorMsg: "PLAN_LIQUID_REQUIRES_PRO",
+    i18nKey: "v4.plan.liquidRequiresPro",
+    defaultMessage: "Custom Liquid translation requires Pro or Premium.",
+    status: 403,
   },
 };
 

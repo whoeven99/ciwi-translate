@@ -100,6 +100,12 @@ import {
   DEFAULT_MODULE_KEYS,
 } from "../app.translate-v4/constants";
 import {
+  clampAutoTranslateIntervalHours,
+  entitlementsForPlanType,
+  filterV2ModulesForPlan,
+  isV2ModuleAllowedForPlan,
+} from "~/lib/planEntitlements";
+import {
   AUTO_TRANSLATE_V2_MODULE_KEYS,
   expandV2ModuleKeys,
 } from "~/server/translateV4/moduleCatalog";
@@ -232,6 +238,17 @@ function applyCoverageToLanguageRows(
   });
 }
 
+/** UI 用 UTC 展示；API/Worker 存 Asia/Shanghai（UTC+8）小时。 */
+const AUTO_TRANSLATE_SHANGHAI_UTC_OFFSET = 8;
+
+function shanghaiHourToUtcDisplay(hour: number): number {
+  return (((hour - AUTO_TRANSLATE_SHANGHAI_UTC_OFFSET) % 24) + 24) % 24;
+}
+
+function utcDisplayToShanghaiHour(hour: number): number {
+  return (((hour + AUTO_TRANSLATE_SHANGHAI_UTC_OFFSET) % 24) + 24) % 24;
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const adminAuthResult = await authenticate.admin(request);
   const { shop, accessToken } = adminAuthResult.session;
@@ -266,11 +283,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   let autoSettings = {
     hour: 0,
+    intervalHours: 24 as number,
+    allowedIntervalHours: [24] as number[],
     modules: [...AUTO_TRANSLATE_V2_MODULE_KEYS],
   };
   try {
     const settings = await getAutoTranslateShopSettings(shop);
-    autoSettings = { hour: settings.hour, modules: settings.modules };
+    autoSettings = {
+      hour: settings.hour,
+      intervalHours: settings.intervalHours,
+      allowedIntervalHours: [...settings.allowedIntervalHours],
+      modules: settings.modules,
+    };
   } catch (err) {
     console.error("[language] loader autoSettings failed:", err);
   }
@@ -500,6 +524,10 @@ const Index = () => {
     source: state.userConfig?.source,
     isNew: state.userConfig?.isNew ?? null,
   }));
+  const planEntitlements = useMemo(
+    () => entitlementsForPlanType(plan?.type),
+    [plan?.type],
+  );
 
   const dataSource: LanguagesDataType[] = useSelector(
     (state: any) => state.languageTableData.rows,
@@ -538,12 +566,16 @@ const Index = () => {
   const [autoHour, setAutoHour] = useState<number>(
     () => loaderAutoSettings?.hour ?? 0,
   );
+  const [autoIntervalHours, setAutoIntervalHours] = useState<number>(
+    () => loaderAutoSettings?.intervalHours ?? 24,
+  );
   const [autoModules, setAutoModules] = useState<string[]>(
     () => loaderAutoSettings?.modules ?? [...AUTO_TRANSLATE_V2_MODULE_KEYS],
   );
   const [autoSettingsModalOpen, setAutoSettingsModalOpen] = useState(false);
   const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
   const [draftAutoHour, setDraftAutoHour] = useState(0);
+  const [draftAutoIntervalHours, setDraftAutoIntervalHours] = useState(24);
   const [draftAutoModules, setDraftAutoModules] = useState<string[]>([]);
   const [editAutoLocale, setEditAutoLocale] = useState<string | null>(null);
   const [draftLocaleAuto, setDraftLocaleAuto] = useState(false);
@@ -1141,12 +1173,19 @@ const Index = () => {
     const nextTargets = selectedLanguageCode.filter((locale) =>
       targetOptions.some((option) => option.value === locale),
     );
-    setTranslateTargets(nextTargets);
-    setTranslateModuleKeys(DEFAULT_MODULE_KEYS);
+    setTranslateTargets(
+      Number.isFinite(planEntitlements.maxTargetsPerTask) &&
+        planEntitlements.maxTargetsPerTask <= 1
+        ? nextTargets.slice(0, 1)
+        : nextTargets,
+    );
+    setTranslateModuleKeys(
+      filterV2ModulesForPlan(DEFAULT_MODULE_KEYS, planEntitlements),
+    );
+    setTranslateIncludeLiquid(false);
     setTranslateAiModel(DEFAULT_AI_MODEL);
     setTranslateIsCover(false);
     setTranslateIsHandle(false);
-    setTranslateIncludeLiquid(false);
     setTranslateModalOpen(true);
     void refreshQuota();
     fetcher.submit(
@@ -1515,13 +1554,33 @@ const Index = () => {
     [],
   );
 
+  const autoIntervalOptions = useMemo(() => {
+    const allowed =
+      planEntitlements.allowedAutoTranslateIntervalHours ?? [24];
+    return allowed.map((hours) => ({
+      value: String(hours),
+      label: t("v4.autoSettings.intervalOption", { hours }),
+    }));
+  }, [planEntitlements.allowedAutoTranslateIntervalHours, t]);
+
   const autoModuleChips = useMemo(
     () =>
       AUTO_TRANSLATE_V2_MODULE_KEYS.map((mod) => ({
         value: mod,
-        label: getV4ModuleLabel(mod, t),
+        label: isV2ModuleAllowedForPlan(mod, planEntitlements)
+          ? getV4ModuleLabel(mod, t)
+          : `${getV4ModuleLabel(mod, t)} 🔒`,
+        allowed: isV2ModuleAllowedForPlan(mod, planEntitlements),
       })),
-    [t],
+    [planEntitlements, t],
+  );
+
+  const selectableAutoModuleValues = useMemo(
+    () =>
+      autoModuleChips
+        .filter((mod) => mod.allowed)
+        .map((mod) => String(mod.value)),
+    [autoModuleChips],
   );
 
   const editAutoLocaleLabel = useMemo(() => {
@@ -1533,14 +1592,23 @@ const Index = () => {
   }, [dataSource, editAutoLocale]);
 
   const allDraftModulesSelected =
-    autoModuleChips.length > 0 &&
-    autoModuleChips.every((mod) => draftAutoModules.includes(mod.value));
+    selectableAutoModuleValues.length > 0 &&
+    selectableAutoModuleValues.every((value) =>
+      draftAutoModules.includes(value),
+    );
   const someDraftModulesSelected =
-    draftAutoModules.length > 0 && !allDraftModulesSelected;
+    draftAutoModules.some((value) =>
+      selectableAutoModuleValues.includes(value),
+    ) && !allDraftModulesSelected;
 
   const openAutoSettingsModal = (locale: string) => {
-    setDraftAutoHour(autoHour);
-    setDraftAutoModules([...autoModules]);
+    setDraftAutoHour(shanghaiHourToUtcDisplay(autoHour));
+    setDraftAutoIntervalHours(
+      clampAutoTranslateIntervalHours(autoIntervalHours, planEntitlements),
+    );
+    setDraftAutoModules(
+      filterV2ModulesForPlan(autoModules, planEntitlements),
+    );
     const row = dataSource.find((item: any) => item.locale === locale);
     setEditAutoLocale(locale);
     setDraftLocaleAuto(Boolean(row?.autoTranslate));
@@ -1554,6 +1622,14 @@ const Index = () => {
   };
 
   const toggleDraftAutoModule = (value: string) => {
+    if (!isV2ModuleAllowedForPlan(value, planEntitlements)) {
+      message.warning(
+        value === "metadata"
+          ? t("v4.plan.metafieldRequiresPro")
+          : t("v4.plan.moduleNotAllowed"),
+      );
+      return;
+    }
     setDraftAutoModules((prev) =>
       prev.includes(value) ? prev.filter((m) => m !== value) : [...prev, value],
     );
@@ -1561,7 +1637,7 @@ const Index = () => {
 
   const toggleAllDraftAutoModules = () => {
     setDraftAutoModules(
-      allDraftModulesSelected ? [] : AUTO_TRANSLATE_V2_MODULE_KEYS.slice(),
+      allDraftModulesSelected ? [] : selectableAutoModuleValues.slice(),
     );
   };
 
@@ -1573,7 +1649,8 @@ const Index = () => {
     setAutoSettingsSaving(true);
     try {
       const data = await setAutoTranslateSettingsCompat({
-        hour: draftAutoHour,
+        hour: utcDisplayToShanghaiHour(draftAutoHour),
+        intervalHours: draftAutoIntervalHours,
         modules: draftAutoModules,
       });
       if (!data?.success) {
@@ -1587,11 +1664,15 @@ const Index = () => {
         return;
       }
 
-      const nextHour = data.response?.hour ?? draftAutoHour;
+      const nextHour =
+        data.response?.hour ?? utcDisplayToShanghaiHour(draftAutoHour);
+      const nextInterval =
+        data.response?.intervalHours ?? draftAutoIntervalHours;
       const nextModules = Array.isArray(data.response?.modules)
         ? data.response.modules
         : draftAutoModules;
       setAutoHour(nextHour);
+      setAutoIntervalHours(nextInterval);
       setAutoModules(nextModules);
 
       if (editAutoLocale) {
@@ -1903,15 +1984,31 @@ const Index = () => {
             />
           </div>
 
-          <div className={styles.autoSettingsModalField}>
-            <InFlowSelect
-              label={`${t("v4.autoSettings.hour")} · ${t("v4.autoSettings.timezone")}`}
-              options={autoHourOptions}
-              value={String(draftAutoHour)}
-              onChange={(value) => setDraftAutoHour(Number(value))}
-              active={autoSettingsModalOpen}
-            />
+          <div className={styles.autoSettingsModalSchedule}>
+            <div className={styles.autoSettingsModalField}>
+              <InFlowSelect
+                label={t("v4.autoSettings.interval")}
+                options={autoIntervalOptions}
+                value={String(draftAutoIntervalHours)}
+                onChange={(value) => setDraftAutoIntervalHours(Number(value))}
+                active={autoSettingsModalOpen}
+              />
+            </div>
+            <div className={styles.autoSettingsModalField}>
+              <InFlowSelect
+                label={`${t("v4.autoSettings.hour")} · ${t("v4.autoSettings.timezone")}`}
+                options={autoHourOptions}
+                value={String(draftAutoHour)}
+                onChange={(value) => setDraftAutoHour(Number(value))}
+                active={autoSettingsModalOpen}
+              />
+            </div>
           </div>
+          <p className={styles.autoSettingsModalHint}>
+            {t("v4.autoSettings.hourHelp", {
+              timezone: t("v4.autoSettings.timezone"),
+            })}
+          </p>
 
           <div className={styles.autoSettingsModalModules}>
             <div className={styles.autoSettingsModalModulesHead}>
@@ -1972,6 +2069,7 @@ const Index = () => {
           onIsHandleChange={setTranslateIsHandle}
           includeLiquid={translateIncludeLiquid}
           onIncludeLiquidChange={setTranslateIncludeLiquid}
+          planEntitlements={planEntitlements}
           estimate={taskEstimate}
           advancedDefaultOpen
           submitPlacement="footer-center"
