@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@shopify/polaris";
 import { useFetcher, useNavigate } from "@remix-run/react";
@@ -74,6 +74,7 @@ export function CreateTaskConfirmModal({
     response?: { confirmationUrl?: string };
   }>();
   const detailed = useDetailedCreateTaskEstimate();
+  const [selectedPlanTitle, setSelectedPlanTitle] = useState<string>("Pro");
 
   const detailedRunning = detailed.progress.status === "running";
   const { reset: resetDetailed } = detailed;
@@ -244,16 +245,51 @@ export function CreateTaskConfirmModal({
   const isReady = scenario === "ready";
   const isInsufficientPaid = scenario === "insufficient_paid";
   const isTrialOffer = scenario === "insufficient_trial";
+  const isPlanSelectionVisible =
+    scenario === "insufficient_trial" || scenario === "insufficient_pricing";
   const canStartPartial = isInsufficientPaid && (remainingCredits ?? 0) > 0;
   const scenarioMeta = getScenarioMeta(t, scenario, canStartPartial);
+  const planOptions = useMemo(
+    () => buildPlanOptions(t),
+    [t],
+  );
+  const recommendedPlanTitle = isTrialOffer
+    ? "Basic"
+    : (recommendPlanForShortfall(shortfallCredits)?.title ??
+      planOptions[1]?.title ??
+      "Pro");
+  const selectedPlan =
+    planOptions.find((item) => item.title === selectedPlanTitle) ??
+    planOptions.find((item) => item.title === recommendedPlanTitle) ??
+    planOptions[0];
+  const selectedPlanStartsWithTrial =
+    isTrialOffer && selectedPlan?.title === "Basic";
+  const planPickerDescription = isTrialOffer
+    ? t("v4.createTask.planPickerTrialDescription", {
+        defaultValue:
+          "Monthly plans only. Basic includes a 5-day free trial and starts billing after the trial ends unless you cancel first.",
+      })
+    : t("v4.createTask.planPickerDescription", {
+        defaultValue:
+          "Pick the monthly plan that fits this task best. Your current setup will be kept after billing.",
+      });
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedPlanTitle(recommendedPlanTitle);
+  }, [open, recommendedPlanTitle]);
 
   const primaryActionLabel = isReady
     ? t("v4.createTask.confirmStartNow")
     : isInsufficientPaid
       ? t("v4.createTask.confirmBuyCreditsAndStart")
-      : isTrialOffer
-        ? t("v4.createTask.confirmTrialAndStart")
-        : t("v4.createTask.confirmSubscribeAndStart");
+      : selectedPlanStartsWithTrial
+        ? t("v4.createTask.confirmBasicTrialAndStart", {
+            defaultValue: "Start Basic trial",
+          })
+      : t("v4.createTask.confirmSelectedPlanAndStart", {
+          defaultValue: "Continue with selected plan",
+        });
   const secondaryActionLabel = isReady
     ? null
     : isInsufficientPaid
@@ -261,7 +297,7 @@ export function CreateTaskConfirmModal({
         ? t("v4.createTask.confirmStartPartial")
         : null
       : isTrialOffer
-        ? t("v4.createTask.confirmBuyCreditsSecondary")
+        ? t("v4.createTask.confirmBuyCreditsOnly")
         : t("v4.createTask.confirmBuyCreditsOnly");
 
   const buildReturnPathForPlan = () => {
@@ -273,15 +309,16 @@ export function CreateTaskConfirmModal({
     });
   };
 
-  const handleTrialAction = () => {
+  const handleSelectedPlanAction = () => {
+    if (!selectedPlan) return;
     onBeforeBilling?.();
     const payload: Record<string, string> = {
       payForPlan: JSON.stringify({
-        title: "Basic",
-        monthlyPrice: 7.99,
-        yearlyPrice: 6.39,
+        title: selectedPlan.title,
+        monthlyPrice: selectedPlan.monthlyPrice,
+        yearlyPrice: selectedPlan.yearlyPrice,
         yearly: false,
-        trialDays: 5,
+        trialDays: selectedPlanStartsWithTrial ? 5 : 0,
       }),
     };
     const returnPath = buildReturnPathForPlan();
@@ -302,7 +339,12 @@ export function CreateTaskConfirmModal({
       return;
     }
     if (isTrialOffer) {
-      handleTrialAction();
+      handleSelectedPlanAction();
+      return;
+    }
+
+    if (scenario === "insufficient_pricing") {
+      handleSelectedPlanAction();
       return;
     }
 
@@ -467,6 +509,74 @@ export function CreateTaskConfirmModal({
               </div>
             </InfoCard>
           ) : null}
+
+          {isPlanSelectionVisible ? (
+            <InfoCard
+              title={t("v4.createTask.planPickerTitle", {
+                defaultValue: "Choose a plan for this task",
+              })}
+            >
+              <div style={planPickerDescriptionStyle}>
+                {planPickerDescription}
+              </div>
+              <div style={planGridStyle}>
+                {planOptions.map((plan) => {
+                  const selected = plan.title === selectedPlan?.title;
+                  const recommended = plan.title === recommendedPlanTitle;
+                  const includesTrial = isTrialOffer && plan.title === "Basic";
+                  return (
+                    <button
+                      key={plan.title}
+                      type="button"
+                      onClick={() => setSelectedPlanTitle(plan.title)}
+                      style={{
+                        ...planCardStyle,
+                        ...(selected ? planCardSelectedStyle : null),
+                      }}
+                    >
+                      <div style={planCardHeaderStyle}>
+                        <div>
+                          <div style={planCardTitleStyle}>{plan.title}</div>
+                          <div style={planCardPriceStyle}>
+                            ${plan.monthlyPrice.toFixed(2)}
+                            <span style={planCardPriceUnitStyle}>
+                              {t("/month")}
+                            </span>
+                          </div>
+                        </div>
+                        {recommended ? (
+                          <div style={planCardBadgeStyle}>
+                            {t("Recommended")}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div style={planCardCreditsStyle}>
+                        {t("{{credits}} credits/month", {
+                          credits: Number(plan.monthlyCredits).toLocaleString("en-US"),
+                        })}
+                      </div>
+                      {includesTrial ? (
+                        <div style={planCardTrialBoxStyle}>
+                          <div style={planCardTrialTitleStyle}>
+                            {t("v4.createTask.planBasicTrialTitle", {
+                              defaultValue: "5-day free trial included",
+                            })}
+                          </div>
+                          <div style={planCardTrialDescStyle}>
+                            {t("v4.createTask.planBasicTrialDesc", {
+                              defaultValue:
+                                "Start now. Then $7.99/month after 5 days unless you cancel before billing.",
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+                      <div style={planCardFitStyle}>{plan.fitLabel}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </InfoCard>
+          ) : null}
         </div>
 
         <div style={footerStyle}>
@@ -600,6 +710,53 @@ function offerFeatures(
         t("v4.createTask.confirmPricingFeatureModel"),
         t("v4.createTask.confirmPricingFeatureSpeed"),
       ];
+}
+
+const PLAN_OPTIONS = [
+  {
+    title: "Basic",
+    monthlyPrice: 7.99,
+    yearlyPrice: 6.39,
+    monthlyCredits: 1500000,
+    fitLabelKey: "pricing.fit_basic",
+    fitLabelDefault:
+      "Good for smaller stores that need core product and page translation.",
+  },
+  {
+    title: "Pro",
+    monthlyPrice: 19.99,
+    yearlyPrice: 15.99,
+    monthlyCredits: 3000000,
+    fitLabelKey: "pricing.fit_pro",
+    fitLabelDefault:
+      "Good for stores expanding into multiple markets with regular content updates.",
+  },
+  {
+    title: "Premium",
+    monthlyPrice: 39.99,
+    yearlyPrice: 31.99,
+    monthlyCredits: 8000000,
+    fitLabelKey: "pricing.fit_premium",
+    fitLabelDefault:
+      "Good for high-volume teams managing multiple markets and frequent launches.",
+  },
+] as const;
+
+function buildPlanOptions(t: TranslateFn) {
+  return PLAN_OPTIONS.map((plan) => ({
+    ...plan,
+    fitLabel: t(plan.fitLabelKey, {
+      defaultValue: plan.fitLabelDefault,
+    }),
+  }));
+}
+
+function recommendPlanForShortfall(shortfallCredits: number) {
+  return (
+    PLAN_OPTIONS.find((plan) => plan.monthlyCredits >= shortfallCredits) ??
+    PLAN_OPTIONS[PLAN_OPTIONS.length - 1] ??
+    null
+  );
 }
 
 function formatCreditsFull(value: number): string {
@@ -890,6 +1047,120 @@ const offerFeatureItemStyle = {
   fontWeight: 600,
   lineHeight: "24px",
   whiteSpace: "pre-line",
+} as const;
+
+const planPickerDescriptionStyle = {
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: "18px",
+  marginBottom: 14,
+} as const;
+
+const planGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+} as const;
+
+const planCardStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  width: "100%",
+  padding: "16px 14px",
+  borderRadius: 16,
+  border: `1px solid ${v4Colors.cardBorder}`,
+  background: v4Colors.cardBg,
+  textAlign: "left",
+  cursor: "pointer",
+} as const;
+
+const planCardSelectedStyle = {
+  borderColor: "rgba(33, 128, 255, 0.4)",
+  boxShadow: "0 10px 28px rgba(33, 128, 255, 0.12)",
+  background: "rgba(33, 128, 255, 0.04)",
+} as const;
+
+const planCardHeaderStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+} as const;
+
+const planCardTitleStyle = {
+  color: v4Colors.text,
+  fontSize: 15,
+  fontWeight: 700,
+  lineHeight: "22px",
+} as const;
+
+const planCardPriceStyle = {
+  color: v4Colors.text,
+  fontSize: 26,
+  fontWeight: 700,
+  lineHeight: "30px",
+  marginTop: 4,
+} as const;
+
+const planCardPriceUnitStyle = {
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 600,
+  lineHeight: "18px",
+  marginLeft: 4,
+} as const;
+
+const planCardBadgeStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "4px 8px",
+  borderRadius: 999,
+  background: "rgba(33, 128, 255, 0.1)",
+  color: v4Colors.primary,
+  fontSize: 11,
+  fontWeight: 700,
+  lineHeight: "16px",
+  whiteSpace: "nowrap",
+} as const;
+
+const planCardCreditsStyle = {
+  color: v4Colors.text,
+  fontSize: 13,
+  fontWeight: 700,
+  lineHeight: "20px",
+} as const;
+
+const planCardTrialBoxStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  padding: "10px 12px",
+  borderRadius: 12,
+  background: "rgba(33, 128, 255, 0.08)",
+  border: "1px solid rgba(33, 128, 255, 0.16)",
+} as const;
+
+const planCardTrialTitleStyle = {
+  color: v4Colors.primary,
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: "18px",
+} as const;
+
+const planCardTrialDescStyle = {
+  color: v4Colors.text,
+  fontSize: 12,
+  fontWeight: 600,
+  lineHeight: "18px",
+} as const;
+
+const planCardFitStyle = {
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: "18px",
 } as const;
 
 const primaryButtonStyle = {
