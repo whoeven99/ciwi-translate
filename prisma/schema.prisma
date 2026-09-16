@@ -45,6 +45,10 @@ model ShopTranslationSettings {
   primaryLocale String // 源语言（Java source），ex "en"
   targets       Json // 目标语言数组 string[]（Java 每 target 一行 → 合并）
   autoTranslate Boolean   @default(false) // 自动增量翻译总开关（Java autoTranslate）
+  /// 每天自动更新小时（0–23，Asia/Shanghai）；null=沿用 hash 分槽
+  autoTranslateHour    Int?
+  /// 自动更新模块 v2 key[]；null=沿用 AUTO_TRANSLATE_V4_MODULES 默认集（不含 liquid）
+  autoTranslateModules Json?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }

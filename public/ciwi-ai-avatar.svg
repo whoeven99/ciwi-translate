@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Ciwi Translate">
+  <defs>
+    <linearGradient id="ciwi-avatar-bg" x1="24" y1="16" x2="488" y2="496" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a1170"/>
+      <stop offset="0.55" stop-color="#7c1fc4"/>
+      <stop offset="1" stop-color="#f04fa0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="url(#ciwi-avatar-bg)"/>
+  <rect x="88" y="104" width="200" height="200" rx="46" fill="#fff"/>
+  <rect x="224" y="208" width="200" height="200" rx="46" fill="#fff"/>
+  <text
+    x="188"
+    y="252"
+    fill="#2a1170"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="132"
+    font-weight="700"
+    text-anchor="middle"
+  >A</text>
+  <text
+    x="324"
+    y="356"
+    fill="#2a1170"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="132"
+    font-weight="700"
+    text-anchor="middle"
+  >文</text>
+</svg>

@@ -91,6 +91,7 @@ export const V2_MODULE_TO_V4: Record<TranslateV2ModuleKey, TranslationV4Module[]
  * v4 定时自动翻译模块（不含 EMAIL_TEMPLATE — 邮件请用手动任务勾选「电子邮件」）。
  * Worker 校验清单：worker/scripts/v4-auto-translate-modules.json
  * 注：Spring v2 AUTO_TRANSLATE_MAP 仍含 EMAIL_TEMPLATE。
+ * 不含 CUSTOM_LIQUID / includeLiquid（auto 永不带 liquid）。
  */
 export const AUTO_TRANSLATE_V4_MODULES: TranslationV4Module[] = [
   "SHOP",
@@ -117,6 +118,32 @@ export const AUTO_TRANSLATE_V4_MODULES: TranslationV4Module[] = [
   "SELLING_PLAN_GROUP",
 ];
 
+const AUTO_TRANSLATE_V4_MODULE_SET = new Set<string>(AUTO_TRANSLATE_V4_MODULES);
+
+/**
+ * 商户可选的自动更新 v2 模块（不含 notifications / liquid）。
+ * 展开后会与 AUTO_TRANSLATE_V4_MODULES 求交（如 theme 去掉 LOCALE_CONTENT）。
+ */
+export const AUTO_TRANSLATE_V2_MODULE_KEYS: TranslateV2ModuleKey[] = [
+  "products",
+  "collection",
+  "article",
+  "blog_titles",
+  "pages",
+  "filters",
+  "metaobjects",
+  "metadata",
+  "policies",
+  "navigation",
+  "shop",
+  "theme",
+  "delivery",
+  "shipping",
+];
+
+export const AUTO_TRANSLATE_V2_MODULE_KEY_SET = new Set<string>(
+  AUTO_TRANSLATE_V2_MODULE_KEYS,
+);
 
 /** v4 module 展示名（任务详情、进度条等）。 */
 export const V4_MODULE_LABELS: Record<TranslationV4Module, string> = {
@@ -162,6 +189,41 @@ export function expandV2ModuleKeys(keys: string[]): TranslationV4Module[] {
     }
   }
   return result;
+}
+
+/** 展开并裁剪到 auto 允许的 v4 模块（不含 EMAIL / LOCALE_CONTENT / liquid）。 */
+export function expandAutoTranslateV2ModuleKeys(
+  keys: string[],
+): TranslationV4Module[] {
+  return expandV2ModuleKeys(keys).filter((mod) =>
+    AUTO_TRANSLATE_V4_MODULE_SET.has(mod),
+  );
+}
+
+/** 校验并规范化商户所选 auto 模块；非法 key 丢弃；空则 null。 */
+export function normalizeAutoTranslateV2Modules(
+  keys: unknown,
+): TranslateV2ModuleKey[] | null {
+  if (!Array.isArray(keys)) return null;
+  const out: TranslateV2ModuleKey[] = [];
+  const seen = new Set<string>();
+  for (const raw of keys) {
+    const key = String(raw ?? "").trim();
+    if (!key || seen.has(key)) continue;
+    if (!AUTO_TRANSLATE_V2_MODULE_KEY_SET.has(key)) continue;
+    seen.add(key);
+    out.push(key as TranslateV2ModuleKey);
+  }
+  return out.length > 0 ? out : null;
+}
+
+export function isValidAutoTranslateHour(hour: unknown): hour is number {
+  return (
+    typeof hour === "number" &&
+    Number.isInteger(hour) &&
+    hour >= 0 &&
+    hour <= 23
+  );
 }
 
 /** v2 手动创建任务默认展开的 v4 modules。 */
