@@ -76,6 +76,12 @@ export {
   type CreditUsageSource,
   type RecordCreditUsageParams,
 } from "./quota/recordCreditUsage.server";
+export {
+  listCreditUsage,
+  type CreditUsageBySource,
+  type CreditUsageItem,
+  type ListCreditUsageResult,
+} from "./quota/listCreditUsage.server";
 export { getTsfBootstrapData } from "./bootstrap/getTsfBootstrapData.server";
 export {
   handleTsfSubscriptionWebhook,

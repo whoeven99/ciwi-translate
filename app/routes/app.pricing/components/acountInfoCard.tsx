@@ -3,6 +3,7 @@ import { InputNumber, Skeleton, Space, Statistic, Typography, message } from "an
 import Button from "~/ui/components/AppButton";
 import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
+import CreditUsageModal from "./creditUsageModal";
 import "../style.css";
 
 const { Title, Text } = Typography;
@@ -42,6 +43,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
 }) => {
   const { t } = useTranslation();
   const [migrateOpen, setMigrateOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [migrateAmount, setMigrateAmount] = useState<number | null>(null);
   const [migrateAll, setMigrateAll] = useState(false);
   const [migrating, setMigrating] = useState(false);
@@ -143,6 +145,9 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
               ) : null}
               <Space wrap>
                 <Button onClick={onBuyCredits}>{t("Buy credits")}</Button>
+                <Button onClick={() => setUsageOpen(true)}>
+                  {t("pricing.usage.button")}
+                </Button>
                 {sparkCreditMigrationEnabled ? (
                   <Button onClick={openMigrate}>{t("pricing.migrate.button")}</Button>
                 ) : null}
@@ -151,6 +156,8 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
           </div>
         )}
       </div>
+
+      <CreditUsageModal open={usageOpen} onClose={() => setUsageOpen(false)} />
 
       {sparkCreditMigrationEnabled ? (
         <AppSModal
