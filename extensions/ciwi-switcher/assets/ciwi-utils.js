@@ -378,6 +378,24 @@ function normalizeLocaleCode(locale) {
     .toLowerCase();
 }
 
+function stripShopifyRoutesRoot(pathname) {
+  const root = String(
+    typeof window !== "undefined" ? window.Shopify?.routes?.root : "",
+  ).trim();
+  if (!root || root === "/") return pathname;
+
+  const normalizedRoot = root.replace(/\/+$/, "") || "/";
+  const path = String(pathname || "").trim() || "/";
+  if (normalizedRoot === "/") return path;
+
+  if (path === normalizedRoot) return "/";
+  if (path.startsWith(`${normalizedRoot}/`)) {
+    return path.slice(normalizedRoot.length) || "/";
+  }
+
+  return path;
+}
+
 function stripLeadingLocalePrefix(pathname, locales = []) {
   const path = String(pathname || "").trim() || "/";
   if (path === "/") return "/";
@@ -401,6 +419,32 @@ function stripLeadingLocalePrefix(pathname, locales = []) {
   return path;
 }
 
+function collectLocalePrefixCandidates(currentLanguage) {
+  const candidates = [
+    currentLanguage,
+    typeof window !== "undefined" ? window.Shopify?.locale : "",
+    typeof document !== "undefined" ? document.documentElement.lang : "",
+  ];
+
+  const routesRoot =
+    typeof window !== "undefined" ? window.Shopify?.routes?.root : "";
+  if (routesRoot && routesRoot !== "/") {
+    candidates.push(String(routesRoot).replace(/^\/+|\/+$/g, ""));
+  }
+
+  const shopifyLocale =
+    typeof window !== "undefined" ? window.Shopify?.locale : "";
+  const shopifyCountry =
+    typeof window !== "undefined" ? window.Shopify?.country : "";
+  if (shopifyLocale && shopifyCountry) {
+    candidates.push(
+      `${normalizeLocaleCode(shopifyLocale)}-${normalizeLocaleCode(shopifyCountry)}`,
+    );
+  }
+
+  return candidates;
+}
+
 export function buildLocalizationReturnTo({
   currentLanguage,
   language,
@@ -409,16 +453,12 @@ export function buildLocalizationReturnTo({
   if (typeof window === "undefined") return "/";
 
   const currentUrl = new URL(window.location.href);
-  const localeCandidates = [
-    currentLanguage,
-    window.Shopify?.locale,
-    document.documentElement.lang,
-  ];
-
-  currentUrl.pathname = stripLeadingLocalePrefix(
-    currentUrl.pathname,
-    localeCandidates,
+  let pathname = stripShopifyRoutesRoot(currentUrl.pathname);
+  pathname = stripLeadingLocalePrefix(
+    pathname,
+    collectLocalePrefixCandidates(currentLanguage),
   );
+  currentUrl.pathname = pathname;
 
   if (markManual) {
     currentUrl.searchParams.set("ciwi_manual_localization", "1");
