@@ -4,6 +4,7 @@ import {
   canSettleAtRenewal,
   settlePoolsAtRenewal,
 } from "../accountBalance.server";
+import { expireInstallTrialCreditsIfDue } from "../grant/grantInstallCredits.server";
 import { appendBillingLog } from "../billingLog.server";
 import { APP_SUBSCRIPTION_STATUS, BILLING_LOG_EVENT } from "../types.server";
 
@@ -24,7 +25,10 @@ export async function archivePeriodAndRenew(params: {
   account: Account;
   next: SubscriptionPeriodSnapshot;
 }): Promise<void> {
-  const { shop, subscription, account, next } = params;
+  const { shop, subscription, next } = params;
+
+  await expireInstallTrialCreditsIfDue(shop);
+  const account = await prisma.account.findUniqueOrThrow({ where: { shop } });
 
   const periodStart = subscription.currentPeriodStart;
   const periodEnd = subscription.currentPeriodEnd;

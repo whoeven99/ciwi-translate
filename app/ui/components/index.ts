@@ -18,3 +18,5 @@ export { default as AppPill } from "./AppPill";
 export type { AppPillTone } from "./AppPill";
 export { default as AppSectionCard } from "./AppSectionCard";
 export { default as AppStatusBadge } from "./AppStatusBadge";
+export { InFlowSelect } from "./InFlowSelect";
+export type { InFlowOption } from "./InFlowSelect";

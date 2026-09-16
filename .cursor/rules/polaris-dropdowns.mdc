@@ -5,21 +5,22 @@ alwaysApply: true
 
 # Dropdown / Select 约定
 
-Shopify 嵌入 App 里，下拉框优先用 Polaris，避免 Ant Design Select + 自定义 CSS 拆布局。
+Shopify 嵌入 App 里，商户向单选用文档流下拉，避免 Polaris 原生 `<select>`、Polaris Popover portal、Ant Select + 自定义 CSS。
 
 ## 选型
 
-- **单选**：`@shopify/polaris` 的 `Select`
+- **单选**：`InFlowSelect`（`app/ui/components/InFlowSelect.tsx`）。菜单画在组件内部，不 portal、不用系统下拉。`AppSModal` / `overflow: hidden` 卡片里尤其不要改回 Polaris `Select` 或 `Popover`。
 - **多选**：内联 chip / `ChoiceList` / `Combobox` + `allowMultiple`
-- **Ant `Select`**：仅限表格密集筛选、历史 manage 页等已有路径；**不要**在 `app/routes/app.translate-v4/**` 新建 Ant Select
+- **Ant `Select`**：**不要**在 `app/routes/app.translate-v4/**` 新建；其它页也不要再加新的 Ant 单选
 
 ## 禁止
 
+- 在 `AppSModal` 里用 Polaris `Select`（原生下拉被裁切）或 Polaris `Popover`（portal 被挡住）
 - 用 `!important` 覆盖 `.ant-select-selection-item`、`.ant-select-selector`、`.ant-select-selection-overflow` 等 Ant 内部结构（会把单选拆成「箭头漂一边、选项掉页底」）
-- 在折叠面板 / `overflow: hidden` 容器里依赖 Ant Select 默认 portal 却同时改其内部布局
+- 在折叠面板 / `overflow: hidden` 容器里依赖 portal 菜单
 
 ## 改 UI 时
 
-1. 新建下拉先查 Polaris 是否够用
-2. 若必须动 Ant Select 样式，只改外层 wrapper，不要改 selection-item 内部
-3. 改完在嵌入预览里点开下拉，确认菜单贴着触发器、选中值完整显示
+1. 新建单选先用 `InFlowSelect`
+2. 父级 Polaris Card / `overflow: hidden` 需 `overflow: visible`，否则绝对定位菜单会被裁切
+3. 改完在嵌入预览里点开下拉，确认菜单贴着触发器、选项可点、选中值完整显示

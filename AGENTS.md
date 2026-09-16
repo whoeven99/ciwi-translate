@@ -145,24 +145,23 @@ must be ≥4.5:1 against its background. Tinted chips use Polaris
 `--p-color-text-{info,success,caution,critical}` on `--p-color-bg-surface-*`
 (`AppPill` / `AppStatusBadge` / `--app-color-text-*`). Do not put `--app-accent-*`
 fill hexes on `--app-accent-*-soft` as 12px text — those pairs fail AA.
-- **Dropdowns in the embedded app:** prefer Polaris `Select` for single-select
-and chip / `ChoiceList` / `Combobox` for multi-select. Avoid Ant Design
-`Select` on translate-v4 / create-task surfaces unless there is a strong
-reason; do not add page-local CSS that overrides `.ant-select-selection-item`
-globally inside a card (it breaks Ant single-select layout). ESLint
+- **Dropdowns in the embedded app:** merchant-facing **single-select** uses
+`InFlowSelect` (`app/ui/components/InFlowSelect.tsx`) — in-component list, no
+portal, no native `<select>`. Polaris `Select` / `Popover` and Ant `Select`
+are clipped or intercepted inside `AppSModal` and `overflow: hidden` cards.
+Multi-select stays chip / `ChoiceList` / `Combobox` + `allowMultiple`. ESLint
 `no-restricted-imports` blocks `Select` from `antd` under
-`app/routes/app.translate-v4/**`（`.eslintrc.cjs` override；`app.translate-v4-history`
-目前不在该 glob 内，新增下拉仍请用 Polaris）。Remaining Ant Selects
-(allow for now, 已核对):
-manage-translation 头部（`app.manage_translation/route.tsx`）— 表格密集筛选，
-prefer Polaris when that screen is next touched。`singleTranslateAction`、
-glossary `updateGlossaryModal`、currency `currencyEditModal`、Switcher 已是
-Polaris `Select`。`app/components/paymentModal.tsx` 仍是参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns.mdc`.
+`app/routes/app.translate-v4/**`. Do not add page-local CSS that overrides
+`.ant-select-selection-item`. Callers: CreateTaskCard / singleTranslate
+(`AiModelInFlowSelect` re-export), Switcher type+position, glossary Apply for,
+currency edit, payment credit pack, manage homepage locale, manage resource
+language/module filters, product-image language pair. Cursor rule:
+`.cursor/rules/polaris-dropdowns.mdc`.
 - Ant Design theme values should be derived from Polaris-like tokens through
 `app/ui/theme.ts`; avoid creating a second visual system.
 - Prefer existing shared wrappers in `app/ui/components/*`, including
   `AppPageHeader`, `AppSubpageTitleBar`, `AppSectionCard`, `AppStatusBadge`,
-  `AppButton`, and `AppSModal`.
+  `AppButton`, `AppSModal`, and `InFlowSelect`.
 - **BFS 4.1.6 modals:** merchant-facing overlays with a primary/secondary CTA
   must use App Home `<s-modal>` via `AppSModal` (`heading` + `primary-action` /
   `secondary-actions` slots). Do not put those CTAs in the modal body. Polaris
@@ -253,7 +252,7 @@ without `shop` 302s to the App Store listing (no extra login form).
 ### Main Pages
 
 - `/app`: `app/routes/app._index/route.tsx` 重定向到 `/app/translate-v4-mvp`（`getTranslatePagePath()` 同指向 MVP）。
-- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：Setup Guide（BFS 4.2.2；批量翻译 / 术语表 / 第三方 Liquid；三项默认展开；首次建 Account 或卸载重装打标后展示；点 X 或三项勾完写 `setupGuideDismissedAt` 永久关闭）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。
+- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：Setup Guide（BFS 4.2.2；批量翻译 / 术语表 / 第三方 Liquid；三项默认展开；首次建 Account 或卸载重装打标后展示；点 X 或三项勾完写 `setupGuideDismissedAt` 永久关闭）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。无目标语言（`targetOptions` 空）时覆盖率卡展示添加语言空态，Start translation / Setup Guide 批量翻译跳 `/app/language`。
 - `/app/translate-v4-mvp-custom`: `app/routes/app.translate-v4-mvp-custom/route.tsx`（自定义语言/模块建任务）。
 - `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（全量工作台保留；只展示进行中 /
 暂停 / 失败任务，见 `jobFilters.ts` `isCurrentV4Job`）。
@@ -321,7 +320,7 @@ real `route.tsx` or route module is added.
 Core files:
 
 - UI page: `app/routes/app.translate-v4/route.tsx`.
-- UI components: `app/routes/app.translate-v4/components/*`（确认弹窗积分/优惠共用 `CreditsConfirmPanel.tsx`，`CreateTaskConfirmModal` 与 `singleTranslateAction` 共用）。
+- UI components: `app/routes/app.translate-v4/components/*`（确认弹窗积分/优惠共用 `CreditsConfirmPanel.tsx`，`CreateTaskConfirmModal` 与 `singleTranslateAction` 共用）。`CreateTaskCard` / `singleTranslateAction` 的 AI 模型共用 `AiModelInFlowSelect`（`InFlowSelect`），不要改回 Polaris `Select` / `Popover`（`AppSModal` 会裁切原生下拉、挡住 portal）。商户向单选一律 `InFlowSelect`。
 - UI constants/status/i18n: `constants.ts`, `v4I18n.ts`, `jobStageUtils.ts`,
 `v4JobNotice.ts`, `localeDisplay.ts`, `v4Styles.ts`（共享色板/卡片样式，
 `paymentModal` 等也在用）, `jobFilters.ts`（current / history 任务切分）,
@@ -402,7 +401,7 @@ Common edits:
 `npm run check:auto-translate-modules --prefix worker`; filter validation is a
 separate concern.
 - Change create-task UX or request body: start in `app/lib/createTranslateV4Tasks.ts`,
-then `api.translate-v4.tasks.ts`.
+then `api.translate-v4.tasks.ts`. Remaining ≤ 0：客户端 `notifyIfCreateTaskBlockedByCredits` toast，不打开 `CreateTaskConfirmModal`；服务端 `evaluateCreateTaskQuotaGuard` 仍拦。
 - Billing return after buy-credits / subscribe from create confirm: draft in
   `app/utils/createTaskDraft.ts` (sessionStorage); return flag via
   `app/utils/billingReturn.ts`; restore + reopen confirm in
@@ -520,8 +519,8 @@ and auto-translate; also runs scheduled shop-scan enqueue (target slot =
 `(currentSlot - 1) % slots`, i.e. 1h after the shop's auto slot), deploy
 wake/stale reset, empty auto-job cleanup, hourly v4 job retention cleanup
 (`cleanupOldJobs`，默认每小时 :40), shop_scan_jobs retention
-(`cleanupOldShopScanJobs`，默认每小时 :50), and subscription reconciliation
-schedules.
+(`cleanupOldShopScanJobs`，默认每小时 :50), subscription reconciliation
+schedules, and install-gift expiry scan (`expireInstallTrialJob`，默认 12h；每轮最多 200 店).
 - `worker/src/env.ts`: required env diagnostics.
 - `worker/src/shutdown.ts`: shared shutdown flag; `index.ts` releases jobs
 claimed by the current process on SIGTERM/SIGINT before exit.
@@ -701,8 +700,13 @@ Code: `worker/src/services/shopifyFetch.ts` `chunkResources`.
 `EMAIL_FALLBACK_SCAN_INTERVAL_MS`（默认 5min；邮件 worker 跨分区 DISTINCT 兜底
 间隔，平时走 Redis 标记快路径），
 `AUTO_EMPTY_JOB_CLEANUP_INTERVAL_MS`,
-`BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`, and
-`BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`.
+`BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`,
+`BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`,
+`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`（默认 12h）/
+`INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS`（默认 2min）/
+`INSTALL_TRIAL_EXPIRY_JITTER_MS`（默认 0–60s 启动抖动）/
+`INSTALL_TRIAL_EXPIRY_MAX_PER_RUN`（默认 200，剩的下轮继续）/
+`INSTALL_TRIAL_EXPIRY_DELAY_MS`（默认 50ms 店间间隔）。
 - Scheduled shop scan（计量复扫，与 auto 同一时区 / slots；目标槽
 `(currentSlot - 1) % slots`，即相对同店 auto 延后 1h）：
 `SHOP_SCAN_SCHEDULE_ENABLED` (default true),
@@ -748,7 +752,7 @@ variables consumed by `workerEmail.ts` and TSF email helpers.
 
 Models:
 
-- `Account`: TSF credit pools: subscription, purchased, trial, used.
+- `Account`: TSF credit pools: subscription, purchased, trial, used；安装赠送带 `trialCreditsExpiresAt`。
 - `PlanCatalog`, `AppSubscription`, `BillingLog`, `AccountPeriodUsage`.
 - `TranslateV4JobUsage`: per v4 job usage snapshot (Worker writes on terminal status).
 - `CreditUsage`: per-deduction credit audit (`single` / `image` / `v4_job`);
@@ -855,10 +859,23 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
-- Launch Credits（新手礼包）：店铺终身首次 `SUBSCRIPTION_ACTIVATED` 时按档写入
-  `trialCredits`（Basic 4M / Pro 8M / Premium 16M），`BillingLog` `TRIAL_GRANTED`
-  + `referenceId=launch_credits` 幂等；续费结转、不随月额度替换；App
-  `grantLaunchCredits.server.ts` 与 Worker `grantLaunchCredits.ts` 双路径发放。
+  Install-gift expiry is **not** checked on quota reads. Worker scans due
+  accounts every 12h (`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`, first delay 2min +
+  0–60s jitter; max 200 shops/run, 50ms inter-shop delay).
+  Deduct and subscription renewal still settle first so expired gift is not
+  spent. Leftover `trialCredits` are zeroed and `usedCredits` is reduced by
+  the gift already consumed (gift used first; paid pools not charged for
+  leftover).
+- 安装赠送：终身首次建 `Account` 写入 `trialCredits=200000`，
+  `trialCreditsExpiresAt = now+30d`；`BillingLog` `TRIAL_GRANTED` +
+  `referenceId=install_credits` 幂等。卸载重装不补发。存量 Launch Credits
+  （`expiresAt` 为空）不追回、不过期。App `grantInstallCredits.server.ts`，
+  Worker 新建 Account 时 `grantInstallCredits.ts`。  到期扫描
+  `expireInstallTrialJob.ts`（`scheduler.ts`，每轮 LIMIT 200）；单店结算
+  `expireInstallTrialCreditsIfDue`（App 扣费/续费、Worker `tsfDb` 扣费）。
+  到期写 `BillingLog` `TRIAL_EXPIRED` + `referenceId=install_credits`
+  （`creditsDelta` 为负 leftover；用完则为 0）。
+- 已停发首订 Launch Credits（Basic 4M / Pro 8M / Premium 16M）。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
 (MONTHLY ≈ +30d, ANNUAL ≈ +365d). `currentPeriodStart = end - intervalDays`.
@@ -898,7 +915,7 @@ Currency changes often touch admin, App Proxy, and extension JS.
 
 ### Switcher And Storefront App Proxy
 
-- Admin page: `app/routes/app.switcher/route.tsx`.
+- Admin page: `app/routes/app.switcher/route.tsx`（Selector type / position 用 `InFlowSelect`，不要改回 Polaris `Select`）。
 - Contextual Save Bar (BFS 4.1.5): `app/hooks/useContextualSaveBar.ts` +
   `app/lib/saveBarNavigation.ts`。dirty 时 `show`；Remix 离开 / 子页返回 /
   Upgrade / manage 换语言与翻页先 `runAfterSaveBarLeave`；dirty 卸载不 `hide`。
@@ -1072,19 +1089,18 @@ Historical manage-translation migration guidance:
 - When modifying save/delete behavior, preserve the existing response shape used
 by page actions and surface Shopify `userErrors` as partial failures.
 - Manual single-field translate uses shared `SingleTranslateAction` (modal with
-AI model `Select` + optional prompt + credit estimate) →
+AI model in-flow list + optional prompt + credit estimate) →
 `SingleTextTranslate` → `/api/translate-v4/single` (`aiModel`, default
 `deepseek-v4-flash`). Estimate: `POST /api/translate-v4/single-estimate` builds
 the real system prompt (glossary + shop profile + custom prompt) via
 `estimateSingleTranslateLlmTokens`, then ceil(tokens × model multiplier)
 (DeepSeek default 1, GPT/Google default 1.5).
-- 单字段额度不足：打开弹窗时先预估 + 读剩余额度；积分区/试用优惠复用 `CreditsConfirmPanel`（Required / Available，无 Precise estimate）。额度不够留在本弹窗展示 trial / 买积分，点买积分才开共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
-`openCreditsPurchaseModal({ kind: "single_translate", … })`）。翻译失败后的
-额度类报错统一走 `app/hooks/useSingleTranslateQuotaGate.tsx` +
-`app/lib/singleTranslateQuotaFeedback.ts`（`v4.create.noCreditsPricing` → 补额度
-弹窗，`noCreditsTrial` → toast 提示试用、再次打开单条弹窗即可开试用，其余落
-`v4.error.singleQuotaInsufficient`）。20 多个 manage 页共用这一套，不要在单页
-自己拼额度文案。
+- 单字段额度不足：点 Translate 先读剩余额度；remaining ≤ 0 时 toast
+  `v4.create.insufficientCredits`，不打开翻译弹窗。弹窗仅在有额度时出现（Required /
+  Available + 模型/提示词，无试用/买积分推销）。失败后的额度类报错同样 toast，走
+  `app/hooks/useSingleTranslateQuotaGate.tsx` +
+  `app/lib/singleTranslateQuotaFeedback.ts`。20 多个 manage 页共用这一套，不要在单页
+  自己拼额度文案。服务端 `evaluateCreateTaskQuotaGuard` 仍拦 remaining ≤ 0。
 
 Image translation, PageFly, and some summary/count behavior may still be
 separate from the save path.
@@ -1171,7 +1187,7 @@ Language:
 
 - Page: `app/routes/app.language/route.tsx`.
 - Publish 列表开关只跟 Shopify `shopLocale.published`（桌面/移动一致）；域名 `alternateLocales` 只在 `publishModal` 里改。`publishAction` 分别回传 `shopLocaleUpdate` / `webPresenceUpdate` 成败，部分失败弹窗不关。
-- Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗，再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate / trial / 买积分，积分区走 `CreditsConfirmPanel`）。
+- Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗。剩余积分 ≤ 0 时 toast（`v4.create.insufficientCredits`）拦住、不打开确认弹窗；额度足够再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate，积分区走 `CreditsConfirmPanel`）。服务端 `evaluateCreateTaskQuotaGuard` 仍拦 remaining ≤ 0。`CreateTaskCard` 模型选择走文档流列表（见 Translation V4 组件说明）。
 - Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
 - Server: `app/server/translateV4/targetLocale.server.ts`,
@@ -1191,7 +1207,7 @@ Language:
 
 Glossary:
 
-- Page: `app/routes/app.glossary/route.tsx`.
+- Page: `app/routes/app.glossary/route.tsx`（Create/Edit Apply for 用 `InFlowSelect`）。
 - Server/API: `app/server/translateV4/glossary.server.ts`,
 `app/routes/api.translate-v4.glossary.ts`.
 - Worker injection: `worker/src/services/translationCoreRuntime.ts` loads rows
@@ -1394,7 +1410,7 @@ For "合入PR然后发布测试环境", the script will:
 | NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
 | 上下文保存栏离开拦截（BFS 4.1.5） | `app/hooks/useContextualSaveBar.ts`                   | `app/lib/saveBarNavigation.ts`、`app.switcher/route.tsx`、`AppSubpageTitleBar`                           |
 | 主题扩展状态 / BFS 4.2.3          | `app/lib/themeAppExtensions.ts`                       | mvp `ThemeExtensionStatusCard`、switcher `switcherSettingCard`、`shopify.app.extensions()`；打开主题编辑器用 `openSwitcherThemeEditor`（`_top`），不要用 Polaris `Button url`（会把 iframe 带到不可嵌入的 Admin） |
-| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldRenderSetupGuide`（默认不渲染；首次 Account 或卸载重装打标；点 X / 三项齐写 `setupGuideDismissedAt`）、`app/server/setupGuide.server.ts`；推荐卡片「立即翻译」仍一键确认 |
+| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldRenderSetupGuide`（默认不渲染；首次 Account 或卸载重装打标；点 X / 三项齐写 `setupGuideDismissedAt`）、`app/server/setupGuide.server.ts`；推荐卡片「立即翻译」仍一键确认；无目标语言时批量翻译入口跳 `/app/language` |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
 | Language 页 Translate 确认      | `app/routes/app.language/route.tsx`                 | `CreateTaskConfirmModal` / `CreditsConfirmPanel` / `useCreateTaskEstimate`                               |
@@ -1460,7 +1476,8 @@ scripts.
  （删 Turso `ShopOnboarding` + Cosmos 该店 v4 任务 + `TranslateV4JobUsage` +
  `ShopTargetLocale` + `ShopTranslationSettings` + Redis `tsf:items_count:{shop}:*` +
  Cosmos `shop_scan_jobs`（避免 install 因历史 COMPLETED 被 `skipped_existing`）；可选
- `--billing` 连带清 `Account/AppSubscription/BillingLog/AccountPeriodUsage` 让 `isNew=true`）。
+ `--billing` 先 best-effort 调 Shopify `appSubscriptionCancel`（需 offline Session；
+ ACTIVE/PENDING 才调），再清 `Account/AppSubscription/BillingLog/AccountPeriodUsage` 让 `isNew=true`）。
  默认 dry-run，`--write` 才落库；必须 `--shop=`； `--env=`（默认 `.env`）；Turso 认 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`
  （兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）；Redis **只连**
  `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob

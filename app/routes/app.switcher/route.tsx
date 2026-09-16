@@ -1,5 +1,6 @@
 import { SaveBar } from "@shopify/app-bridge-react";
-import { Page, Select as PolarisSelect } from "@shopify/polaris";
+import { Page } from "@shopify/polaris";
+import { InFlowSelect } from "~/ui/components/InFlowSelect";
 import {
   Alert,
   Typography,
@@ -73,6 +74,7 @@ const fieldColumnStyle = {
   display: "flex",
   flexDirection: "column" as const,
   gap: 8,
+  overflow: "visible" as const,
 };
 
 const previewLanguages: PreviewLanguageOption[] = [
@@ -749,11 +751,12 @@ const Index = () => {
                         <Text style={{ display: "block" }}>
                           {t("Selector type")}
                         </Text>
-                        <PolarisSelect
+                        <InFlowSelect
                           label={t("Selector type")}
                           labelHidden
                           options={switcherOptions}
                           value={switcherTypeValue}
+                          disabled={isLoading}
                           onChange={(value) => {
                             switch (value) {
                               case "sidebar widget":
@@ -835,11 +838,12 @@ const Index = () => {
                         <Text style={{ display: "block" }}>
                           {t("Selector position:")}
                         </Text>
-                        <PolarisSelect
+                        <InFlowSelect
                           label={t("Selector position:")}
                           labelHidden
                           options={switcherPositionOptions}
                           value={selectorPosition}
+                          disabled={isLoading}
                           onChange={(value) =>
                             handleEditData({ selectorPosition: value })
                           }

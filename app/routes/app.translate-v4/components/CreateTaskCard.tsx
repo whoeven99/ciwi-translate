@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { BlockStack, Button, Checkbox, Select as PolarisSelect } from "@shopify/polaris";
+import { BlockStack, Button, Checkbox } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import { message } from "~/ui/message";
 import { v4Colors, v4CardStyle } from "../v4Styles";
@@ -13,6 +13,7 @@ import { localeRegionCode, localeShortName } from "../localeDisplay";
 import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
 import { getV4AiModelLabel, getV4ModuleLabel } from "../v4I18n";
 import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
+import { AiModelInFlowSelect } from "./AiModelInFlowSelect";
 
 export type { CreateTaskEstimateView };
 
@@ -339,18 +340,18 @@ export function CreateTaskCard({
         <div
           className={`v4-collapse${advancedOpen ? " v4-collapse--open" : ""}`}
           style={{
-            maxHeight: advancedOpen ? 720 : 0,
+            maxHeight: advancedOpen ? "none" : 0,
             opacity: advancedOpen ? 1 : 0,
           }}
         >
           <div style={{ marginTop: 12 }}>
             <div style={{ marginBottom: 16 }}>
-              <PolarisSelect
+              <AiModelInFlowSelect
                 label={t("v4.createTask.aiModel")}
-                labelHidden
-                options={aiModelOptions}
                 value={aiModel}
+                options={aiModelOptions}
                 onChange={onAiModelChange}
+                active={advancedOpen}
               />
             </div>
             <SectionLabel>{t("v4.createTask.translationOptions")}</SectionLabel>

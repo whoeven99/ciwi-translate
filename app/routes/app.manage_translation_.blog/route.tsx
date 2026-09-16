@@ -11,7 +11,8 @@ import {
 import Button from "~/ui/components/AppButton";
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react"; // 引入 useNavigate, useLocation, useSearchParams
-import { Page, Pagination, Select } from "@shopify/polaris";
+import { Page, Pagination } from "@shopify/polaris";
+import { InFlowSelect as Select } from "~/ui/components/InFlowSelect";
 import { ActionFunctionArgs } from "@remix-run/node";
 import { queryNextTransType, queryPreviousTransType } from "~/api/admin";
 import { SingleTextTranslate } from "~/api/translateV4Client";

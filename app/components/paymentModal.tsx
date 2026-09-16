@@ -1,7 +1,6 @@
 import {
   InlineStack,
   Link as PolarisLink,
-  Select as PolarisSelect,
   Text as PolarisText,
 } from "@shopify/polaris";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +12,7 @@ import useReport from "../../scripts/eventReport";
 import "./styles.css";
 import { v4Colors } from "~/routes/app.translate-v4/v4Styles";
 import { AppSModal } from "~/ui/components/AppSModal";
+import { InFlowSelect } from "~/ui/components/InFlowSelect";
 import { buildPaymentOptions, type OptionType } from "./paymentModal.shared";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
 import type { CreditsPurchaseModalContext } from "~/utils/creditsPurchaseModal";
@@ -385,7 +385,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         ) : null}
 
         <div style={{ marginBottom: 24 }}>
-          <PolarisSelect
+          <InFlowSelect
             label={t("Credit pack")}
             labelHidden
             options={selectOptions}

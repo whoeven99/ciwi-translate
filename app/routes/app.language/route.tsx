@@ -87,7 +87,10 @@ import {
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
 import { normalizeShopQuota } from "~/lib/translationQuota";
-import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import {
+  notifyIfCreateTaskBlockedByCredits,
+  shouldBlockCreateTaskByCredits,
+} from "~/lib/createTranslateQuotaGuard";
 import type { ShopQuota } from "~/lib/translationQuota";
 import {
   AI_MODEL_OPTIONS,
@@ -578,7 +581,7 @@ const Index = () => {
     | "insufficient_paid"
     | "insufficient_trial"
     | "insufficient_pricing" =
-    taskEstimate.needsMoreCredits
+    createShouldGateByCredits
       ? hasPaidPlan
         ? "insufficient_paid"
         : createQuotaGateMode === "trial"
@@ -1117,9 +1120,14 @@ const Index = () => {
       );
       return;
     }
+    if (shouldBlockCreateTaskByCredits({ remainingCredits })) {
+      setTranslateModalOpen(false);
+      setCreateConfirmOpen(true);
+      return;
+    }
     setTranslateModalOpen(false);
     setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, t]);
+  }, [createQuotaGatePending, remainingCredits, t]);
 
   const handleCreateConfirm = useCallback(async () => {
     if (!source?.code) {
@@ -1132,13 +1140,32 @@ const Index = () => {
       );
       return;
     }
-    if (createQuotaGateMode !== null) return;
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
+      return;
+    }
 
     const freshQuota = await refreshQuota();
     const remaining =
       freshQuota?.remainingCredits ?? remainingCredits;
     if (remaining == null) {
       message.info(t("v4.create.quotaUnavailable"));
+      return;
+    }
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits: remaining,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
       return;
     }
 
@@ -1181,7 +1208,7 @@ const Index = () => {
             return;
           }
           await refreshQuota();
-          setCreateConfirmOpen(true);
+          message.warning(t("v4.create.insufficientCredits"));
           return;
         }
         message.error(summary);
@@ -1208,7 +1235,6 @@ const Index = () => {
       setTranslateCreating(false);
     }
   }, [
-    createQuotaGateMode,
     createQuotaGatePending,
     isNew,
     navigate,
@@ -1277,6 +1303,7 @@ const Index = () => {
     shop,
     t,
     targetOptions,
+    remainingCredits,
   ]);
 
   const navigateToManage = (selectedLanguageCode: string) => {

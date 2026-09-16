@@ -13,7 +13,9 @@
  *      hasActiveOrCompletedShopScan 命中历史 COMPLETED 被 skipped_existing，覆盖率不会重扫）
  *
  * 附加（--billing，更彻底，让 isNew=true / 恢复试用资格）：
- *   8) Turso  AccountPeriodUsage / BillingLog / AppSubscription / Account
+ *   8) Shopify appSubscriptionCancel（best-effort；需 Turso Session 有 offline token，
+ *      且 AppSubscription 为 ACTIVE/PENDING；已 CANCELLED/EXPIRED 跳过）
+ *   9) Turso  AccountPeriodUsage / BillingLog / AppSubscription / Account
  *
  * 安全设计：
  *   - 默认 dry-run，只打印将删除的条数，不落库；加 --write 才真正执行。
@@ -132,6 +134,141 @@ const redisTargets = [];
 const { url: renderKvUrl, source: redisSource } = resolveRedisUrl(env);
 if (renderKvUrl) {
   redisTargets.push({ key: redisSource || "RENDER_KV", url: renderKvUrl });
+}
+
+// 与 app/lib/shopifyAdminApiVersion.ts 同值
+const SHOPIFY_ADMIN_API_VERSION = "2026-07";
+const SHOPIFY_SUBSCRIPTION_TERMINAL = new Set(["CANCELLED", "EXPIRED"]);
+
+function buildShopifyAdminGraphqlUrl(shopDomain) {
+  const normalized = shopDomain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  return `https://${normalized}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/graphql.json`;
+}
+
+/** 读 Turso AppSubscription（删表前用于 Shopify cancel）。 */
+async function loadAppSubscriptionRow() {
+  try {
+    const rs = await turso.execute({
+      sql: `SELECT shopifySubscriptionId, status, planKey FROM "AppSubscription" WHERE shop = ? LIMIT 1`,
+      args: [shop],
+    });
+    const row = rs.rows?.[0];
+    if (!row) return null;
+    return {
+      shopifySubscriptionId: String(row.shopifySubscriptionId ?? "").trim(),
+      status: String(row.status ?? "").trim(),
+      planKey: String(row.planKey ?? "").trim(),
+    };
+  } catch (err) {
+    console.warn(
+      `  [warn] 读取 AppSubscription 失败：${err?.message || err}`,
+    );
+    return null;
+  }
+}
+
+/** 读 offline Session token（与 offlineSessionToken.server.ts 口径一致）。 */
+async function loadOfflineAccessToken() {
+  try {
+    const rs = await turso.execute({
+      sql: `SELECT accessToken, expires FROM "Session"
+            WHERE shop = ? AND isOnline = 0
+            ORDER BY expires DESC
+            LIMIT 1`,
+      args: [shop],
+    });
+    const row = rs.rows?.[0];
+    const token = String(row?.accessToken ?? "").trim();
+    if (!token) return null;
+    const expiresRaw = row?.expires;
+    if (expiresRaw != null && expiresRaw !== "") {
+      const expires = new Date(expiresRaw);
+      if (!Number.isNaN(expires.getTime()) && expires <= new Date()) {
+        return null;
+      }
+    }
+    return token;
+  } catch (err) {
+    console.warn(`  [warn] 读取 Session offline token 失败：${err?.message || err}`);
+    return null;
+  }
+}
+
+/** best-effort 取消 Shopify 侧订阅（逻辑对齐 cleanupOnUninstall.server.ts）。 */
+async function cancelShopifySubscriptionBestEffort(subscriptionId, accessToken) {
+  const response = await fetch(buildShopifyAdminGraphqlUrl(shop), {
+    method: "POST",
+    headers: {
+      "X-Shopify-Access-Token": accessToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: `mutation AppSubscriptionCancel($id: ID!, $prorate: Boolean) {
+        appSubscriptionCancel(id: $id, prorate: $prorate) {
+          userErrors { field message }
+          appSubscription { id status }
+        }
+      }`,
+      variables: { id: subscriptionId, prorate: true },
+    }),
+  });
+  const json = await response.json();
+  const payload = json?.data?.appSubscriptionCancel;
+  const userErrors = payload?.userErrors;
+  if (Array.isArray(userErrors) && userErrors.length > 0) {
+    throw new Error(
+      userErrors.map((e) => e?.message || JSON.stringify(e)).join("; "),
+    );
+  }
+  return payload?.appSubscription?.status ?? "unknown";
+}
+
+/**
+ * --billing 时：若本地仍有 ACTIVE/PENDING 订阅，先调 Shopify cancel，再删 Turso 行。
+ */
+async function cancelShopifySubscriptionIfNeeded() {
+  const sub = await loadAppSubscriptionRow();
+  if (!sub?.shopifySubscriptionId) {
+    console.log("  [skip] 无 AppSubscription 行，跳过 Shopify 订阅取消");
+    return;
+  }
+
+  if (SHOPIFY_SUBSCRIPTION_TERMINAL.has(sub.status)) {
+    console.log(
+      `  [skip] AppSubscription 已为终态 ${sub.status}，跳过 Shopify 订阅取消`,
+    );
+    return;
+  }
+
+  const accessToken = await loadOfflineAccessToken();
+  if (!accessToken) {
+    console.warn(
+      "  [warn] 无有效 offline Session token，无法调用 Shopify appSubscriptionCancel；" +
+        "仍将删除本地 AppSubscription（Shopify 侧可能仍显示活跃订阅）",
+    );
+    return;
+  }
+
+  if (!write) {
+    console.log(
+      `  [dry] Shopify appSubscriptionCancel: plan=${sub.planKey || "?"} status=${sub.status} id=${sub.shopifySubscriptionId}`,
+    );
+    return;
+  }
+
+  try {
+    const shopifyStatus = await cancelShopifySubscriptionBestEffort(
+      sub.shopifySubscriptionId,
+      accessToken,
+    );
+    console.log(
+      `  [ok ] Shopify appSubscriptionCancel: status=${shopifyStatus} id=${sub.shopifySubscriptionId}`,
+    );
+  } catch (err) {
+    console.error(
+      `  [err] Shopify appSubscriptionCancel 失败：${err?.message || err}（仍继续删除本地账单行）`,
+    );
+  }
 }
 
 // ---------- 执行 ----------
@@ -426,6 +563,8 @@ async function main() {
 
   if (includeBilling) {
     console.log("\n-- 步骤 6/6：清空账单（isNew=true / 恢复试用资格）--");
+    console.log("  [info] 先 best-effort 取消 Shopify 侧订阅（需 offline token）…");
+    await cancelShopifySubscriptionIfNeeded();
     // 子表 → 主表顺序删除
     await tursoDelete("AccountPeriodUsage");
     await tursoDelete("BillingLog");
