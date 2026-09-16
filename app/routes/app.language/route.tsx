@@ -541,8 +541,12 @@ const Index = () => {
   const [autoModules, setAutoModules] = useState<string[]>(
     () => loaderAutoSettings?.modules ?? [...AUTO_TRANSLATE_V2_MODULE_KEYS],
   );
+  const [autoSettingsModalOpen, setAutoSettingsModalOpen] = useState(false);
   const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
-  const [autoSettingsDirty, setAutoSettingsDirty] = useState(false);
+  const [draftAutoHour, setDraftAutoHour] = useState(0);
+  const [draftAutoModules, setDraftAutoModules] = useState<string[]>([]);
+  const [editAutoLocale, setEditAutoLocale] = useState<string | null>(null);
+  const [draftLocaleAuto, setDraftLocaleAuto] = useState(false);
   const [translateModalOpen, setTranslateModalOpen] = useState(false);
   const [translateTargets, setTranslateTargets] = useState<string[]>([]);
   const [translateModuleKeys, setTranslateModuleKeys] =
@@ -1087,15 +1091,28 @@ const Index = () => {
       title: t("Auto translation"),
       dataIndex: "autoTranslate",
       key: "autoTranslate",
-      width: "15%",
+      width: "18%",
       render: (_: any, record: any) => (
-        <Switch
-          checked={record.autoTranslate}
-          onChange={(checked) =>
-            handleAutoUpdateTranslationChange(record.locale, checked)
-          }
-          loading={record.autoTranslateLoading} // 使用每个项的 loading 状态
-        />
+        <Flex align="center" gap="small" wrap="wrap">
+          <Text
+            style={{
+              color: record.autoTranslate
+                ? "var(--p-color-text-success)"
+                : "var(--app-color-text-secondary)",
+            }}
+          >
+            {record.autoTranslate
+              ? t("v4.autoSettings.statusOn")
+              : t("v4.autoSettings.statusOff")}
+          </Text>
+          <Button
+            size="small"
+            loading={record.autoTranslateLoading}
+            onClick={() => openAutoSettingsModal(record.locale)}
+          >
+            {t("v4.autoSettings.edit")}
+          </Button>
+        </Flex>
       ),
     },
     {
@@ -1507,48 +1524,51 @@ const Index = () => {
     [t],
   );
 
-  const allAutoModulesSelected =
+  const allDraftModulesSelected =
     autoModuleChips.length > 0 &&
-    autoModuleChips.every((mod) => autoModules.includes(mod.value));
-  const someAutoModulesSelected =
-    autoModules.length > 0 && !allAutoModulesSelected;
+    autoModuleChips.every((mod) => draftAutoModules.includes(mod.value));
+  const someDraftModulesSelected =
+    draftAutoModules.length > 0 && !allDraftModulesSelected;
 
-  const toggleAutoModule = (value: string) => {
-    setAutoSettingsDirty(true);
-    setAutoModules((prev) =>
+  const openAutoSettingsModal = (locale: string) => {
+    setDraftAutoHour(autoHour);
+    setDraftAutoModules([...autoModules]);
+    const row = dataSource.find((item: any) => item.locale === locale);
+    setEditAutoLocale(locale);
+    setDraftLocaleAuto(Boolean(row?.autoTranslate));
+    setAutoSettingsModalOpen(true);
+  };
+
+  const closeAutoSettingsModal = () => {
+    if (autoSettingsSaving) return;
+    setAutoSettingsModalOpen(false);
+    setEditAutoLocale(null);
+  };
+
+  const toggleDraftAutoModule = (value: string) => {
+    setDraftAutoModules((prev) =>
       prev.includes(value) ? prev.filter((m) => m !== value) : [...prev, value],
     );
   };
 
-  const toggleAllAutoModules = () => {
-    setAutoSettingsDirty(true);
-    setAutoModules(
-      allAutoModulesSelected ? [] : AUTO_TRANSLATE_V2_MODULE_KEYS.slice(),
+  const toggleAllDraftAutoModules = () => {
+    setDraftAutoModules(
+      allDraftModulesSelected ? [] : AUTO_TRANSLATE_V2_MODULE_KEYS.slice(),
     );
   };
 
   const handleSaveAutoSettings = async () => {
-    if (autoModules.length === 0) {
+    if (draftAutoModules.length === 0) {
       message.warning(t("v4.autoSettings.selectModule"));
       return;
     }
     setAutoSettingsSaving(true);
     try {
       const data = await setAutoTranslateSettingsCompat({
-        hour: autoHour,
-        modules: autoModules,
+        hour: draftAutoHour,
+        modules: draftAutoModules,
       });
-      if (data?.success) {
-        setAutoHour(data.response?.hour ?? autoHour);
-        setAutoModules(
-          Array.isArray(data.response?.modules)
-            ? data.response.modules
-            : autoModules,
-        );
-        setAutoSettingsDirty(false);
-        message.success(t("v4.autoSettings.saved"));
-        reportClick("language_auto_settings_save");
-      } else {
+      if (!data?.success) {
         message.error(
           getTranslateV4ErrorMessage(
             t,
@@ -1556,7 +1576,32 @@ const Index = () => {
             TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_AUTO_SETTINGS_INVALID,
           ),
         );
+        return;
       }
+
+      const nextHour = data.response?.hour ?? draftAutoHour;
+      const nextModules = Array.isArray(data.response?.modules)
+        ? data.response.modules
+        : draftAutoModules;
+      setAutoHour(nextHour);
+      setAutoModules(nextModules);
+
+      if (editAutoLocale) {
+        const row = dataSource.find(
+          (item: any) => item.locale === editAutoLocale,
+        );
+        if (row && Boolean(row.autoTranslate) !== draftLocaleAuto) {
+          await handleAutoUpdateTranslationChange(
+            editAutoLocale,
+            draftLocaleAuto,
+          );
+        }
+      }
+
+      setAutoSettingsModalOpen(false);
+      setEditAutoLocale(null);
+      message.success(t("v4.autoSettings.saved"));
+      reportClick("language_auto_settings_save");
     } catch {
       message.error(
         getTranslateV4ErrorMessage(
@@ -1628,88 +1673,6 @@ const Index = () => {
               description={<PrimaryLanguage />}
               backAction={homeBackAction}
             />
-            <AppSectionCard
-              bodyPadding="16px"
-              style={{ width: "100%", overflow: "visible" }}
-            >
-              <div className={styles.autoSettingsBlock}>
-                <Typography.Text strong>
-                  {t("v4.autoSettings.title")}
-                </Typography.Text>
-                <Typography.Paragraph
-                  type="secondary"
-                  style={{ marginBottom: 12, marginTop: 4 }}
-                >
-                  {t("v4.autoSettings.help")}
-                </Typography.Paragraph>
-                <div className={styles.autoSettingsRow}>
-                  <div style={{ minWidth: 200, maxWidth: 280, flex: "1 1 200px" }}>
-                    <InFlowSelect
-                      label={t("v4.autoSettings.hour")}
-                      options={autoHourOptions}
-                      value={String(autoHour)}
-                      onChange={(value) => {
-                        setAutoSettingsDirty(true);
-                        setAutoHour(Number(value));
-                      }}
-                    />
-                    <Typography.Text
-                      type="secondary"
-                      style={{ fontSize: 12, display: "block", marginTop: 4 }}
-                    >
-                      {t("v4.autoSettings.timezone")}
-                    </Typography.Text>
-                  </div>
-                  <Button
-                    type="primary"
-                    loading={autoSettingsSaving}
-                    disabled={!autoSettingsDirty || autoModules.length === 0}
-                    onClick={() => void handleSaveAutoSettings()}
-                  >
-                    {t("v4.autoSettings.save")}
-                  </Button>
-                </div>
-                <div style={{ marginTop: 14 }}>
-                  <Flex
-                    align="center"
-                    justify="space-between"
-                    wrap="wrap"
-                    gap="small"
-                    style={{ marginBottom: 8 }}
-                  >
-                    <Typography.Text>
-                      {t("v4.autoSettings.modules")}
-                    </Typography.Text>
-                    <Checkbox
-                      checked={allAutoModulesSelected}
-                      indeterminate={someAutoModulesSelected}
-                      onChange={() => toggleAllAutoModules()}
-                    >
-                      {t("Check all")}
-                    </Checkbox>
-                  </Flex>
-                  <div className={styles.autoModuleGrid}>
-                    {autoModuleChips.map((mod) => {
-                      const selected = autoModules.includes(mod.value);
-                      return (
-                        <button
-                          key={mod.value}
-                          type="button"
-                          className={
-                            selected
-                              ? styles.autoModuleChipSelected
-                              : styles.autoModuleChip
-                          }
-                          onClick={() => toggleAutoModule(mod.value)}
-                        >
-                          {mod.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </AppSectionCard>
             <AppSectionCard bodyPadding="16px" style={{ width: "100%" }}>
               <div className={styles.languageTable_action}>
                 <div className={styles.languageToolbar}>
@@ -1824,15 +1787,27 @@ const Index = () => {
                             key: "auto",
                             label: t("Auto translation"),
                             value: (
-                              <Switch
-                                checked={item.autoTranslate}
-                                onChange={(checked) =>
-                                  handleAutoUpdateTranslationChange(
-                                    item.locale,
-                                    checked,
-                                  )
-                                }
-                              />
+                              <Flex align="center" gap="small" wrap="wrap">
+                                <Text
+                                  style={{
+                                    color: item.autoTranslate
+                                      ? "var(--p-color-text-success)"
+                                      : "var(--app-color-text-secondary)",
+                                  }}
+                                >
+                                  {item.autoTranslate
+                                    ? t("v4.autoSettings.statusOn")
+                                    : t("v4.autoSettings.statusOff")}
+                                </Text>
+                                <Button
+                                  size="small"
+                                  onClick={() =>
+                                    openAutoSettingsModal(item.locale)
+                                  }
+                                >
+                                  {t("v4.autoSettings.edit")}
+                                </Button>
+                              </Flex>
                             ),
                           },
                         ]}
@@ -1879,6 +1854,111 @@ const Index = () => {
         setIsModalOpen={setIsLanguageModalOpen}
         languageLocaleData={languageLocaleData}
       />
+      <AppSModal
+        open={autoSettingsModalOpen}
+        heading={t("v4.autoSettings.title")}
+        onClose={closeAutoSettingsModal}
+        size="large"
+        primaryAction={{
+          content: t("v4.autoSettings.save"),
+          loading: autoSettingsSaving,
+          disabled: draftAutoModules.length === 0 || autoSettingsSaving,
+          onAction: () => {
+            void handleSaveAutoSettings();
+          },
+        }}
+        secondaryActions={[
+          {
+            content: t("Cancel"),
+            disabled: autoSettingsSaving,
+            onAction: closeAutoSettingsModal,
+          },
+        ]}
+      >
+        <div className={styles.autoSettingsModalBody}>
+          <div className={styles.autoSettingsModalSection}>
+            <Flex align="center" justify="space-between" gap="middle">
+              <div>
+                <Typography.Text strong>
+                  {t("v4.autoSettings.localeToggle")}
+                </Typography.Text>
+                <Typography.Text
+                  type="secondary"
+                  style={{ display: "block", fontSize: 12, marginTop: 2 }}
+                >
+                  {editAutoLocale}
+                </Typography.Text>
+              </div>
+              <Switch
+                checked={draftLocaleAuto}
+                onChange={setDraftLocaleAuto}
+              />
+            </Flex>
+          </div>
+          <div className={styles.autoSettingsModalSection}>
+            <div style={{ maxWidth: 280 }}>
+              <InFlowSelect
+                label={t("v4.autoSettings.hour")}
+                options={autoHourOptions}
+                value={String(draftAutoHour)}
+                onChange={(value) => setDraftAutoHour(Number(value))}
+                active={autoSettingsModalOpen}
+              />
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 12, display: "block", marginTop: 4 }}
+              >
+                {t("v4.autoSettings.timezone")}
+              </Typography.Text>
+            </div>
+          </div>
+          <div className={styles.autoSettingsModalSection}>
+            <Flex
+              align="center"
+              justify="space-between"
+              wrap="wrap"
+              gap="small"
+              style={{ marginBottom: 8 }}
+            >
+              <Typography.Text strong>
+                {t("v4.autoSettings.modules")}
+              </Typography.Text>
+              <Checkbox
+                checked={allDraftModulesSelected}
+                indeterminate={someDraftModulesSelected}
+                onChange={() => toggleAllDraftAutoModules()}
+              >
+                {t("Check all")}
+              </Checkbox>
+            </Flex>
+            <div className={styles.autoModuleGrid}>
+              {autoModuleChips.map((mod) => {
+                const selected = draftAutoModules.includes(mod.value);
+                return (
+                  <button
+                    key={mod.value}
+                    type="button"
+                    className={
+                      selected
+                        ? styles.autoModuleChipSelected
+                        : styles.autoModuleChip
+                    }
+                    onClick={() => toggleDraftAutoModule(mod.value)}
+                  >
+                    {mod.label}
+                  </button>
+                );
+              })}
+            </div>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 12, display: "block", marginTop: 8 }}
+            >
+              {t("v4.autoSettings.help")}
+            </Typography.Text>
+          </div>
+        </div>
+      </AppSModal>
       <AppSModal
         open={translateModalOpen}
         heading={t("Translate")}
