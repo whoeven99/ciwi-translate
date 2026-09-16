@@ -245,11 +245,17 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
 
   const actionLabel = getActionLabel(modalState, t);
   const modalTitle = getModalTitle(modalState, t);
+  const modalDescription = getModalDescription(modalState, t);
   const submitLabel = getSubmitLabel(modalState, t);
   const promptLabel = t("manage.singleTranslate.promptSuggestion");
   const primaryLabel = shouldOpenPurchaseModal
-    ? t("Buy credits and translate")
+    ? t("paymentModal.cta.continue", {
+        defaultValue: "Add credits and continue",
+      })
     : submitLabel;
+  const stateLabel = getStateLabel(modalState, t);
+  const targetLabel = normalizeText(targetLocale).toUpperCase() || "TARGET";
+  const fieldLabel = fieldKey?.trim() || "value";
 
   const estimateLabel = estimateLoading
     ? t("Estimating...")
@@ -329,6 +335,12 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
               <Text strong style={{ display: "block", fontSize: 24, lineHeight: 1.3 }}>
                 {modalTitle}
               </Text>
+              <Text
+                type="secondary"
+                style={{ display: "block", marginTop: 8, lineHeight: 1.6 }}
+              >
+                {modalDescription}
+              </Text>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -343,13 +355,45 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
                       : v4Colors.cardSubdued,
                 }}
               >
-                <Text strong style={{ display: "block", marginBottom: 12 }}>
-                  {t("manage.singleTranslate.summaryTitle")}
-                </Text>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div>
+                    <Text strong style={{ display: "block" }}>
+                      {t("manage.singleTranslate.summaryTitle")}
+                    </Text>
+                    <Text
+                      type="secondary"
+                      style={{ display: "block", marginTop: 4, fontSize: 12 }}
+                    >
+                      {`${targetLabel} · ${stateLabel}`}
+                    </Text>
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {fieldLabel}
+                  </Text>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.6 }}>
+                    {shouldOpenPurchaseModal
+                      ? t("paymentModal.description.singleTranslate", {
+                          defaultValue:
+                            "Your current field settings are ready. Review the shortfall and choose a pack.",
+                        })
+                      : t("manage.singleTranslate.estimateHint")}
+                  </Text>
+                </div>
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
                     gap: 12,
                   }}
                 >
@@ -391,6 +435,12 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
               <div>
                 <Text strong style={{ display: "block", marginBottom: 4 }}>
                   {promptLabel}
+                </Text>
+                <Text
+                  type="secondary"
+                  style={{ display: "block", marginBottom: 8, lineHeight: 1.6 }}
+                >
+                  {getPromptDescription(modalState, t)}
                 </Text>
                 <TextArea
                   rows={4}
@@ -482,6 +532,33 @@ function getSubmitLabel(
   if (state === "missing") return t("manage.singleTranslate.submitMissing");
   if (state === "outdated") return t("manage.singleTranslate.submitOutdated");
   return t("manage.singleTranslate.submitQuality");
+}
+
+function getStateLabel(
+  state: SingleTranslateModalState,
+  t: (key: string) => string,
+) {
+  if (state === "missing") return t("manage.singleTranslate.stateMissing");
+  if (state === "outdated") return t("manage.singleTranslate.stateOutdated");
+  return t("manage.singleTranslate.stateQuality");
+}
+
+function getModalDescription(
+  state: SingleTranslateModalState,
+  t: (key: string) => string,
+) {
+  if (state === "missing") return t("manage.singleTranslate.descMissing");
+  if (state === "outdated") return t("manage.singleTranslate.descOutdated");
+  return t("manage.singleTranslate.descQuality");
+}
+
+function getPromptDescription(
+  state: SingleTranslateModalState,
+  t: (key: string) => string,
+) {
+  if (state === "missing") return t("manage.singleTranslate.promptDescMissing");
+  if (state === "outdated") return t("manage.singleTranslate.promptDescOutdated");
+  return t("manage.singleTranslate.promptDescQuality");
 }
 
 export default SingleTranslateAction;

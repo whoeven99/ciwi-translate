@@ -378,6 +378,18 @@ export function CreateTaskConfirmModal({
         </div>
 
         <div style={bodyStyle}>
+          <InfoCard title={t("v4.createTask.confirmTaskDetailTitle")}>
+            <div style={detailListStyle}>
+              {detailItems.map((item) => (
+                <DetailLine
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                />
+              ))}
+            </div>
+          </InfoCard>
+
           <section style={estimateSectionStyle}>
             <div style={estimateSectionTitleStyle}>
               {t("v4.createTask.confirmEstimatePanelTitle")}
@@ -443,18 +455,6 @@ export function CreateTaskConfirmModal({
               </div>
             </div>
           </section>
-
-          <InfoCard title={t("v4.createTask.confirmTaskDetailTitle")}>
-            <div style={detailListStyle}>
-              {detailItems.map((item) => (
-                <DetailLine
-                  key={item.label}
-                  label={item.label}
-                  value={item.value}
-                />
-              ))}
-            </div>
-          </InfoCard>
 
           {!isReady && scenario !== "insufficient_paid" ? (
             <InfoCard title={offerTitle(t, scenario)} highlighted>
