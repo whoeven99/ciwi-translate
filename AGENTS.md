@@ -937,7 +937,7 @@ Currency changes often touch admin, App Proxy, and extension JS.
  需临时改扩展常量或单独分支后再 `deployTest`。
 - Constants: `app/lib/switcherConstants.ts`.
 - `ipOpen` is the live geolocation switch and is stored on Turso
-`SwitcherConfiguration`. Free 套餐锁定（BFS 4.3.7：开关视觉与功能均 `disabled`；Basic+ 可开）。
+`SwitcherConfiguration`（所有套餐可开，无付费锁定）。
 The old `IpRedirection` table/model was dropped
 (`prisma/migrations/20260713000000_drop_ip_redirection`). Do not assume the
 removed `api.translate-v4.ip-redirections` / `custom_redirects` path or the
@@ -1187,6 +1187,7 @@ Common edits:
 Language:
 
 - Page: `app/routes/app.language/route.tsx`.
+- Publish 列表开关只跟 Shopify `shopLocale.published`（桌面/移动一致）；域名 `alternateLocales` 只在 `publishModal` 里改。`publishAction` 分别回传 `shopLocaleUpdate` / `webPresenceUpdate` 成败，部分失败弹窗不关。
 - Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗。剩余积分 ≤ 0 时 toast（`v4.create.insufficientCredits`）拦住、不打开确认弹窗；额度足够再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate，积分区走 `CreditsConfirmPanel`）。服务端 `evaluateCreateTaskQuotaGuard` 仍拦 remaining ≤ 0。
 - Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
@@ -1973,4 +1974,3 @@ translation, but auto-translate still does not set it. Empty Turso
 7. Run the validation command that matches the change.
 8. Final response should include changed files, validation result, residual
  risk, and unfinished P1 items when applicable.
-

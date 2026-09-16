@@ -23,8 +23,6 @@ import {
   buildSwitcherEditDefaults,
   type SwitcherEditData,
 } from "./switcherClient";
-import { useSelector } from "react-redux";
-import defaultStyles from "../styles/defaultStyles.module.css";
 import useReport from "scripts/eventReport";
 import CloseIcon from "~/components/icon/closeIcon";
 import SwitcherSettingCard from "./components/switcherSettingCard";
@@ -219,7 +217,6 @@ const Index = () => {
   const { report } = useReport();
   const { t } = useTranslation();
   const homeBackAction = useAppHomeBackAction();
-  const { plan } = useSelector((state: any) => state.userConfig);
   const isGeoLocationEnabled = editData.ipOpen;
   const isIncludedFlag = editData.includedFlag;
   const languageSelector = editData.languageSelector;
@@ -533,12 +530,7 @@ const Index = () => {
   };
 
   const handleIpOpenChange = (checked: boolean) => {
-    if (!plan?.type) {
-      return;
-    }
-    if (plan?.type !== "Free" || !checked) {
-      handleEditData({ ipOpen: checked });
-    }
+    handleEditData({ ipOpen: checked });
     report(
       {
         status: checked ? 1 : 0,
@@ -639,9 +631,6 @@ const Index = () => {
           : "currency";
   const showMarketFlagSetting = switcherTypeValue !== "currency";
 
-  const showPaidPlanHint =
-    plan?.type == "Free" || typeof plan?.type === "undefined";
-
   return (
     <Page>
       <SaveBar id="switcher-save-bar">
@@ -694,11 +683,7 @@ const Index = () => {
                       <Text strong>{t("Match market by IP")}</Text>
                     </div>
                     <Switch
-                      className={
-                        showPaidPlanHint ? defaultStyles.Switch_disable : ""
-                      }
-                      checked={isGeoLocationEnabled && !showPaidPlanHint}
-                      disabled={showPaidPlanHint}
+                      checked={isGeoLocationEnabled}
                       onChange={handleIpOpenChange}
                     />
                   </div>
