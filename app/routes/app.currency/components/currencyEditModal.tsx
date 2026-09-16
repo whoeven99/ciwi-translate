@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, InputNumber, Space, Typography } from "antd";
-import { Select as PolarisSelect } from "@shopify/polaris";
+import { InFlowSelect } from "~/ui/components/InFlowSelect";
 import { AppSModal } from "~/ui/components/AppSModal";
 import { useFetcher } from "@remix-run/react";
 import { CurrencyDataType } from "../route";
@@ -261,7 +261,7 @@ const CurrencyEditModal: React.FC<CurrencyEditModalProps> = ({
         ) : null}
         <div>
           <Title level={5}>{t("Exchange rate")}</Title>
-          <PolarisSelect
+          <InFlowSelect
             label={t("Exchange rate")}
             labelHidden
             options={exRateColumns}
@@ -308,7 +308,7 @@ const CurrencyEditModal: React.FC<CurrencyEditModalProps> = ({
       </Space>
       <div>
         <Title level={5}>{t("Rounding")}</Title>
-        <PolarisSelect
+        <InFlowSelect
           label={t("Rounding")}
           labelHidden
           options={roundingColumns}

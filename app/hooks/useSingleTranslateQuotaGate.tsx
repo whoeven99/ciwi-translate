@@ -5,7 +5,21 @@ import {
   resolveSingleTranslateErrorMessage,
 } from "~/lib/singleTranslateQuotaFeedback";
 import { TRANSLATE_V4_ERROR_KEYS } from "~/utils/translateV4Errors";
-import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
+import { CREATE_TASK_INSUFFICIENT_CREDITS_I18N_KEY } from "~/lib/createTranslateQuotaGuard";
+
+function toastQuotaError(
+  t: (key: string) => string,
+  errorMsg: string,
+) {
+  if (
+    errorMsg === "v4.create.quotaUnavailable" ||
+    errorMsg === "v4.create.quotaCheckPending"
+  ) {
+    shopify.toast.show(t(errorMsg));
+    return;
+  }
+  shopify.toast.show(t(CREATE_TASK_INSUFFICIENT_CREDITS_I18N_KEY));
+}
 
 export function useSingleTranslateQuotaGate() {
   const { t } = useTranslation();
@@ -13,14 +27,8 @@ export function useSingleTranslateQuotaGate() {
   const handleSingleTranslateFailure = useCallback(
     (errorMsg?: string | null) => {
       if (errorMsg && isSingleTranslateQuotaError(errorMsg)) {
-        if (errorMsg === "v4.create.noCreditsPricing") {
-          openCreditsPurchaseModal();
-          return;
-        }
-        if (errorMsg === "v4.create.noCreditsTrial") {
-          shopify.toast.show(t("v4.createTask.confirmTrialTitle"));
-          return;
-        }
+        toastQuotaError(t, errorMsg);
+        return;
       }
 
       const message = resolveSingleTranslateErrorMessage(
@@ -44,13 +52,7 @@ export function useSingleTranslateQuotaGate() {
       ),
     openQuotaGateForError: (errorMsg?: string | null) => {
       if (!errorMsg || !isSingleTranslateQuotaError(errorMsg)) return;
-      if (errorMsg === "v4.create.noCreditsPricing") {
-        openCreditsPurchaseModal();
-        return;
-      }
-      if (errorMsg === "v4.create.noCreditsTrial") {
-        shopify.toast.show(t("v4.createTask.confirmTrialTitle"));
-      }
+      toastQuotaError(t, errorMsg);
     },
   };
 }

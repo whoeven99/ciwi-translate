@@ -1,5 +1,6 @@
 import { Page } from "@shopify/polaris";
-import { Space, Select, Typography, Flex } from "antd";
+import { Space, Typography, Flex } from "antd";
+import { InFlowSelect as Select } from "~/ui/components/InFlowSelect";
 import Button from "~/ui/components/AppButton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./styles.css";
@@ -578,6 +579,8 @@ const Index = () => {
                   <div className="manage-header-left">
                     <Text strong>{t("Localized content:")}</Text>
                     <Select
+                      label={t("Localized content:")}
+                      labelHidden
                       options={selectOptions}
                       value={currentLocale}
                       onChange={(value) => {

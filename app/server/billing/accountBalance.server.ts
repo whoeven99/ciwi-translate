@@ -18,6 +18,61 @@ export type AccountBalanceFields = CreditPoolBalances & {
   usedCredits: number;
 };
 
+export type InstallTrialExpiryFields = {
+  trialCredits: number;
+  usedCredits: number;
+  trialCreditsExpiresAt: Date | null;
+};
+
+export type InstallTrialExpirySettlement = {
+  trialCredits: number;
+  usedCredits: number;
+  settled: boolean;
+  leftover: number;
+  consumed: number;
+};
+
+/**
+ * 安装赠送到期结算（纯函数，与写库 SQL 同口径）：
+ * 试用优先抵 used；剩余试用清零；已用完则只从 used 剔除赠送部分。
+ * expiresAt=null 视为永不过期。leftover = 作废的未用试用（写 BillingLog 用）。
+ */
+export function settleExpiredInstallTrialCredits(
+  account: InstallTrialExpiryFields,
+  now: Date = new Date(),
+): InstallTrialExpirySettlement {
+  const expiresAt = account.trialCreditsExpiresAt;
+  if (!expiresAt || now.getTime() < expiresAt.getTime()) {
+    return {
+      trialCredits: account.trialCredits,
+      usedCredits: account.usedCredits,
+      settled: false,
+      leftover: 0,
+      consumed: 0,
+    };
+  }
+  if (account.trialCredits <= 0) {
+    return {
+      trialCredits: 0,
+      usedCredits: account.usedCredits,
+      settled: false,
+      leftover: 0,
+      consumed: 0,
+    };
+  }
+  const consumed = Math.min(
+    Math.max(0, account.usedCredits),
+    account.trialCredits,
+  );
+  return {
+    trialCredits: 0,
+    usedCredits: account.usedCredits - consumed,
+    settled: true,
+    leftover: account.trialCredits - consumed,
+    consumed,
+  };
+}
+
 /** 三池额度之和（不减 used）。 */
 export function getTotalCredits(pools: CreditPoolBalances): number {
   return (

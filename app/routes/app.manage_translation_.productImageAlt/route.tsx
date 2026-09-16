@@ -3,7 +3,8 @@ import { json, useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import { SaveBar } from "@shopify/app-bridge-react";
 import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
 import { runAfterSaveBarLeave } from "~/lib/saveBarNavigation";
-import { Page, Pagination, Select } from "@shopify/polaris";
+import { Page, Pagination } from "@shopify/polaris";
+import { InFlowSelect as Select } from "~/ui/components/InFlowSelect";
 import {
   Card,
   Layout,

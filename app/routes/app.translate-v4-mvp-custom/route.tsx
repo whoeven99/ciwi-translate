@@ -33,7 +33,10 @@ import {
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
 import { normalizeShopQuota, type ShopQuota } from "~/lib/translationQuota";
-import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import {
+  notifyIfCreateTaskBlockedByCredits,
+  shouldBlockCreateTaskByCredits,
+} from "~/lib/createTranslateQuotaGuard";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 import { buildCreateTaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
 import {
@@ -194,7 +197,7 @@ export default function TranslateV4MvpCustomRoute() {
     | "insufficient_paid"
     | "insufficient_trial"
     | "insufficient_pricing" =
-    taskEstimate.needsMoreCredits
+    createShouldGateByCredits
       ? hasPaidPlan
         ? "insufficient_paid"
         : createQuotaGateMode === "trial"
@@ -295,6 +298,7 @@ export default function TranslateV4MvpCustomRoute() {
     shop,
     t,
     targetOptions,
+    remainingCredits,
   ]);
 
   const handleCreateConfirm = useCallback(async () => {
@@ -304,7 +308,16 @@ export default function TranslateV4MvpCustomRoute() {
       );
       return;
     }
-    if (createQuotaGateMode !== null) return;
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
+      return;
+    }
     if (remainingCredits == null) {
       message.info(t("v4.create.quotaUnavailable"));
       return;
@@ -357,7 +370,6 @@ export default function TranslateV4MvpCustomRoute() {
     }
   }, [
     aiModel,
-    createQuotaGateMode,
     createQuotaGatePending,
     includeLiquid,
     isCover,
@@ -379,8 +391,12 @@ export default function TranslateV4MvpCustomRoute() {
       );
       return;
     }
+    if (shouldBlockCreateTaskByCredits({ remainingCredits })) {
+      setCreateConfirmOpen(true);
+      return;
+    }
     setCreateConfirmOpen(true);
-  }, [createQuotaGatePending, t]);
+  }, [createQuotaGatePending, remainingCredits, t]);
 
   return (
     <Page>

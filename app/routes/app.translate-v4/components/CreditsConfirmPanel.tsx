@@ -207,11 +207,6 @@ function offerFeatures(
           title: t("v4.createTask.confirmTrialFeatureModel"),
           note: t("v4.createTask.confirmTrialFeatureModelValue"),
         },
-        {
-          title: t("v4.createTask.confirmTrialFeatureSpeed"),
-          note: t("v4.createTask.confirmTrialFeatureSpeedValue"),
-          badge: t("v4.createTask.confirmTrialFeatureSpeedBadge"),
-        },
       ]
     : [
         { title: t("v4.createTask.confirmPricingFeatureCredits") },

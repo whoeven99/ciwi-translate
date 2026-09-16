@@ -152,6 +152,12 @@ body {
   transition: none;
 }
 
+/* InFlowSelect 菜单在组件内绝对定位；Polaris Card 默认 overflow:hidden 会裁切 */
+.Polaris-ShadowBevel:has([aria-haspopup="listbox"]),
+.Polaris-Box:has([aria-haspopup="listbox"]) {
+  overflow: visible;
+}
+
 .app-button.ant-btn-default {
   background: var(--app-color-surface);
   border-color: var(--app-color-border-secondary);

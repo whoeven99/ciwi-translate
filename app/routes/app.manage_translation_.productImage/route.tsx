@@ -11,7 +11,6 @@ import {
   Card,
   Divider,
   Modal,
-  Select as SelectAnt,
   Input,
 } from "antd";
 import Button from "~/ui/components/AppButton";
@@ -19,7 +18,8 @@ import { SearchOutlined, UploadOutlined } from "@ant-design/icons";
 import { ActionFunctionArgs, json } from "@remix-run/node";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import { NoteIcon } from "@shopify/polaris-icons";
-import { Page, Pagination, Select, Thumbnail, Spinner } from "@shopify/polaris";
+import { Page, Pagination, Thumbnail, Spinner } from "@shopify/polaris";
+import { InFlowSelect as Select } from "~/ui/components/InFlowSelect";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
@@ -1629,18 +1629,22 @@ justifyContent: "space-between",
         >
           <div style={{ padding: "15px 0" }}>
             <p style={{ marginBottom: "10px" }}>{t("Source Language")}</p>
-            <SelectAnt
+            <Select
+              label={t("Source Language")}
+              labelHidden
               style={{ width: "100%", marginBottom: "20px" }}
               value={sourceLanguage}
               onChange={setSourceLanguage}
               options={sourceLanguages}
             />
             <span>{t("Target Language")}</span>
-            <SelectAnt
+            <Select
+              label={t("Target Language")}
+              labelHidden
               style={{ width: "100%", marginTop: "10px" }}
               value={targetLanguage}
               onChange={setTargetLanguage}
-              options={targetLanguages}
+              options={targetLanguages ?? []}
             />
           </div>
         </Modal>

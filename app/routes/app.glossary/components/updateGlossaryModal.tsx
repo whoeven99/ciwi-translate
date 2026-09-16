@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Input, Space, Typography, Checkbox, Alert } from "antd";
-import { Select as PolarisSelect } from "@shopify/polaris";
+import { InFlowSelect } from "~/ui/components/InFlowSelect";
 import { AppSModal } from "~/ui/components/AppSModal";
 import Button from "~/ui/components/AppButton";
 import { useFetcher, useNavigate } from "@remix-run/react";
@@ -50,9 +50,6 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
     "" | "warning" | "error"
   >("");
   const [targetTextStatus, setTargetTextStatus] = useState<
-    "" | "warning" | "error"
-  >("");
-  const [rangeCodeStatus, setRangeCodeStatus] = useState<
     "" | "warning" | "error"
   >("");
   const [sourceTextErrorMsg, setSourceTextErrorMsg] = useState<string>("");
@@ -170,7 +167,6 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
       !rangeCode ||
       !localeOptions.find((option) => option.value === rangeCode)
     ) {
-      setRangeCodeStatus("error");
       setRangeCodeError(true);
       setRangeCodeErrorMsg(t("Please select a language"));
       setModalAlert(null);
@@ -223,7 +219,6 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
       setTargetTextStatus("");
       setTargetTextError(false);
       setTargetTextErrorMsg("");
-      setRangeCodeStatus("");
       setRangeCodeError(false);
       setRangeCodeErrorMsg("");
 
@@ -317,7 +312,6 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
     setConfirmButtonDisable(false);
     setSourceTextStatus("");
     setTargetTextStatus("");
-    setRangeCodeStatus("");
     setSourceTextError(false);
     setTargetTextError(false);
     setRangeCodeError(false);
@@ -436,8 +430,8 @@ const UpdateGlossaryModal: React.FC<GlossaryModalProps> = ({
           </div>
         </Space>
         <Text strong>{t("Apply for")}</Text>
-        <div style={{ display: "flex", flexDirection: "column", width: 200 }}>
-          <PolarisSelect
+        <div style={{ display: "flex", flexDirection: "column", width: 200, overflow: "visible" }}>
+          <InFlowSelect
             label={t("Apply for")}
             labelHidden
             options={localeOptions.map((option) => ({

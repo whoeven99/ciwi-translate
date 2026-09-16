@@ -60,7 +60,10 @@ import {
   createTranslateV4Tasks,
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
-import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import {
+  notifyIfCreateTaskBlockedByCredits,
+  shouldBlockCreateTaskByCredits,
+} from "~/lib/createTranslateQuotaGuard";
 import { normalizeShopQuota, type ShopQuota } from "~/lib/translationQuota";
 import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 import {
@@ -69,6 +72,7 @@ import {
 } from "~/utils/creditsPurchaseTaskContext";
 import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
 import { useThemeAppExtensionStatus } from "~/hooks/useThemeAppExtensionStatus";
+import { APP_NAV_ITEMS } from "~/lib/appNav";
 import {
   buildSetupGuideState,
   shouldAutoDismissSetupGuide,
@@ -410,6 +414,7 @@ export default function TranslateV4MvpRoute() {
       locales.filter((locale) => locale.value !== primaryLocale) as ShopLocaleOption[],
     [locales, primaryLocale],
   );
+  const hasTargetLanguages = targetOptions.length > 0;
 
   const [coverage, setCoverage] = useState<CoverageSummary>(EMPTY_COVERAGE);
   const [coverageLoading, setCoverageLoading] = useState(true);
@@ -753,15 +758,22 @@ export default function TranslateV4MvpRoute() {
       { method: "post" },
     );
   }, [setupGuideFetcher]);
-  const handleSetupGuideOpenCustom = useCallback(() => {
-    setHasOpenedCreateFlow(true);
+  const goStartTranslation = useCallback(() => {
+    if (!hasTargetLanguages) {
+      navigate(APP_NAV_ITEMS.language);
+      return;
+    }
     navigate(
       buildCustomTranslationPath({
         targets: customTargets,
         modules: customModules,
       }),
     );
-  }, [customModules, customTargets, navigate]);
+  }, [customModules, customTargets, hasTargetLanguages, navigate]);
+  const handleSetupGuideOpenCustom = useCallback(() => {
+    setHasOpenedCreateFlow(true);
+    goStartTranslation();
+  }, [goStartTranslation]);
   const handleSetupGuideOpenLiquid = useCallback(() => {
     setHasOpenedCreateFlow(true);
     navigate(
@@ -777,7 +789,7 @@ export default function TranslateV4MvpRoute() {
     | "insufficient_paid"
     | "insufficient_trial"
     | "insufficient_pricing" =
-    createConfirmConfig?.estimate?.needsMoreCredits
+    createShouldGateByCredits
       ? hasPaidPlan
         ? "insufficient_paid"
         : createQuotaGateMode === "trial"
@@ -1099,7 +1111,16 @@ export default function TranslateV4MvpRoute() {
       );
       return;
     }
-    if (createQuotaGateMode !== null) return;
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmConfig(null);
+      return;
+    }
     if (remainingCredits == null) {
       message.info(t("v4.create.quotaUnavailable"));
       return;
@@ -1135,7 +1156,6 @@ export default function TranslateV4MvpRoute() {
     }
   }, [
     createConfirmConfig,
-    createQuotaGateMode,
     createQuotaGatePending,
     createTasksWithConfig,
     remainingCredits,
@@ -1228,31 +1248,40 @@ export default function TranslateV4MvpRoute() {
                     <div style={summaryProgressWrapStyle}>
                       <AppProgressRing
                         percent={
-                          isCoverageInitializing
+                          !hasTargetLanguages ||
+                          isCoverageInitializing ||
+                          !hasCoverageData
                             ? null
-                            : hasCoverageData
-                              ? coverage.overallPercent
-                              : null
+                            : coverage.overallPercent
                         }
                         size={64}
-                        loading={isCoverageInitializing || !hasCoverageData}
+                        loading={
+                          hasTargetLanguages &&
+                          (isCoverageInitializing || !hasCoverageData)
+                        }
                       />
                     </div>
 
                     <div style={summaryContentStyle}>
                       <Text as="p" variant="bodyMd">
-                        {isCoverageInitializing
-                          ? t("v4Mvp.coverageCard.summaryComputing", {
-                              defaultValue:
-                                "Store translation status is being calculated...",
-                            })
-                          : t("v4Mvp.coverageCard.summary", {
-                              percent: hasCoverageData
-                                ? `${coverage.overallPercent ?? 0}%`
-                                : "—",
-                            })}
+                        {!hasTargetLanguages
+                          ? t("v4Mvp.coverageCard.summaryNoLanguages")
+                          : isCoverageInitializing
+                            ? t("v4Mvp.coverageCard.summaryComputing", {
+                                defaultValue:
+                                  "Store translation status is being calculated...",
+                              })
+                            : t("v4Mvp.coverageCard.summary", {
+                                percent: hasCoverageData
+                                  ? `${coverage.overallPercent ?? 0}%`
+                                  : "—",
+                              })}
                       </Text>
-                      {isCoverageInitializing ? (
+                      {!hasTargetLanguages ? (
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          {t("v4Mvp.coverageCard.descriptionNoLanguages")}
+                        </Text>
+                      ) : isCoverageInitializing ? (
                         <Text as="p" tone="subdued" variant="bodySm">
                           {t("v4Mvp.coverageCard.descriptionComputing", {
                             defaultValue:
@@ -1274,16 +1303,24 @@ export default function TranslateV4MvpRoute() {
                     <InlineStack gap="150" blockAlign="center" wrap>
                       <AppStatusBadge
                         tone={
-                          isCoverageInitializing ? "info" : coverageRating.tone
+                          !hasTargetLanguages
+                            ? "caution"
+                            : isCoverageInitializing
+                              ? "info"
+                              : coverageRating.tone
                         }
                       >
-                        {isCoverageInitializing
-                          ? t("v4Mvp.coverageCard.statusComputing", {
-                              defaultValue: "Calculating...",
-                            })
-                          : coverageRating.label}
+                        {!hasTargetLanguages
+                          ? t("v4Mvp.coverageCard.statusNoLanguages")
+                          : isCoverageInitializing
+                            ? t("v4Mvp.coverageCard.statusComputing", {
+                                defaultValue: "Calculating...",
+                              })
+                            : coverageRating.label}
                       </AppStatusBadge>
-                      {!isCoverageInitializing && coverage.languageCount > 0 ? (
+                      {hasTargetLanguages &&
+                      !isCoverageInitializing &&
+                      coverage.languageCount > 0 ? (
                         <Text as="span" tone="subdued" variant="bodySm">
                           {t("v4Mvp.coverageCard.languageCount", {
                             total: coverage.languageCount,
@@ -1291,14 +1328,24 @@ export default function TranslateV4MvpRoute() {
                         </Text>
                       ) : null}
                     </InlineStack>
-                    <Button
-                      variant="secondary"
-                      size="slim"
-                      disabled={isCoverageInitializing}
-                      onClick={() => setCoverageDetailOpen(true)}
-                    >
-                      {t("v4Mvp.coverageCard.viewDetails")}
-                    </Button>
+                    {hasTargetLanguages ? (
+                      <Button
+                        variant="secondary"
+                        size="slim"
+                        disabled={isCoverageInitializing}
+                        onClick={() => setCoverageDetailOpen(true)}
+                      >
+                        {t("v4Mvp.coverageCard.viewDetails")}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        size="slim"
+                        onClick={() => navigate(APP_NAV_ITEMS.language)}
+                      >
+                        {t("Add Language")}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </AppSectionCard>
@@ -1371,10 +1418,7 @@ export default function TranslateV4MvpRoute() {
             extra={
               <Button
                 variant="primary"
-                onClick={() => navigate(buildCustomTranslationPath({
-                  targets: customTargets,
-                  modules: customModules,
-                }))}
+                onClick={goStartTranslation}
               >
                 {t("v4Mvp.custom.translate")}
               </Button>
@@ -1474,21 +1518,18 @@ export default function TranslateV4MvpRoute() {
                                 {t("v4Mvp.recommended.emptyTitle")}
                               </Text>
                               <Text as="p" tone="subdued" alignment="center">
-                                {t("v4Mvp.recommended.emptyDescription")}
+                                {t(
+                                  hasTargetLanguages
+                                    ? "v4Mvp.recommended.emptyDescription"
+                                    : "v4Mvp.recommended.emptyDescriptionNoLanguages",
+                                )}
                               </Text>
                             </BlockStack>
                             <InlineStack align="center">
                               <Button
                                 variant="primary"
                                 size="large"
-                                onClick={() =>
-                                  navigate(
-                                    buildCustomTranslationPath({
-                                      targets: customTargets,
-                                      modules: customModules,
-                                    }),
-                                  )
-                                }
+                                onClick={goStartTranslation}
                               >
                                 {t("v4Mvp.custom.translate")}
                               </Button>
@@ -1515,14 +1556,7 @@ export default function TranslateV4MvpRoute() {
                     loading={jobsLoading}
                     historyReturnTo="/app/translate-v4-mvp?tab=queue"
                     emptyStateActionLabel={t("v4Mvp.custom.translate")}
-                    onEmptyStateAction={() =>
-                      navigate(
-                        buildCustomTranslationPath({
-                          targets: customTargets,
-                          modules: customModules,
-                        }),
-                      )
-                    }
+                    onEmptyStateAction={goStartTranslation}
                     onBuyCredits={openTaskCreditsModal}
                     onAction={handleTaskAction}
                   />
