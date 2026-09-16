@@ -1,11 +1,90 @@
-import { useRef, useState } from "react";
-import { InputNumber, Skeleton, Space, Statistic, Typography, message } from "antd";
+import { useCallback, useRef, useState } from "react";
+import {
+  InputNumber,
+  Skeleton,
+  Space,
+  Statistic,
+  Table,
+  Typography,
+  message,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
 import Button from "~/ui/components/AppButton";
 import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
+import {
+  formatLocaleRoute,
+  localeRegionCode,
+} from "~/routes/app.translate-v4/localeDisplay";
 import "../style.css";
 
 const { Title, Text } = Typography;
+
+type CreditUsageMetadata = {
+  target?: unknown;
+  sourceLocale?: unknown;
+  sourceCode?: unknown;
+  targetCode?: unknown;
+  fieldKey?: unknown;
+  shopifyType?: unknown;
+};
+
+type CreditUsageRow = {
+  id: string;
+  source: string;
+  credits: number;
+  createdAt: string;
+  metadata?: CreditUsageMetadata | null;
+};
+
+function asLocaleCode(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function asNonEmptyString(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+/** 从来源 metadata 拼语言路由（v4/单字段用 sourceLocale+target；图片用 sourceCode+targetCode）。 */
+function formatUsageLocaleDetail(metadata: CreditUsageRow["metadata"]): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const source =
+    asLocaleCode(metadata.sourceLocale) || asLocaleCode(metadata.sourceCode);
+  const target =
+    asLocaleCode(metadata.target) || asLocaleCode(metadata.targetCode);
+  if (source && target) return formatLocaleRoute(source, target);
+  if (target) return localeRegionCode(target);
+  if (source) return localeRegionCode(source);
+  return null;
+}
+
+/** 单字段额外：模块类型 + 字段 key（过长截断）。 */
+function formatSingleFieldDetail(metadata: CreditUsageRow["metadata"]): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const shopifyType = asNonEmptyString(metadata.shopifyType);
+  let fieldKey = asNonEmptyString(metadata.fieldKey);
+  if (fieldKey.length > 40) {
+    fieldKey = `${fieldKey.slice(0, 37)}…`;
+  }
+  if (shopifyType && fieldKey) return `${shopifyType} / ${fieldKey}`;
+  if (shopifyType) return shopifyType;
+  if (fieldKey) return fieldKey;
+  return null;
+}
+
+function formatUsageSourceDetail(
+  source: string,
+  metadata: CreditUsageRow["metadata"],
+): string | null {
+  const parts: string[] = [];
+  const localeDetail = formatUsageLocaleDetail(metadata);
+  if (localeDetail) parts.push(localeDetail);
+  if (source === "single") {
+    const fieldDetail = formatSingleFieldDetail(metadata);
+    if (fieldDetail) parts.push(fieldDetail);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 interface AcountInfoCardProps {
   loading: boolean;
@@ -40,17 +119,107 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   onBuyCredits,
   onMigrateSuccess,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [migrateOpen, setMigrateOpen] = useState(false);
   const [migrateAmount, setMigrateAmount] = useState<number | null>(null);
   const [migrateAll, setMigrateAll] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const transferIdRef = useRef<string>("");
 
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState(false);
+  const [usageItems, setUsageItems] = useState<CreditUsageRow[]>([]);
+
   const purchased = Math.max(0, Math.floor(purchasedCredits));
   const migratable = Math.max(0, Math.floor(migratablePurchasedCredits));
   const consumed = Math.max(0, purchased - migratable);
   const canMigrate = migratable >= 1;
+
+  const sourceLabel = useCallback(
+    (source: string, metadata?: CreditUsageRow["metadata"]) => {
+      const key = `pricing.usage.source.${source}`;
+      const translated = t(key);
+      const base = translated === key ? source : translated;
+      const detail = formatUsageSourceDetail(source, metadata);
+      return detail ? `${base} · ${detail}` : base;
+    },
+    [t],
+  );
+
+  const formatUsageTime = useCallback(
+    (iso: string) => {
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return iso;
+      try {
+        return new Intl.DateTimeFormat(i18n.language || undefined, {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(date);
+      } catch {
+        return date.toLocaleString();
+      }
+    },
+    [i18n.language],
+  );
+
+  const loadUsage = useCallback(async () => {
+    setUsageLoading(true);
+    setUsageError(false);
+    try {
+      const res = await fetch("/api/billing/credit-usage?take=20");
+      const data = (await res.json()) as {
+        ok?: boolean;
+        items?: CreditUsageRow[];
+      };
+      if (!res.ok || !data.ok || !Array.isArray(data.items)) {
+        setUsageError(true);
+        setUsageItems([]);
+        return;
+      }
+      setUsageItems(data.items);
+    } catch {
+      setUsageError(true);
+      setUsageItems([]);
+    } finally {
+      setUsageLoading(false);
+    }
+  }, []);
+
+  const openUsage = () => {
+    setUsageOpen(true);
+    void loadUsage();
+  };
+
+  const closeUsage = () => {
+    setUsageOpen(false);
+  };
+
+  const usageColumns: ColumnsType<CreditUsageRow> = [
+    {
+      title: t("pricing.usage.col.time"),
+      dataIndex: "createdAt",
+      key: "createdAt",
+      render: (value: string) => formatUsageTime(value),
+    },
+    {
+      title: t("pricing.usage.col.source"),
+      dataIndex: "source",
+      key: "source",
+      render: (_value: string, row: CreditUsageRow) =>
+        sourceLabel(row.source, row.metadata),
+    },
+    {
+      title: t("pricing.usage.col.credits"),
+      dataIndex: "credits",
+      key: "credits",
+      align: "right",
+      render: (value: number) => formatCredits(value),
+    },
+  ];
 
   const openMigrate = () => {
     transferIdRef.current = newTransferId();
@@ -142,6 +311,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
                 </Text>
               ) : null}
               <Space wrap>
+                <Button onClick={openUsage}>{t("pricing.usage.button")}</Button>
                 <Button onClick={onBuyCredits}>{t("Buy credits")}</Button>
                 {sparkCreditMigrationEnabled ? (
                   <Button onClick={openMigrate}>{t("pricing.migrate.button")}</Button>
@@ -151,6 +321,36 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
           </div>
         )}
       </div>
+
+      <AppSModal
+        open={usageOpen}
+        heading={t("pricing.usage.title")}
+        onClose={closeUsage}
+        size="base"
+        secondaryActions={[
+          {
+            content: t("pricing.usage.close"),
+            onAction: closeUsage,
+          },
+        ]}
+      >
+        {usageError ? (
+          <Text type="secondary">{t("pricing.usage.error")}</Text>
+        ) : (
+          <div className="pricing-usage-history">
+            <Table<CreditUsageRow>
+              size="small"
+              rowKey="id"
+              columns={usageColumns}
+              dataSource={usageItems}
+              loading={usageLoading}
+              pagination={false}
+              scroll={{ y: 420 }}
+              locale={{ emptyText: t("pricing.usage.empty") }}
+            />
+          </div>
+        )}
+      </AppSModal>
 
       {sparkCreditMigrationEnabled ? (
         <AppSModal

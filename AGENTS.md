@@ -281,8 +281,10 @@ real `route.tsx` or route module is added.
 `app/server/appBootstrap.server.ts`（plan / credits / locales 一次性引导数据，
 `app/routes/app.tsx` 与 Redux `userConfig` 共用）。
 - `/api/billing/active-subscription`: `app/routes/api.billing.active-subscription.ts`.
+- `/api/billing/credit-usage`: `app/routes/api.billing.credit-usage.ts`
+  （定价页「使用记录」弹窗：本店 `CreditUsage` 列表，`listCreditUsage.server.ts`）。
 - `/api/billing/migrate-credits-to-spark`: `app/routes/api.billing.migrate-credits-to-spark.ts`
-  （定价页迁剩余积分到 Spark：先加 Spark `purchasedTokens`，再加翻译 `usedCredits`；成败写 `BillingLog` 并异步飞书）。
+ （定价页迁剩余积分到 Spark：先加 Spark `purchasedTokens`，再加翻译 `usedCredits`；成败写 `BillingLog` 并异步飞书）。
 - `/api/shop-profile`: `app/routes/api.shop-profile.ts`.
 - `/api/support`: `app/routes/api.support.tsx`.
 - `/api/storefront/*`: `app/routes/api.storefront.$.ts`, the Shopify App Proxy API.
@@ -771,6 +773,7 @@ Code:
 - `app/server/billing/quota/quotaRouter.server.ts`: quota query/deduct routing
   (`deductShopCredits` optional audit → `CreditUsage`).
 - `app/server/billing/quota/recordCreditUsage.server.ts`: App-side `CreditUsage` writer.
+- `app/server/billing/quota/listCreditUsage.server.ts`: App-side `CreditUsage` list for pricing modal.
 - `app/server/billing/quota/createTaskQuotaGuard.server.ts`: create-task guard.
 - `app/server/billing/quota/deductCredits.server.ts`: TSF credit deduction.
 - `app/server/billing/webhooks/handleBillingWebhook.server.ts`: TSF webhook handling
