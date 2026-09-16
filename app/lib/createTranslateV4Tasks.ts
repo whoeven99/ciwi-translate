@@ -173,6 +173,7 @@ export async function createTranslateV4Tasks(
     isHandle: params.isHandle,
     includeLiquid: Boolean(params.includeLiquid),
     batchId,
+    batchTargetCount: targets.length,
   };
 
   const settled = await Promise.allSettled(

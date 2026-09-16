@@ -47,6 +47,8 @@ model ShopTranslationSettings {
   autoTranslate Boolean   @default(false) // 自动增量翻译总开关（Java autoTranslate）
   /// 每天自动更新小时（0–23，Asia/Shanghai）；null=沿用 hash 分槽
   autoTranslateHour    Int?
+  /// 自动更新间隔小时（1/12/24）；null=用套餐最短间隔
+  autoTranslateIntervalHours Int?
   /// 自动更新模块 v2 key[]；null=沿用 AUTO_TRANSLATE_V4_MODULES 默认集（不含 liquid）
   autoTranslateModules Json?
   createdAt     DateTime  @default(now())

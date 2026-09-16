@@ -25,7 +25,6 @@ import {
   currentSlotIndex,
   getAutoTranslateMaxCatchupScans,
   getAutoTranslateMaxNewJobsPerScan,
-  getAutoTranslateShardCooldownMs,
   getAutoTranslateShopCooldownMs,
   getAutoTranslateSlotsPerDay,
   isAutoTranslateShardingEnabled,
@@ -37,15 +36,39 @@ import {
   getTsfRemainingWithRetry,
   quotaEnforceEnabled,
 } from "./tsfQuota.js";
+import {
+  filterAutoV2ModulesForPlan,
+  resolveShopPlanEntitlements,
+  clampAutoTranslateIntervalHours,
+  autoTranslateCooldownMsForInterval,
+  isAutoTranslateHourSlotMatch,
+  type PlanEntitlements,
+} from "./planEntitlements.js";
 
 /** 自动任务模块默认集（不含 EMAIL / LOCALE_CONTENT / liquid）。 */
 const DEFAULT_AUTO_MODULES = [...AUTO_TRANSLATE_V4_MODULES];
 
-function resolveAutoModules(raw: unknown): string[] {
+function resolveAutoModules(
+  raw: unknown,
+  entitlements: PlanEntitlements,
+): string[] {
   const keys = normalizeAutoTranslateV2Modules(raw);
-  if (!keys) return DEFAULT_AUTO_MODULES;
-  const expanded = expandAutoTranslateV2ModuleKeys(keys);
-  return expanded.length > 0 ? expanded : DEFAULT_AUTO_MODULES;
+  if (keys) {
+    const filtered = filterAutoV2ModulesForPlan(keys, entitlements);
+    const expanded = expandAutoTranslateV2ModuleKeys(filtered);
+    if (expanded.length > 0) return expanded;
+  }
+
+  if (entitlements.allowedV2Modules?.length) {
+    const expanded = expandAutoTranslateV2ModuleKeys([
+      ...entitlements.allowedV2Modules,
+    ]);
+    if (expanded.length > 0) return expanded;
+  }
+
+  return DEFAULT_AUTO_MODULES.filter(
+    (mod) => !(mod === "METAFIELD" && !entitlements.allowMetafield),
+  );
 }
 
 export type AutoTranslateScanMode = "scheduled" | "catchup";
@@ -72,11 +95,9 @@ function logPrefix(mode: AutoTranslateScanMode): string {
  * 自动更新任务（isCover=false，增量、不覆盖已翻译）。
  *
  * - 全局 scheduler 每小时扫描一次（AUTO_TRANSLATE_INTERVAL_MS，默认 1h）。
- * - 分槽打散（AUTO_TRANSLATE_SHARDING，默认开）：每个店按稳定 hash 固定到一天中
- *   的某个槽位（AUTO_TRANSLATE_SLOTS_PER_DAY，默认 24），扫描时只处理落在当前
- *   槽位的店，该店所有语言在同一小时一起创建；整店冷却
- *   AUTO_TRANSLATE_SHARD_COOLDOWN_MS（默认 20h）保证每店每天≈1 批。
- * - 分槽关闭时回退旧逻辑：整店按 AUTO_TRANSLATE_SHOP_COOLDOWN_MS（默认 3h）冷却。
+ * - 对齐时刻 + 间隔：商户选下次对齐小时与间隔（1/12/24，受套餐最短限制）；
+ *   当前小时落在对齐周期内且冷却已过才建任务。
+ * - 冷却 = 商户所选间隔小时；分槽关闭时 Free/Basic 可回退旧 SHOP_COOLDOWN。
  * - 各 shop+target 若已有进行中任务则单独跳过。
  * - AUTO_TRANSLATE_MAX_NEW_JOBS_PER_SCAN（默认 0=不限）：单次扫描新建上限，安全带。
  */
@@ -96,10 +117,7 @@ export async function runAutoTranslateScan(
   const curSlot =
     options.slotIndex ??
     (sharding ? currentSlotIndex(scanAt) : currentSlotIndex());
-  const shopCooldownMs = getAutoTranslateShopCooldownMs();
-  const shardCooldownMs = getAutoTranslateShardCooldownMs();
-  // 分槽开启时用整店每日冷却（≈20h）；关闭时用旧的短冷却（≈3h）。
-  const cooldownMs = sharding ? shardCooldownMs : shopCooldownMs;
+  const fallbackShopCooldownMs = getAutoTranslateShopCooldownMs();
   const maxNewJobs = getAutoTranslateMaxNewJobsPerScan();
 
   const shops = await listAutoTranslateShops();
@@ -118,7 +136,14 @@ export async function runAutoTranslateScan(
   let skippedNoAccount = 0;
   let cappedOut = false;
 
-  for (const { shop, primaryLocale, targets, autoTranslateHour, autoTranslateModules } of shops) {
+  for (const {
+    shop,
+    primaryLocale,
+    targets,
+    autoTranslateHour,
+    autoTranslateIntervalHours,
+    autoTranslateModules,
+  } of shops) {
     if (maxNewJobs > 0 && created >= maxNewJobs) {
       cappedOut = true;
       break;
@@ -127,13 +152,30 @@ export async function runAutoTranslateScan(
     let source = primaryLocale?.trim();
     if (!source || !Array.isArray(targets) || targets.length === 0) continue;
 
-    // 商户已选小时：仅在该小时跑；否则沿用 hash 分槽（兼容存量）。
-    if (autoTranslateHour != null) {
-      if (curSlot !== autoTranslateHour) {
-        skippedSlot++;
-        continue;
-      }
-    } else if (sharding && shopSlotIndex(shop, slotsPerDay) !== curSlot) {
+    const entitlements = await resolveShopPlanEntitlements(shop);
+    const intervalHours = clampAutoTranslateIntervalHours(
+      autoTranslateIntervalHours,
+      entitlements,
+    );
+    const cooldownMs = !sharding
+      ? Math.max(
+          fallbackShopCooldownMs,
+          autoTranslateCooldownMsForInterval(intervalHours),
+        )
+      : autoTranslateCooldownMsForInterval(intervalHours);
+
+    const alignHour =
+      autoTranslateHour != null
+        ? autoTranslateHour
+        : shopSlotIndex(shop, slotsPerDay);
+
+    if (
+      !isAutoTranslateHourSlotMatch({
+        currentSlot: curSlot,
+        alignHour,
+        intervalHours,
+      })
+    ) {
       skippedSlot++;
       continue;
     }
@@ -152,7 +194,7 @@ export async function runAutoTranslateScan(
       }
     }
 
-    // 整店冷却：分槽下≈每天一批；非分槽下≈每 3h 一批。FAILED 不计入冷却。
+    // 整店冷却：按商户所选间隔。FAILED 不计入冷却。
     const lastShopBatchAt = await getLatestAutoJobCreatedAtForShop(shop);
     if (!isShopAutoCooldownElapsed(lastShopBatchAt, cooldownMs)) {
       skippedShopCooldown++;
@@ -178,7 +220,8 @@ export async function runAutoTranslateScan(
       );
     }
 
-    const autoModules = resolveAutoModules(autoTranslateModules);
+    const autoModules = resolveAutoModules(autoTranslateModules, entitlements);
+    if (autoModules.length === 0) continue;
 
     for (const rawTarget of targets) {
       if (maxNewJobs > 0 && created >= maxNewJobs) {
@@ -217,7 +260,8 @@ export async function runAutoTranslateScan(
         created++;
         console.log(
           `${prefix} 建任务 id=${jobId} shop=${shop} ${source}→${target}` +
-            ` hour=${autoTranslateHour ?? "hash"} modules=${autoModules.length}`,
+            ` plan=${entitlements.tier} interval=${intervalHours}h` +
+            ` align=${alignHour} modules=${autoModules.length}`,
         );
       } catch (err) {
         console.error(
@@ -235,9 +279,9 @@ export async function runAutoTranslateScan(
       : "";
   console.log(
     `${prefix} 扫描完成：店=${shops.length} 槽位=${slotLabel} 新建=${created}${scanAtLabel}` +
-      ` 跳过(非本槽店)=${skippedSlot}` +
+      ` 跳过(非对齐槽)=${skippedSlot}` +
       ` 跳过(无账户)=${skippedNoAccount}` +
-      ` 跳过(店冷却<${cooldownMs / 3600_000}h)=${skippedShopCooldown}` +
+      ` 跳过(店冷却)=${skippedShopCooldown}` +
       ` 跳过(额度不足)=${skippedNoQuota}` +
       ` 跳过(语言进行中)=${skippedActive}` +
       (cappedOut ? ` [达单次上限 ${maxNewJobs}，剩余顺延下轮]` : ""),

@@ -14,6 +14,11 @@ import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
 import { getV4AiModelLabel, getV4ModuleLabel } from "../v4I18n";
 import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
 import { AiModelInFlowSelect } from "./AiModelInFlowSelect";
+import {
+  entitlementsForPlanType,
+  isV2ModuleAllowedForPlan,
+  type PlanEntitlements,
+} from "~/lib/planEntitlements";
 
 export type { CreateTaskEstimateView };
 
@@ -33,6 +38,8 @@ type Props = {
   onIsHandleChange: (v: boolean) => void;
   includeLiquid: boolean;
   onIncludeLiquidChange: (v: boolean) => void;
+  /** 套餐能力；缺省按 Free 收紧（避免漏传放开）。 */
+  planEntitlements?: PlanEntitlements | null;
   advancedDefaultOpen?: boolean;
   submitPlacement?: "header" | "footer-center";
   createDisabled?: boolean;
@@ -58,6 +65,7 @@ export function CreateTaskCard({
   onIsHandleChange,
   includeLiquid,
   onIncludeLiquidChange,
+  planEntitlements = null,
   advancedDefaultOpen = true,
   submitPlacement = "header",
   createDisabled = false,
@@ -65,6 +73,10 @@ export function CreateTaskCard({
   estimate = null,
 }: Props) {
   const { t } = useTranslation();
+  const entitlements = planEntitlements ?? entitlementsForPlanType("Free");
+  const singleTargetOnly =
+    Number.isFinite(entitlements.maxTargetsPerTask) &&
+    entitlements.maxTargetsPerTask <= 1;
   const missingTargetSelection = targets.length === 0;
   const missingContentSelection = modules.length === 0 && !includeLiquid;
   const selectionInvalid = missingTargetSelection || missingContentSelection;
@@ -110,6 +122,10 @@ export function CreateTaskCard({
   const someModulesSelected = modules.length > 0 && !allModulesSelected;
 
   const toggleTarget = (value: string) => {
+    if (singleTargetOnly) {
+      onTargetsChange(targets.includes(value) ? [] : [value]);
+      return;
+    }
     onTargetsChange(
       targets.includes(value)
         ? targets.filter((item) => item !== value)
@@ -118,6 +134,14 @@ export function CreateTaskCard({
   };
 
   const toggleModule = (value: string) => {
+    if (!isV2ModuleAllowedForPlan(value, entitlements)) {
+      message.warning(
+        value === "metadata"
+          ? t("v4.plan.metafieldRequiresPro")
+          : t("v4.plan.moduleNotAllowed"),
+      );
+      return;
+    }
     onModulesChange(
       modules.includes(value)
         ? modules.filter((m) => m !== value)
@@ -126,11 +150,32 @@ export function CreateTaskCard({
   };
 
   const toggleAllTargets = () => {
+    if (singleTargetOnly) return;
     onTargetsChange(allTargetsSelected ? [] : allTargetValues);
   };
 
+  const selectableModuleValues: string[] = allModuleValues.filter((value) =>
+    isV2ModuleAllowedForPlan(value, entitlements),
+  );
+  const allSelectableModulesSelected =
+    selectableModuleValues.length > 0 &&
+    selectableModuleValues.every((value) => modules.includes(value));
+  const someSelectableModulesSelected =
+    modules.some((value) => selectableModuleValues.includes(value)) &&
+    !allSelectableModulesSelected;
+
   const toggleAllModules = () => {
-    onModulesChange(allModulesSelected ? [] : allModuleValues);
+    onModulesChange(
+      allSelectableModulesSelected ? [] : selectableModuleValues,
+    );
+  };
+
+  const onLiquidToggle = (checked: boolean) => {
+    if (checked && !entitlements.allowLiquid) {
+      message.warning(t("v4.plan.liquidRequiresPro"));
+      return;
+    }
+    onIncludeLiquidChange(checked);
   };
 
   const handleInvalidCreateAttempt = () => {
@@ -244,14 +289,28 @@ export function CreateTaskCard({
         <SectionHeader
           title={t("v4.createTask.targetLanguages")}
           action={
-            <CheckboxInlineAction
-              label={t("Check all")}
-              selected={allTargetsSelected}
-              indeterminate={someTargetsSelected}
-              onToggle={toggleAllTargets}
-            />
+            singleTargetOnly ? undefined : (
+              <CheckboxInlineAction
+                label={t("Check all")}
+                selected={allTargetsSelected}
+                indeterminate={someTargetsSelected}
+                onToggle={toggleAllTargets}
+              />
+            )
           }
         />
+        {singleTargetOnly ? (
+          <div
+            style={{
+              marginBottom: 8,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: v4Colors.textMuted,
+            }}
+          >
+            {t("v4.plan.freeSingleTargetHint")}
+          </div>
+        ) : null}
         <div style={checkboxGridStyle}>
           {localeChips.map((locale) => {
             const selected = targets.includes(locale.value);
@@ -274,8 +333,8 @@ export function CreateTaskCard({
           action={
             <CheckboxInlineAction
               label={t("Check all")}
-              selected={allModulesSelected}
-              indeterminate={someModulesSelected}
+              selected={allSelectableModulesSelected}
+              indeterminate={someSelectableModulesSelected}
               onToggle={toggleAllModules}
             />
           }
@@ -283,11 +342,12 @@ export function CreateTaskCard({
         <div style={checkboxGridStyle}>
           {moduleChips.map((mod) => {
             const selected = modules.includes(mod.value);
+            const allowed = isV2ModuleAllowedForPlan(mod.value, entitlements);
             return (
               <CheckboxOptionCard
                 key={mod.value}
-                label={mod.label}
-                selected={selected}
+                label={allowed ? mod.label : `${mod.label} 🔒`}
+                selected={selected && allowed}
                 onToggle={() => toggleModule(mod.value)}
               />
             );
@@ -367,10 +427,18 @@ export function CreateTaskCard({
                 onChange={onIsHandleChange}
               />
               <Checkbox
-                label={t("v4.createTask.includeLiquid")}
-                helpText={t("v4.createTask.includeLiquidHelp")}
-                checked={includeLiquid}
-                onChange={onIncludeLiquidChange}
+                label={
+                  entitlements.allowLiquid
+                    ? t("v4.createTask.includeLiquid")
+                    : `${t("v4.createTask.includeLiquid")} 🔒`
+                }
+                helpText={
+                  entitlements.allowLiquid
+                    ? t("v4.createTask.includeLiquidHelp")
+                    : t("v4.plan.liquidRequiresPro")
+                }
+                checked={includeLiquid && entitlements.allowLiquid}
+                onChange={onLiquidToggle}
               />
             </BlockStack>
           </div>

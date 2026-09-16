@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CollapseProps } from "antd";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import type { ShouldRevalidateFunction } from "@remix-run/react";
 import { authenticate } from "~/shopify.server";
 import { useFetcher, useLoaderData, useLocation } from "@remix-run/react";
 import { isSparkCreditMigrationEnabled } from "~/server/billing/sparkCreditMigrationClient.server";
@@ -77,15 +78,44 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return { sparkCreditMigrationEnabled: isSparkCreditMigrationEnabled() };
 };
 
+/**
+ * 订阅 / 买积分会立刻顶层跳转 Shopify 确认页；跳过本页 loader 重验，
+ * 避免 authenticate.admin 再跑一轮拖住 fetcher → idle 才跳转。
+ */
+export const shouldRevalidate: ShouldRevalidateFunction = ({
+  formMethod,
+  formData,
+  defaultShouldRevalidate,
+}) => {
+  if (formMethod?.toUpperCase() === "POST" && formData) {
+    if (formData.get("payForPlan") || formData.get("payInfo")) {
+      return false;
+    }
+  }
+  return defaultShouldRevalidate;
+};
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   const adminAuthResult = await authenticate.admin(request);
   const { shop, accessToken } = adminAuthResult.session;
   const { admin } = adminAuthResult;
 
   const formData = await request.formData();
-  const payInfo = JSON.parse(formData.get("payInfo") as string);
-  const payForPlan = JSON.parse(formData.get("payForPlan") as string);
-  const cancelId = JSON.parse(formData.get("cancelId") as string);
+  const rawPayInfo = formData.get("payInfo");
+  const rawPayForPlan = formData.get("payForPlan");
+  const rawCancelId = formData.get("cancelId");
+  const payInfo =
+    typeof rawPayInfo === "string" && rawPayInfo
+      ? JSON.parse(rawPayInfo)
+      : null;
+  const payForPlan =
+    typeof rawPayForPlan === "string" && rawPayForPlan
+      ? JSON.parse(rawPayForPlan)
+      : null;
+  const cancelId =
+    typeof rawCancelId === "string" && rawCancelId
+      ? JSON.parse(rawCancelId)
+      : null;
   const requestedReturnPath = sanitizeBillingReturnPath(
     formData.get("returnPath")?.toString(),
   );
@@ -428,6 +458,8 @@ const Index = () => {
   const payPlanSubmittingRef = useRef(false);
   const payCreditsAwaitingResponseRef = useRef(false);
   const payPlanAwaitingResponseRef = useRef(false);
+  const payCreditsRedirectedRef = useRef(false);
+  const payPlanRedirectedRef = useRef(false);
 
   useEffect(() => {
     setIsLoading(false);
@@ -471,6 +503,17 @@ const Index = () => {
   }, [i18n.resolvedLanguage, plan?.type, updateTime]);
 
   useEffect(() => {
+    const confirmationUrl = payFetcher.data?.response?.confirmationUrl as
+      | string
+      | undefined;
+    const succeeded = Boolean(payFetcher.data?.success && confirmationUrl);
+
+    // 有 confirmationUrl 立刻跳，不等 fetcher idle（省掉 loader 重验等待）。
+    if (succeeded && confirmationUrl && !payCreditsRedirectedRef.current) {
+      payCreditsRedirectedRef.current = true;
+      redirectToBillingConfirmation(confirmationUrl);
+    }
+
     if (payFetcher.state === "submitting" || payFetcher.state === "loading") {
       payCreditsAwaitingResponseRef.current = true;
       return;
@@ -491,10 +534,6 @@ const Index = () => {
     }
 
     payCreditsAwaitingResponseRef.current = false;
-    const confirmationUrl = payFetcher.data?.response?.confirmationUrl as
-      | string
-      | undefined;
-    const succeeded = Boolean(payFetcher.data?.success && confirmationUrl);
 
     if (payCreditsTraceRef.current) {
       finishClientLogTrace(payCreditsTraceRef.current, {
@@ -511,13 +550,21 @@ const Index = () => {
 
     payCreditsSubmittingRef.current = false;
     setBuyButtonLoading(false);
-
-    if (succeeded && confirmationUrl) {
-      redirectToBillingConfirmation(confirmationUrl);
-    }
   }, [payFetcher.state, payFetcher.data]);
 
   useEffect(() => {
+    const confirmationUrl = payForPlanFetcher.data?.response?.confirmationUrl as
+      | string
+      | undefined;
+    const succeeded = Boolean(
+      payForPlanFetcher.data?.success && confirmationUrl,
+    );
+
+    if (succeeded && confirmationUrl && !payPlanRedirectedRef.current) {
+      payPlanRedirectedRef.current = true;
+      redirectToBillingConfirmation(confirmationUrl);
+    }
+
     if (
       payForPlanFetcher.state === "submitting" ||
       payForPlanFetcher.state === "loading"
@@ -541,12 +588,6 @@ const Index = () => {
     }
 
     payPlanAwaitingResponseRef.current = false;
-    const confirmationUrl = payForPlanFetcher.data?.response?.confirmationUrl as
-      | string
-      | undefined;
-    const succeeded = Boolean(
-      payForPlanFetcher.data?.success && confirmationUrl,
-    );
 
     if (payPlanTraceRef.current) {
       finishClientLogTrace(payPlanTraceRef.current, {
@@ -563,10 +604,6 @@ const Index = () => {
 
     payPlanSubmittingRef.current = false;
     setPayForPlanButtonLoading("");
-
-    if (succeeded && confirmationUrl) {
-      redirectToBillingConfirmation(confirmationUrl);
-    }
   }, [payForPlanFetcher.state, payForPlanFetcher.data]);
 
   useEffect(() => {
@@ -637,6 +674,7 @@ const Index = () => {
           t("Glossary ({{count}} entries)", { count: 50 }),
           t("pro_features1"),
           t("pro_features2"),
+          t("pro_features9"),
           t("pro_features3"),
           t("pro_features4"),
           t("pro_features5"),
@@ -745,8 +783,35 @@ const Index = () => {
       {
         key: 7,
         features: t("Automatic translation updates"),
-        free: "",
+        free: t("support"),
         basic: t("support"),
+        pro: t("support"),
+        premium: t("support"),
+        type: "text",
+      },
+      {
+        key: "7b",
+        features: t("pricing.compare.autoInterval"),
+        free: t("pricing.compare.interval24h"),
+        basic: t("pricing.compare.interval24h"),
+        pro: t("pricing.compare.intervalFrom12h"),
+        premium: t("pricing.compare.intervalFrom1h"),
+        type: "text",
+      },
+      {
+        key: "7c",
+        features: t("pricing.compare.targetsPerTask"),
+        free: t("pricing.compare.targetsOne"),
+        basic: t("pricing.compare.targetsUnlimited"),
+        pro: t("pricing.compare.targetsUnlimited"),
+        premium: t("pricing.compare.targetsUnlimited"),
+        type: "text",
+      },
+      {
+        key: "7d",
+        features: t("pricing.compare.metafieldLiquid"),
+        free: t("pricing.compare.notSupported"),
+        basic: t("pricing.compare.notSupported"),
         pro: t("support"),
         premium: t("support"),
         type: "text",
@@ -772,8 +837,8 @@ const Index = () => {
       {
         key: 10,
         features: t("Third-party app translation"),
-        free: "",
-        basic: t("support"),
+        free: t("pricing.compare.notSupported"),
+        basic: t("pricing.compare.notSupported"),
         pro: t("support"),
         premium: t("support"),
         type: "text",
@@ -1036,6 +1101,7 @@ const Index = () => {
   const handlePayForCredits = () => {
     setBuyButtonLoading(true);
     payCreditsSubmittingRef.current = true;
+    payCreditsRedirectedRef.current = false;
     payCreditsAwaitingResponseRef.current = false;
     const selectedOption = creditOptions.find(
       (item) => item.key === selectedOptionKey,
@@ -1079,6 +1145,7 @@ const Index = () => {
     setPayForPlanButtonLoading(id);
     payPlanSubmittingRef.current = true;
     payPlanAwaitingResponseRef.current = false;
+    payPlanRedirectedRef.current = false;
     payPlanTraceRef.current = startClientLogTrace({
       event: "pricing_buy_plan",
       action: "buy_plan",
@@ -1317,7 +1384,7 @@ const Index = () => {
               <div className="pricing-plan-downgrade">
                 {plan.type === "Free" ? (
                   <Text type="secondary">
-                    {t("You are currently on the free plan.")}
+                    {t("pricing.freePlanNote")}
                   </Text>
                 ) : (
                   <Text type="secondary">

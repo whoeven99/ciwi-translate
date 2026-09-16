@@ -38,6 +38,10 @@ import {
   DEFAULT_MODULE_KEYS,
   DEFAULT_AI_MODEL,
 } from "./constants";
+import {
+  entitlementsForPlanType,
+  filterV2ModulesForPlan,
+} from "~/lib/planEntitlements";
 import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
 import { v4ContentStyle, V4_OVERVIEW_CARD_MIN_HEIGHT } from "./v4Styles";
 import { PageHeaderBar, SummaryDonutCard } from "./components/SummaryAndHeader";
@@ -160,6 +164,10 @@ export default function AppTranslateV4() {
   const isNew = useSelector((state: RootState) => state.userConfig.isNew);
   const totalChars = useSelector((state: RootState) => state.userConfig.totalChars);
   const planType = plan?.type?.trim() || null;
+  const planEntitlements = useMemo(
+    () => entitlementsForPlanType(planType),
+    [planType],
+  );
   const createDisabledMessage =
     normalizedQuota == null ? t("v4.create.quotaUnavailable") : null;
   const [coverageLoading, setCoverageLoading] = useState(true);
@@ -194,6 +202,24 @@ export default function AppTranslateV4() {
   const [isCover, setIsCover] = useState(false);
   const [isHandle, setIsHandle] = useState(false);
   const [includeLiquid, setIncludeLiquid] = useState(false);
+
+  useEffect(() => {
+    setModuleKeys((prev) => {
+      const next = filterV2ModulesForPlan(prev, planEntitlements);
+      return next.length > 0
+        ? next
+        : filterV2ModulesForPlan(DEFAULT_MODULE_KEYS, planEntitlements);
+    });
+    if (!planEntitlements.allowLiquid) {
+      setIncludeLiquid(false);
+    }
+    if (
+      Number.isFinite(planEntitlements.maxTargetsPerTask) &&
+      planEntitlements.maxTargetsPerTask <= 1
+    ) {
+      setTargets((prev) => (prev.length > 1 ? prev.slice(0, 1) : prev));
+    }
+  }, [planEntitlements]);
   const [creating, setCreating] = useState(false);
   const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
   const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<
@@ -1006,6 +1032,7 @@ export default function AppTranslateV4() {
                     onIsHandleChange={setIsHandle}
                     includeLiquid={includeLiquid}
                     onIncludeLiquidChange={setIncludeLiquid}
+                    planEntitlements={planEntitlements}
                     estimate={taskEstimate}
                   />
                 </div>

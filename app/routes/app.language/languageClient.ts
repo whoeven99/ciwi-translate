@@ -50,9 +50,10 @@ export async function getAutoTranslateSettingsCompat() {
   return res.json();
 }
 
-/** 保存整店自动更新小时 + 模块（不含 liquid）。 */
+/** 保存整店自动更新：对齐时刻 + 间隔 + 模块（不含 liquid）。 */
 export async function setAutoTranslateSettingsCompat(args: {
   hour: number;
+  intervalHours: number;
   modules: string[];
 }) {
   const res = await fetch("/api/translate-v4/target-locale", {
@@ -61,6 +62,7 @@ export async function setAutoTranslateSettingsCompat(args: {
     body: JSON.stringify({
       intent: "setAutoSettings",
       hour: args.hour,
+      intervalHours: args.intervalHours,
       modules: args.modules,
     }),
   });
