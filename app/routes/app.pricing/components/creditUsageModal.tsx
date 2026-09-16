@@ -20,10 +20,33 @@ type CreditUsageItem = {
   target: string | null;
 };
 
+type CreditGrantKind = "subscription" | "purchased" | "trial";
+
+type CreditGrantedByKind = {
+  subscription: number;
+  purchased: number;
+  trial: number;
+};
+
+type CreditGrantItem = {
+  id: string;
+  kind: CreditGrantKind;
+  credits: number;
+  createdAt: string;
+};
+
+const GRANT_KINDS: CreditGrantKind[] = ["subscription", "purchased", "trial"];
+
 const EMPTY_BY_SOURCE: CreditUsageBySource = {
   v4_job: 0,
   single: 0,
   image: 0,
+};
+
+const EMPTY_GRANTED_BY_KIND: CreditGrantedByKind = {
+  subscription: 0,
+  purchased: 0,
+  trial: 0,
 };
 
 type CreditUsageResponse = {
@@ -32,15 +55,35 @@ type CreditUsageResponse = {
   bySource?: CreditUsageBySource;
   items?: CreditUsageItem[];
   nextCursor?: string | null;
+  grantedCredits?: number;
+  grantedByKind?: CreditGrantedByKind;
+  grants?: CreditGrantItem[];
 };
 
 function formatCredits(value: number): string {
   return Math.max(0, Math.floor(value)).toLocaleString();
 }
 
+function formatTimestamp(iso: string, locale: string): string {
+  return new Date(iso).toLocaleString(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function sourceLabelKey(source: string): string {
   if (source === "v4_job" || source === "single" || source === "image") {
     return `pricing.usage.source.${source}`;
+  }
+  return "pricing.usage.source.other";
+}
+
+function grantLabelKey(kind: string): string {
+  if (kind === "subscription" || kind === "purchased" || kind === "trial") {
+    return `pricing.usage.grant.${kind}`;
   }
   return "pricing.usage.source.other";
 }
@@ -63,6 +106,11 @@ function useCreditUsageQuery(open: boolean) {
   const [bySource, setBySource] = useState<CreditUsageBySource>(EMPTY_BY_SOURCE);
   const [items, setItems] = useState<CreditUsageItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [grantedCredits, setGrantedCredits] = useState(0);
+  const [grantedByKind, setGrantedByKind] = useState<CreditGrantedByKind>(
+    EMPTY_GRANTED_BY_KIND,
+  );
+  const [grants, setGrants] = useState<CreditGrantItem[]>([]);
 
   const reset = useCallback(() => {
     setLoading(false);
@@ -72,6 +120,9 @@ function useCreditUsageQuery(open: boolean) {
     setBySource(EMPTY_BY_SOURCE);
     setItems([]);
     setNextCursor(null);
+    setGrantedCredits(0);
+    setGrantedByKind(EMPTY_GRANTED_BY_KIND);
+    setGrants([]);
   }, []);
 
   useEffect(() => {
@@ -93,6 +144,9 @@ function useCreditUsageQuery(open: boolean) {
         setBySource(data.bySource ?? EMPTY_BY_SOURCE);
         setItems(data.items ?? []);
         setNextCursor(data.nextCursor ?? null);
+        setGrantedCredits(Math.max(0, data.grantedCredits ?? 0));
+        setGrantedByKind(data.grantedByKind ?? EMPTY_GRANTED_BY_KIND);
+        setGrants(data.grants ?? []);
       })
       .catch(() => {
         if (!cancelled) setError(true);
@@ -126,8 +180,52 @@ function useCreditUsageQuery(open: boolean) {
     bySource,
     items,
     nextCursor,
+    grantedCredits,
+    grantedByKind,
+    grants,
     loadMore,
   };
+}
+
+function GrantBreakdown({
+  grantedCredits,
+  grantedByKind,
+}: {
+  grantedCredits: number;
+  grantedByKind: CreditGrantedByKind;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="pricing-migrate-breakdown">
+      <div className="pricing-migrate-breakdown__row pricing-usage-modal__total">
+        <span>{t("pricing.usage.periodGranted")}</span>
+        <span>{formatCredits(grantedCredits)}</span>
+      </div>
+      {GRANT_KINDS.map((kind) => (
+        <div key={kind} className="pricing-migrate-breakdown__row">
+          <span>{t(grantLabelKey(kind))}</span>
+          <span>{formatCredits(grantedByKind[kind])}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GrantList({ items }: { items: CreditGrantItem[] }) {
+  const { t, i18n } = useTranslation();
+  return (
+    <div className="pricing-usage-modal__list pricing-usage-modal__list--grants">
+      {items.map((item) => (
+        <div key={item.id} className="pricing-usage-modal__row">
+          <div className="pricing-usage-modal__row-main">
+            <span>{formatTimestamp(item.createdAt, i18n.language)}</span>
+            <span>+ {formatCredits(item.credits)}</span>
+          </div>
+          <Text type="secondary">{t(grantLabelKey(item.kind))}</Text>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function UsageBreakdown({
@@ -167,15 +265,7 @@ function UsageList({ items }: { items: CreditUsageItem[] }) {
       {items.map((item) => (
         <div key={item.id} className="pricing-usage-modal__row">
           <div className="pricing-usage-modal__row-main">
-            <span>
-              {new Date(item.createdAt).toLocaleString(i18n.language, {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </span>
+            <span>{formatTimestamp(item.createdAt, i18n.language)}</span>
             <span>− {formatCredits(item.credits)}</span>
           </div>
           <Text type="secondary">
@@ -189,6 +279,9 @@ function UsageList({ items }: { items: CreditUsageItem[] }) {
 }
 
 function CreditUsageBody({
+  grantedCredits,
+  grantedByKind,
+  grants,
   usedCredits,
   bySource,
   items,
@@ -196,6 +289,9 @@ function CreditUsageBody({
   loadingMore,
   onLoadMore,
 }: {
+  grantedCredits: number;
+  grantedByKind: CreditGrantedByKind;
+  grants: CreditGrantItem[];
   usedCredits: number;
   bySource: CreditUsageBySource;
   items: CreditUsageItem[];
@@ -208,6 +304,16 @@ function CreditUsageBody({
     usedCredits > 0 ? "pricing.usage.emptyPartial" : "pricing.usage.empty";
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <GrantBreakdown
+        grantedCredits={grantedCredits}
+        grantedByKind={grantedByKind}
+      />
+      <Text>{t("pricing.usage.grants")}</Text>
+      {grants.length === 0 ? (
+        <Text type="secondary">{t("pricing.usage.grantsEmpty")}</Text>
+      ) : (
+        <GrantList items={grants} />
+      )}
       <UsageBreakdown usedCredits={usedCredits} bySource={bySource} />
       <Text>{t("pricing.usage.recent")}</Text>
       {items.length === 0 ? (
@@ -255,6 +361,9 @@ const CreditUsageModal: React.FC<CreditUsageModalProps> = ({
         <Text type="secondary">{t("pricing.usage.error")}</Text>
       ) : (
         <CreditUsageBody
+          grantedCredits={query.grantedCredits}
+          grantedByKind={query.grantedByKind}
+          grants={query.grants}
           usedCredits={query.usedCredits}
           bySource={query.bySource}
           items={query.items}

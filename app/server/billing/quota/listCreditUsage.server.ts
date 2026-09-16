@@ -1,9 +1,18 @@
 import type { Prisma } from "../../../generated/prisma";
 import prisma from "../../../db.server";
+import { BILLING_LOG_EVENT } from "../types.server";
 import type { CreditUsageSource } from "./recordCreditUsage.server";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
+const GRANT_LIST_LIMIT = 50;
+
+const GRANT_EVENT_TYPES = [
+  BILLING_LOG_EVENT.SUBSCRIPTION_ACTIVATED,
+  BILLING_LOG_EVENT.SUBSCRIPTION_RENEWED,
+  BILLING_LOG_EVENT.TOKEN_PACK_PURCHASED,
+  BILLING_LOG_EVENT.TRIAL_GRANTED,
+] as const;
 
 export type CreditUsageItem = {
   id: string;
@@ -19,6 +28,21 @@ export type CreditUsageBySource = {
   image: number;
 };
 
+export type CreditGrantKind = "subscription" | "purchased" | "trial";
+
+export type CreditGrantedByKind = {
+  subscription: number;
+  purchased: number;
+  trial: number;
+};
+
+export type CreditGrantItem = {
+  id: string;
+  kind: CreditGrantKind;
+  credits: number;
+  createdAt: string;
+};
+
 export type ListCreditUsageResult = {
   usedCredits: number;
   periodStart: string | null;
@@ -26,12 +50,27 @@ export type ListCreditUsageResult = {
   bySource: CreditUsageBySource;
   items: CreditUsageItem[];
   nextCursor: string | null;
+  grantedCredits: number;
+  grantedByKind: CreditGrantedByKind;
+  grants: CreditGrantItem[];
 };
 
 const EMPTY_BY_SOURCE: CreditUsageBySource = {
   v4_job: 0,
   single: 0,
   image: 0,
+};
+
+const EMPTY_GRANTED_BY_KIND: CreditGrantedByKind = {
+  subscription: 0,
+  purchased: 0,
+  trial: 0,
+};
+
+const EMPTY_GRANTS = {
+  grantedCredits: 0,
+  grantedByKind: EMPTY_GRANTED_BY_KIND,
+  grants: [] as CreditGrantItem[],
 };
 
 function clampPageSize(value: number | undefined): number {
@@ -142,7 +181,90 @@ function toItem(row: {
   };
 }
 
-/** 本周期积分用量：账本 usedCredits + CreditUsage 分类汇总与明细分页。 */
+function grantKind(eventType: string): CreditGrantKind | null {
+  if (
+    eventType === BILLING_LOG_EVENT.SUBSCRIPTION_ACTIVATED ||
+    eventType === BILLING_LOG_EVENT.SUBSCRIPTION_RENEWED
+  ) {
+    return "subscription";
+  }
+  if (eventType === BILLING_LOG_EVENT.TOKEN_PACK_PURCHASED) return "purchased";
+  if (eventType === BILLING_LOG_EVENT.TRIAL_GRANTED) return "trial";
+  return null;
+}
+
+function toGrantItem(row: {
+  id: string;
+  eventType: string;
+  creditsDelta: number | null;
+  createdAt: Date;
+}): CreditGrantItem | null {
+  const kind = grantKind(row.eventType);
+  if (!kind) return null;
+  return {
+    id: row.id,
+    kind,
+    credits: Math.max(0, row.creditsDelta ?? 0),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function buildGrantWhere(
+  shop: string,
+  periodStart: Date | null,
+): Prisma.BillingLogWhereInput {
+  return {
+    shop,
+    eventType: { in: [...GRANT_EVENT_TYPES] },
+    creditsDelta: { gt: 0 },
+    ...(periodStart ? { createdAt: { gte: periodStart } } : {}),
+  };
+}
+
+async function loadPeriodGrants(
+  shop: string,
+  periodStart: Date | null,
+): Promise<typeof EMPTY_GRANTS> {
+  const where = buildGrantWhere(shop, periodStart);
+  const [grouped, rows] = await Promise.all([
+    prisma.billingLog.groupBy({
+      by: ["eventType"],
+      where,
+      _sum: { creditsDelta: true },
+    }),
+    prisma.billingLog.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: GRANT_LIST_LIMIT,
+      select: {
+        id: true,
+        eventType: true,
+        creditsDelta: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  const grantedByKind = { ...EMPTY_GRANTED_BY_KIND };
+  for (const row of grouped) {
+    const kind = grantKind(row.eventType);
+    if (!kind) continue;
+    grantedByKind[kind] += Math.max(0, row._sum.creditsDelta ?? 0);
+  }
+  return {
+    grantedCredits:
+      grantedByKind.subscription +
+      grantedByKind.purchased +
+      grantedByKind.trial,
+    grantedByKind,
+    grants: rows.flatMap((row) => {
+      const item = toGrantItem(row);
+      return item ? [item] : [];
+    }),
+  };
+}
+
+/** 本周期积分用量 + BillingLog 正数入账：账本 usedCredits、分类汇总、明细分页。 */
 export async function listCreditUsage(params: {
   shop: string;
   cursor?: string;
@@ -154,7 +276,7 @@ export async function listCreditUsage(params: {
   const where = buildWhere(params.shop, period.periodStart, cursor);
   const periodWhere = buildWhere(params.shop, period.periodStart, null);
 
-  const [bySource, rows] = await Promise.all([
+  const [bySource, rows, grants] = await Promise.all([
     cursor ? Promise.resolve(EMPTY_BY_SOURCE) : sumBySource(periodWhere),
     prisma.creditUsage.findMany({
       where,
@@ -168,6 +290,9 @@ export async function listCreditUsage(params: {
         metadata: true,
       },
     }),
+    cursor
+      ? Promise.resolve(EMPTY_GRANTS)
+      : loadPeriodGrants(params.shop, period.periodStart),
   ]);
 
   const hasMore = rows.length > pageSize;
@@ -180,5 +305,6 @@ export async function listCreditUsage(params: {
     bySource: cursor ? EMPTY_BY_SOURCE : bySource,
     items: page.map(toItem),
     nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+    ...grants,
   };
 }

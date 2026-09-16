@@ -213,6 +213,10 @@
   overflow: auto;
 }
 
+.pricing-usage-modal__list--grants {
+  max-height: 180px;
+}
+
 .pricing-usage-modal__row {
   display: flex;
   flex-direction: column;

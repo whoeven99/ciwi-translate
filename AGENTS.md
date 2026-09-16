@@ -281,7 +281,7 @@ real `route.tsx` or route module is added.
 `app/routes/app.tsx` 与 Redux `userConfig` 共用）。
 - `/api/billing/active-subscription`: `app/routes/api.billing.active-subscription.ts`.
 - `/api/billing/credit-usage`: `app/routes/api.billing.credit-usage.ts`
-  （定价页「积分使用情况」弹窗：本周期 `Account.usedCredits` + `CreditUsage` 按 source 汇总与明细分页）。
+  （定价页「积分使用情况」弹窗：本周期 `Account.usedCredits` + `CreditUsage` 按 source 汇总与明细分页；已获读 `BillingLog` 正数入账，与消耗分页分离）。
 - `/api/billing/migrate-credits-to-spark`: `app/routes/api.billing.migrate-credits-to-spark.ts`
   （定价页迁剩余积分到 Spark：先加 Spark `purchasedTokens`，再加翻译 `usedCredits`；成败写 `BillingLog` 并异步飞书）。
 - `/api/shop-profile`: `app/routes/api.shop-profile.ts`.
@@ -772,7 +772,7 @@ Code:
 - `app/server/billing/quota/quotaRouter.server.ts`: quota query/deduct routing
   (`deductShopCredits` optional audit → `CreditUsage`).
 - `app/server/billing/quota/recordCreditUsage.server.ts`: App-side `CreditUsage` writer.
-- `app/server/billing/quota/listCreditUsage.server.ts`: 定价页本周期用量只读查询（账本总量 + 分类汇总 + cursor 分页）。
+- `app/server/billing/quota/listCreditUsage.server.ts`: 定价页本周期用量只读查询（账本总量 + 分类汇总 + cursor 分页；已获汇总/明细读 BillingLog 正数入账）。
 - `app/server/billing/quota/createTaskQuotaGuard.server.ts`: create-task guard.
 - `app/server/billing/quota/deductCredits.server.ts`: TSF credit deduction.
 - `app/server/billing/webhooks/handleBillingWebhook.server.ts`: TSF webhook handling
@@ -1426,7 +1426,7 @@ For "合入PR然后发布测试环境", the script will:
 | Quota mismatch                   | `quotaRouter.server.ts`                               | `webhooks.tsx`, TSF billing webhooks, worker `tsfQuota.ts`                                              |
 | Subscription/purchase bug        | `app/routes/app.pricing/route.tsx`                    | `webhooks.tsx`, `app/server/billing/*`                                                                  |
 | 补额度弹窗 / Shopify 回跳        | `app/utils/creditsPurchaseModal.ts`                   | `app/components/paymentModal.tsx`, `app/routes/app.tsx`, `app/utils/billingReturn.ts`, `app/lib/shopifyAppHandle.server.ts` |
-| 积分使用情况                     | `app/routes/app.pricing/components/creditUsageModal.tsx` | `listCreditUsage.server.ts`、`api.billing.credit-usage.ts`、定价页 `AcountInfoCard` |
+| 积分使用情况                     | `app/routes/app.pricing/components/creditUsageModal.tsx` | `listCreditUsage.server.ts`、`api.billing.credit-usage.ts`、定价页 `AcountInfoCard`；已获读 BillingLog |
 | 迁移积分到 Spark                 | `app/server/billing/migrateCreditsToSpark.server.ts`  | `SPARK_CREDIT_MIGRATION_ENABLED`（默认关）、`api.billing.migrate-credits-to-spark.ts`、定价页 `AcountInfoCard`、Spark `/api/internal/credit-migration` |
 | 任务历史页                       | `app/routes/app.translate-v4-history/route.tsx`       | `app/routes/app.translate-v4/jobFilters.ts`, `components/TaskQueueSection.tsx`, `progress.server.ts`     |
 | Currency switcher bug            | `app/server/currency/currency.server.ts`              | `api.storefront.$.ts`, extension `ciwi-api.js`                                                          |
