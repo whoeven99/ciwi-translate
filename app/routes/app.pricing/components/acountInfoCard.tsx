@@ -297,11 +297,14 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
           />
         ) : (
           <div className="pricing-usage-card__metric-main">
-            <Statistic
-              value={translation_balance}
-              formatter={(value) => Number(value || 0).toLocaleString()}
-              suffix={t("Credits")}
-            />
+            <div className="pricing-usage-card__balance">
+              <span className="pricing-usage-card__balance-value">
+                {formatCredits(translation_balance)}
+              </span>
+              <span className="pricing-usage-card__balance-suffix">
+                {t("Credits")}
+              </span>
+            </div>
             <div className="pricing-usage-card__actions">
               {trialCredits > 0 ? (
                 <Text type="secondary">

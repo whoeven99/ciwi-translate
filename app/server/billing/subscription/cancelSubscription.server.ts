@@ -1,10 +1,11 @@
 import type { Prisma } from "../../../generated/prisma";
 import prisma from "../../../db.server";
+import { revokeBasicFirstPayBonusNow } from "../grant/grantBasicFirstPayBonus.server";
 import { APP_SUBSCRIPTION_STATUS, BILLING_LOG_EVENT } from "../types.server";
 
 /**
  * 取消 / 过期：清订阅池、删订阅行与周期归档。
- * 加量包（purchasedCredits）与试用（trialCredits）池保留，商家降级后仍可用。
+ * 加量包保留。安装试用笔保留；Basic 首订 100 万 leftover 立刻收回。
  */
 export async function cancelSubscription(params: {
   shop: string;
@@ -28,6 +29,13 @@ export async function cancelSubscription(params: {
       data: { status: params.status },
     });
     return;
+  }
+
+  const revoked = await revokeBasicFirstPayBonusNow(params.shop);
+  if (revoked) {
+    console.info(
+      `[billing] basic first-pay bonus revoked on cancel shop=${params.shop}`,
+    );
   }
 
   await prisma.$transaction(async (tx) => {

@@ -17,6 +17,8 @@ type PackDefinition = {
 };
 
 const PACK_DEFINITIONS: PackDefinition[] = [
+  { key: "option-100k", name: "100K", credits: 100000, fullPrice: 1.99 },
+  { key: "option-300k", name: "300K", credits: 300000, fullPrice: 2.99 },
   { key: "option-1", name: "500K", credits: 500000, fullPrice: 3.99 },
   { key: "option-2", name: "1M", credits: 1000000, fullPrice: 7.99 },
   { key: "option-3", name: "2M", credits: 2000000, fullPrice: 15.99 },

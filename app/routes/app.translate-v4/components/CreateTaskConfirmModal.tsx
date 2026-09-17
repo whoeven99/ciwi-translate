@@ -252,7 +252,16 @@ export function CreateTaskConfirmModal({
     scenario === "insufficient_paid" &&
     !canStartPartial &&
     recommendedPaidUpgradePlan != null;
-  const subscriptionBenefitValue = null;
+  const subscriptionBenefitValue =
+    recommendedPlan &&
+    scenario === "insufficient_pricing" &&
+    recommendedPlan.bonusCredits > 0
+      ? t("pricing.firstPayBonus", {
+          expiring: formatConfirmCredits(recommendedPlan.bonusExpiringCredits),
+          defaultValue:
+            "+{{expiring}} credits (30-day trial) on first paid Basic",
+        })
+      : null;
   const subscriptionBenefitCaption =
     recommendedPlan &&
     scenario === "insufficient_pricing"
@@ -520,15 +529,33 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 }
 
 const PLAN_RECOMMENDATIONS = [
-  { title: "Basic", tier: "basic", monthlyCredits: 1500000 },
-  { title: "Pro", tier: "pro", monthlyCredits: 3000000 },
-  { title: "Premium", tier: "premium", monthlyCredits: 8000000 },
+  {
+    title: "Basic",
+    tier: "basic",
+    monthlyCredits: 1500000,
+    bonusExpiringCredits: 1000000,
+    bonusCredits: 1000000,
+  },
+  {
+    title: "Pro",
+    tier: "pro",
+    monthlyCredits: 3000000,
+    bonusExpiringCredits: 0,
+    bonusCredits: 0,
+  },
+  {
+    title: "Premium",
+    tier: "premium",
+    monthlyCredits: 8000000,
+    bonusExpiringCredits: 0,
+    bonusCredits: 0,
+  },
 ] as const;
 
 function recommendPlanForShortfall(shortfallCredits: number) {
   return (
     PLAN_RECOMMENDATIONS.find(
-      (plan) => plan.monthlyCredits >= shortfallCredits,
+      (plan) => plan.monthlyCredits + plan.bonusCredits >= shortfallCredits,
     ) ??
     PLAN_RECOMMENDATIONS[PLAN_RECOMMENDATIONS.length - 1] ??
     null

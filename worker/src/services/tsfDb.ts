@@ -1,6 +1,10 @@
 import { createClient, type Client, type InStatement, type ResultSet } from "@libsql/client/web";
 import { randomUUID } from "node:crypto";
-import { settleExpiredInstallTrialCredits } from "./accountBalance.js";
+import {
+  earliestTrialLotExpiresAt,
+  settleExpiredInstallTrialCredits,
+  type SettleExpiredTrialOptions,
+} from "./accountBalance.js";
 
 /** Turso 网关瞬时错误（502/503/504）短退避重试次数，与 shopifyFetch 默认一致。 */
 const TSF_DB_5XX_MAX_RETRIES = Math.max(
@@ -152,6 +156,24 @@ export async function tsfExecute(
   }
 }
 
+/** 同一事务执行多条 SQL（libsql batch write）。失败整批回滚。 */
+export async function tsfBatch(
+  statements: InStatement[],
+  retries5xx = TSF_DB_5XX_MAX_RETRIES,
+): Promise<ResultSet[]> {
+  try {
+    return await getTsfDb().batch(statements, "write");
+  } catch (error) {
+    if (!isTransientTsfDbError(error) || retries5xx <= 0) throw error;
+    const waitMs = Math.min(8_000, 2_000 * (TSF_DB_5XX_MAX_RETRIES - retries5xx + 1));
+    console.warn(
+      `[tsfDb] transient Turso error — waiting ${waitMs}ms (retries left: ${retries5xx - 1}) sql=${sqlHint(statements[0] ?? "")}`,
+    );
+    await sleep(waitMs);
+    return tsfBatch(statements, retries5xx - 1);
+  }
+}
+
 export type AutoTranslateShop = {
   shop: string;
   primaryLocale: string;
@@ -287,99 +309,165 @@ export async function getOfflineAccessTokenFromTsf(shop: string): Promise<string
   return token ? String(token) : null;
 }
 
-/** 到期写库结算：试用优先抵 used，剩余试用清零。必写 TRIAL_EXPIRED。可重复调用。 */
+function parseDbDate(raw: unknown): Date | null {
+  if (raw == null || raw === "") return null;
+  if (raw instanceof Date) {
+    return Number.isNaN(raw.getTime()) ? null : raw;
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const ms = raw > 1e12 ? raw : raw * 1000;
+    const parsed = new Date(ms);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const parsed = new Date(String(raw));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function expireTrialLotInsertStatement(
+  shop: string,
+  lot: {
+    referenceId: string;
+    leftover: number;
+    consumed: number;
+    grantKind: string;
+    expiresAt: string | null;
+    kind: string;
+  },
+  settled: {
+    usedCredits: number;
+    trialCredits: number;
+    trialInstallCredits: number;
+    trialBonusCredits: number;
+  },
+  nowIso: string,
+): InStatement {
+  return {
+    sql: `INSERT INTO BillingLog (
+            id, shop, eventType, planKey, referenceId, creditsDelta, usedCredits, metadata, createdAt
+          )
+          SELECT ?, ?, 'TRIAL_EXPIRED', NULL, ?, ?, ?, ?, ?
+          WHERE EXISTS (
+            SELECT 1 FROM Account
+            WHERE shop = ?
+              AND deletedAt IS NULL
+              AND usedCredits = ?
+              AND trialCredits = ?
+              AND trialInstallCredits = ?
+              AND trialBonusCredits = ?
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM BillingLog
+            WHERE shop = ? AND eventType = 'TRIAL_EXPIRED' AND referenceId = ?
+          )`,
+    args: [
+      randomUUID(),
+      shop,
+      lot.referenceId,
+      -lot.leftover,
+      settled.usedCredits,
+      JSON.stringify({
+        grantKind: lot.grantKind,
+        leftover: lot.leftover,
+        consumed: lot.consumed,
+        trialCreditsExpiresAt: lot.expiresAt,
+        lot: lot.kind,
+        source: "worker",
+      }),
+      nowIso,
+      shop,
+      settled.usedCredits,
+      settled.trialCredits,
+      settled.trialInstallCredits,
+      settled.trialBonusCredits,
+      shop,
+      lot.referenceId,
+    ],
+  };
+}
+
+/** 到期写库结算：分笔清到期试用。每笔各写 TRIAL_EXPIRED。清额度与流水同一事务。 */
 export async function expireInstallTrialCreditsIfDue(
   shop: string,
   now: Date = new Date(),
+  options?: SettleExpiredTrialOptions,
 ): Promise<boolean> {
   if (!hasTsfDbCredentials()) return false;
   const nowIso = now.toISOString();
   const rs = await tsfExecute({
-    sql: `SELECT trialCredits, usedCredits, trialCreditsExpiresAt, deletedAt
+    sql: `SELECT usedCredits, deletedAt,
+                 trialInstallCredits, trialInstallExpiresAt,
+                 trialBonusCredits, trialBonusExpiresAt
           FROM Account WHERE shop = ? LIMIT 1`,
     args: [shop],
   });
   const row = rs.rows[0];
   if (!row || row.deletedAt != null) return false;
 
-  const expiresRaw = row.trialCreditsExpiresAt;
-  const expiresAt =
-    expiresRaw == null || expiresRaw === ""
-      ? null
-      : expiresRaw instanceof Date
-        ? expiresRaw
-        : new Date(String(expiresRaw));
-  if (expiresAt && Number.isNaN(expiresAt.getTime())) return false;
-
-  const trialCredits = Number(row.trialCredits ?? 0);
+  const trialInstallCredits = Number(row.trialInstallCredits ?? 0);
+  const trialBonusCredits = Number(row.trialBonusCredits ?? 0);
   const usedCredits = Number(row.usedCredits ?? 0);
+  const trialInstallExpiresAt = parseDbDate(row.trialInstallExpiresAt);
+  const trialBonusExpiresAt = parseDbDate(row.trialBonusExpiresAt);
   const settled = settleExpiredInstallTrialCredits(
     {
-      trialCredits,
       usedCredits,
-      trialCreditsExpiresAt: expiresAt,
+      trialInstallCredits,
+      trialInstallExpiresAt,
+      trialBonusCredits,
+      trialBonusExpiresAt,
     },
     now,
+    options,
   );
   if (!settled.settled) return false;
 
-  const updated = await tsfExecute({
-    sql: `UPDATE Account
-          SET usedCredits = ?,
-              trialCredits = 0,
-              updatedAt = ?
-          WHERE shop = ?
-            AND deletedAt IS NULL
-            AND trialCredits = ?
-            AND usedCredits = ?
-            AND trialCreditsExpiresAt IS NOT NULL
-            AND trialCreditsExpiresAt <= ?`,
-    args: [
-      settled.usedCredits,
-      nowIso,
-      shop,
-      trialCredits,
-      usedCredits,
-      nowIso,
-    ],
-  });
-  if (Number(updated.rowsAffected ?? 0) <= 0) return false;
-
-  const prior = await tsfExecute({
-    sql: `SELECT id FROM BillingLog
-          WHERE shop = ? AND eventType = 'TRIAL_EXPIRED' AND referenceId = ?
-          LIMIT 1`,
-    args: [shop, "install_credits"],
-  });
-  if (!prior.rows[0]) {
-    await tsfExecute({
-      sql: `INSERT INTO BillingLog (
-              id, shop, eventType, planKey, referenceId, creditsDelta, usedCredits, metadata, createdAt
-            ) VALUES (?, ?, 'TRIAL_EXPIRED', NULL, ?, ?, ?, ?, ?)`,
+  const legacyExpiresAt = earliestTrialLotExpiresAt(
+    settled.trialInstallCredits,
+    settled.trialInstallExpiresAt,
+    settled.trialBonusCredits,
+    settled.trialBonusExpiresAt,
+  );
+  const statements: InStatement[] = [
+    {
+      sql: `UPDATE Account
+            SET usedCredits = ?,
+                trialCredits = ?,
+                trialInstallCredits = ?,
+                trialInstallExpiresAt = ?,
+                trialBonusCredits = ?,
+                trialBonusExpiresAt = ?,
+                trialCreditsExpiresAt = ?,
+                updatedAt = ?
+            WHERE shop = ?
+              AND deletedAt IS NULL
+              AND usedCredits = ?
+              AND trialInstallCredits = ?
+              AND trialBonusCredits = ?`,
       args: [
-        randomUUID(),
-        shop,
-        "install_credits",
-        -settled.leftover,
         settled.usedCredits,
-        JSON.stringify({
-          grantKind: "install_credits_expired",
-          leftover: settled.leftover,
-          consumed: settled.consumed,
-          trialCreditsExpiresAt: expiresAt?.toISOString() ?? null,
-          source: "worker",
-        }),
+        settled.trialCredits,
+        settled.trialInstallCredits,
+        settled.trialInstallExpiresAt?.toISOString() ?? null,
+        settled.trialBonusCredits,
+        settled.trialBonusExpiresAt?.toISOString() ?? null,
+        legacyExpiresAt?.toISOString() ?? null,
         nowIso,
+        shop,
+        usedCredits,
+        trialInstallCredits,
+        trialBonusCredits,
       ],
-    });
-  }
-
-  return true;
+    },
+    ...settled.lots.map((lot) => expireTrialLotInsertStatement(shop, lot, settled, nowIso)),
+  ];
+  const results = await tsfBatch(statements);
+  return Number(results[0]?.rowsAffected ?? 0) > 0;
 }
 
 /** 读 tsf 账户剩余额度（三池之和 - 已用）。无账户返回 null。 */
 export async function getTsfAccountRemaining(shop: string): Promise<number | null> {
   if (!hasTsfDbCredentials()) return null;
+  await expireInstallTrialCreditsIfDue(shop);
   const rs = await tsfExecute({
     sql: "SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits FROM Account WHERE shop = ? AND deletedAt IS NULL LIMIT 1",
     args: [shop],

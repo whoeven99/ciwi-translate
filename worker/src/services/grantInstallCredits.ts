@@ -42,12 +42,19 @@ export async function grantInstallCreditsIfEligible(
   const updated = await db.execute({
     sql: `UPDATE Account
           SET trialCredits = trialCredits + ?,
-              trialCreditsExpiresAt = ?,
+              trialInstallCredits = trialInstallCredits + ?,
+              trialInstallExpiresAt = ?,
+              trialCreditsExpiresAt = CASE
+                WHEN trialBonusCredits > 0
+                 AND trialBonusExpiresAt IS NOT NULL
+                 AND trialBonusExpiresAt < ? THEN trialBonusExpiresAt
+                ELSE ?
+              END,
               updatedAt = ?
           WHERE shop = ?
             AND deletedAt IS NULL
-            AND trialCreditsExpiresAt IS NULL`,
-    args: [INSTALL_CREDITS, expiresAt, nowIso, shop],
+            AND trialInstallExpiresAt IS NULL`,
+    args: [INSTALL_CREDITS, INSTALL_CREDITS, expiresAt, expiresAt, expiresAt, nowIso, shop],
   });
   if (!updated.rowsAffected) {
     return { granted: false, reason: "already_granted" };
