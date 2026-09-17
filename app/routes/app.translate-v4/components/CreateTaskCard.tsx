@@ -14,10 +14,7 @@ import {
 import { localeRegionCode, localeShortName } from "../localeDisplay";
 import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
 import { getV4AiModelLabel, getV4ModuleLabel } from "../v4I18n";
-import {
-  formatEstimateCredits,
-  type CreateTaskEstimateView,
-} from "../useCreateTaskEstimate";
+import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
 import { AiModelInFlowSelect } from "./AiModelInFlowSelect";
 import {
   entitlementsForPlanType,
@@ -61,8 +58,17 @@ type CreateTaskModuleItem = {
   isLiquid?: boolean;
   order: number;
 };
+type ModelPlanTier = "free" | "basic" | "pro" | "premium";
 
 const LIQUID_MODULE_KEY = "__custom_liquid__";
+const AI_MODEL_MIN_PLAN: Record<string, ModelPlanTier> = {
+  "deepseek-v4-flash": "free",
+  "gpt-4.1-nano": "basic",
+  "deepseek-v4-pro": "basic",
+  "gpt-4.1-mini": "basic",
+  "gpt-5.6-luna": "basic",
+  "gpt-5.6-terra": "basic",
+};
 
 export function CreateTaskCard({
   targetOptions,
@@ -85,14 +91,15 @@ export function CreateTaskCard({
   submitPlacement = "header",
   createDisabled = false,
   disabledMessage = null,
-  estimate = null,
 }: Props) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const entitlements = planEntitlements ?? entitlementsForPlanType("Free");
+  const targetSelectionCap = Number.isFinite(entitlements.maxTargetsPerTask)
+    ? entitlements.maxTargetsPerTask
+    : null;
   const singleTargetOnly =
-    Number.isFinite(entitlements.maxTargetsPerTask) &&
-    entitlements.maxTargetsPerTask <= 1;
+    targetSelectionCap != null && targetSelectionCap <= 1;
   const missingTargetSelection = targets.length === 0;
   const missingContentSelection = modules.length === 0 && !includeLiquid;
   const selectionInvalid = missingTargetSelection || missingContentSelection;
@@ -120,21 +127,22 @@ export function CreateTaskCard({
     () =>
       AI_MODEL_OPTIONS.map((option) => ({
         ...option,
-        label: getV4AiModelLabel(option.value, t),
+        label: formatAiModelOptionLabel({
+          value: option.value,
+          currentTier: entitlements.tier,
+          t,
+        }),
+        disabled: !isAiModelAllowedForTier(option.value, entitlements.tier),
       })),
-    [t],
+    [entitlements.tier, t],
   );
-  const planLabel = useMemo(() => {
-    if (entitlements.tier === "premium") return "Premium";
-    if (entitlements.tier === "pro") return t("v4.plan.pro");
-    if (entitlements.tier === "basic") return t("v4.plan.basic");
-    return t("v4.plan.free");
-  }, [entitlements.tier, t]);
   const allTargetValues = localeChips.map((locale) => locale.value);
   const allTargetsSelected =
     allTargetValues.length > 0 &&
     allTargetValues.every((value) => targets.includes(value));
   const someTargetsSelected = targets.length > 0 && !allTargetsSelected;
+  const targetSelectionLimitReached =
+    targetSelectionCap != null && targets.length >= targetSelectionCap;
   const moduleItems = useMemo<CreateTaskModuleItem[]>(() => {
     const baseItems = CREATE_TASK_MODULE_OPTIONS.map((mod, index) => {
       const allowed = isV2ModuleAllowedForPlan(mod, entitlements);
@@ -176,15 +184,22 @@ export function CreateTaskCard({
   );
 
   const toggleTarget = (value: string) => {
-    if (singleTargetOnly) {
-      onTargetsChange(targets.includes(value) ? [] : [value]);
+    const selected = targets.includes(value);
+    if (selected) {
+      onTargetsChange(targets.filter((item) => item !== value));
       return;
     }
-    onTargetsChange(
-      targets.includes(value)
-        ? targets.filter((item) => item !== value)
-        : [...targets, value],
-    );
+    if (targetSelectionLimitReached) {
+      const upgradeDescription = t("v4.quotaGate.upgradePlanDescription");
+      setUpgradeModalContent({
+        title: t("v4.createTask.targetLanguages"),
+        body: singleTargetOnly
+          ? `${t("v4.plan.freeSingleTargetHint")} ${upgradeDescription}`
+          : `${t("v4.plan.targetLimitHint", { count: targetSelectionCap })} ${upgradeDescription}`,
+      });
+      return;
+    }
+    onTargetsChange([...targets, value]);
   };
 
   const toggleModule = (value: string) => {
@@ -228,89 +243,12 @@ export function CreateTaskCard({
     selectedContentValues.some((value) =>
       selectableModuleValues.includes(value),
     ) && !allSelectableModulesSelected;
-  const lockedContentLabels = useMemo(() => {
-    return moduleItems
-      .filter((item) => !item.allowed)
-      .map((item) => item.label);
-  }, [moduleItems]);
-  const planNoticeLines = useMemo(() => {
-    const lines: string[] = [];
-    if (singleTargetOnly) {
-      lines.push(t("v4.plan.freeSingleTargetHint"));
-    }
-    if (lockedContentLabels.length > 0) {
-      lines.push(lockedContentLabels.join(" · "));
-    }
-    return lines;
-  }, [lockedContentLabels, singleTargetOnly, t]);
   const advancedSummaryLabels = useMemo(() => {
-    const labels = [getV4AiModelLabel(aiModel, t)];
+    const labels: string[] = [];
     if (isCover) labels.push(t("v4.createTask.overwriteExisting"));
     if (isHandle) labels.push(t("v4.createTask.translateHandle"));
     return labels;
-  }, [aiModel, isCover, isHandle, t]);
-  const createStatus = useMemo(() => {
-    if (createDisabled) {
-      return {
-        tone: "subdued" as const,
-        title: disabledMessage ?? t("v4.createTask.estimateUnavailable"),
-        detail: null,
-      };
-    }
-    if (missingTargetSelection || missingContentSelection) {
-      const messages: string[] = [];
-      if (missingTargetSelection)
-        messages.push(t("v4.validation.selectTarget"));
-      if (missingContentSelection)
-        messages.push(t("v4.validation.selectModule"));
-      return {
-        tone: "warning" as const,
-        title: messages.join(" "),
-        detail: t("v4.createTask.estimateSelectFirst"),
-      };
-    }
-    if (estimate?.loading) {
-      return {
-        tone: "info" as const,
-        title: t("v4.createTask.estimateLoading"),
-        detail: t("v4.createTask.estimateFootnote"),
-      };
-    }
-    if (estimate?.loaded && estimate.estimatedCredits != null) {
-      const estimated = formatEstimateCredits(estimate.estimatedCredits);
-      const remaining = formatEstimateCredits(estimate.remainingCredits);
-      return {
-        tone: estimate.needsMoreCredits
-          ? ("warning" as const)
-          : ("success" as const),
-        title: estimate.isUpperBound
-          ? t("v4.createTask.estimateUpperBound", { estimated })
-          : t("v4.createTask.estimateNeed", { estimated }),
-        detail: estimate.needsMoreCredits
-          ? `${t("v4.createTask.estimateRemaining", { remaining })} ${t("v4.createTask.estimateShort")}`
-          : `${t("v4.createTask.estimateRemaining", { remaining })} ${t("v4.createTask.estimateFootnote")}`,
-      };
-    }
-    if (estimate?.loaded) {
-      return {
-        tone: "subdued" as const,
-        title: t("v4.createTask.estimateUnavailable"),
-        detail: t("v4.createTask.estimateFootnote"),
-      };
-    }
-    return {
-      tone: "subdued" as const,
-      title: t("v4.createTask.estimateSelectFirst"),
-      detail: null,
-    };
-  }, [
-    createDisabled,
-    disabledMessage,
-    estimate,
-    missingContentSelection,
-    missingTargetSelection,
-    t,
-  ]);
+  }, [isCover, isHandle, t]);
 
   const toggleAllModules = () => {
     if (allSelectableModulesSelected) {
@@ -433,21 +371,6 @@ export function CreateTaskCard({
         ) : null}
       </div>
 
-      {planNoticeLines.length > 0 && (
-        <div style={planNoticeStyle}>
-          <div style={noticeBadgeRowStyle}>
-            <InlineBadge tone="default">{planLabel}</InlineBadge>
-          </div>
-          <div style={planNoticeTextListStyle}>
-            {planNoticeLines.map((line) => (
-              <div key={line} style={planNoticeTextStyle}>
-                {line}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div style={{ marginBottom: 16 }}>
         <SectionHeader
           title={t("v4.createTask.targetLanguages")}
@@ -455,7 +378,7 @@ export function CreateTaskCard({
             <InlineBadge tone="subdued">{`${targets.length}/${localeChips.length}`}</InlineBadge>
           }
           action={
-            singleTargetOnly ? undefined : (
+            targetSelectionCap != null ? undefined : (
               <CheckboxInlineAction
                 label={t("Check all")}
                 selected={allTargetsSelected}
@@ -468,6 +391,7 @@ export function CreateTaskCard({
         <div style={checkboxGridStyle}>
           {localeChips.map((locale) => {
             const selected = targets.includes(locale.value);
+            const disabled = !selected && targetSelectionLimitReached;
             return (
               <CheckboxOptionCard
                 key={locale.value}
@@ -475,6 +399,7 @@ export function CreateTaskCard({
                 selected={selected}
                 onToggle={() => toggleTarget(locale.value)}
                 prefix={locale.regionCode}
+                disabled={disabled}
               />
             );
           })}
@@ -508,7 +433,6 @@ export function CreateTaskCard({
                 selected={selected}
                 onToggle={() => toggleModule(mod.value)}
                 disabled={!mod.allowed}
-                detail={mod.detail}
               />
             );
           })}
@@ -614,13 +538,6 @@ export function CreateTaskCard({
         </div>
       </div>
 
-      <div style={createStatusPanelStyle(createStatus.tone)}>
-        <div style={createStatusTitleStyle}>{createStatus.title}</div>
-        {createStatus.detail ? (
-          <div style={createStatusDetailStyle}>{createStatus.detail}</div>
-        ) : null}
-      </div>
-
       {submitPlacement === "footer-center" ? (
         <div
           style={{
@@ -721,7 +638,6 @@ function SectionLabel({ children }: { children: string }) {
 
 function CheckboxOptionCard({
   label,
-  detail,
   selected,
   indeterminate = false,
   disabled = false,
@@ -729,7 +645,6 @@ function CheckboxOptionCard({
   prefix,
 }: {
   label: string;
-  detail?: string;
   selected: boolean;
   indeterminate?: boolean;
   disabled?: boolean;
@@ -791,7 +706,6 @@ function CheckboxOptionCard({
             </span>
           </span>
         </span>
-        {detail ? <span style={checkboxDetailStyle}>{detail}</span> : null}
       </span>
       {disabled ? (
         <button
@@ -852,6 +766,50 @@ function InlineBadge({
       {children}
     </span>
   );
+}
+
+function isAiModelAllowedForTier(
+  modelValue: string,
+  currentTier: ModelPlanTier,
+): boolean {
+  const requiredTier = AI_MODEL_MIN_PLAN[modelValue] ?? "free";
+  return planTierRank(currentTier) >= planTierRank(requiredTier);
+}
+
+function formatAiModelOptionLabel({
+  value,
+  currentTier,
+  t,
+}: {
+  value: string;
+  currentTier: ModelPlanTier;
+  t: ReturnType<typeof useTranslation>["t"];
+}): string {
+  const baseLabel = getV4AiModelLabel(value, t);
+  const requiredTier = AI_MODEL_MIN_PLAN[value] ?? "free";
+  if (planTierRank(currentTier) >= planTierRank(requiredTier)) {
+    return baseLabel;
+  }
+  return `${baseLabel} ${t("v4.createTask.planAvailableFromSuffix", {
+    plan: getPlanTierLabel(requiredTier, t),
+  })}`;
+}
+
+function getPlanTierLabel(
+  tier: ModelPlanTier,
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  if (tier === "premium") return t("pricing.plan.premium");
+  if (tier === "pro") return t("v4.plan.pro");
+  if (tier === "basic") return t("v4.plan.basic");
+  return t("v4.plan.free");
+}
+
+function planTierRank(tier: ModelPlanTier): number {
+  if (tier === "premium") return 3;
+  if (tier === "pro") return 2;
+  if (tier === "basic") return 1;
+  return 0;
 }
 
 function CheckboxInlineAction({
@@ -918,34 +876,6 @@ const disabledActionOverlayStyle: CSSProperties = {
   cursor: "not-allowed",
 };
 
-const planNoticeStyle: CSSProperties = {
-  marginBottom: 16,
-  padding: "12px 14px",
-  borderRadius: 14,
-  border: `1px solid ${v4Colors.cardBorder}`,
-  background: v4Colors.cardSubdued,
-};
-
-const noticeBadgeRowStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const planNoticeTextStyle: CSSProperties = {
-  marginTop: 8,
-  fontSize: 12,
-  lineHeight: 1.5,
-  color: v4Colors.textMuted,
-};
-
-const planNoticeTextListStyle: CSSProperties = {
-  display: "grid",
-  gap: 6,
-  marginTop: 8,
-};
-
 const advancedSummaryStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -960,58 +890,6 @@ const advancedHintStyle: CSSProperties = {
   gap: 8,
   flexWrap: "wrap",
   marginBottom: 12,
-};
-
-function createStatusPanelStyle(
-  tone: "subdued" | "info" | "warning" | "success",
-): CSSProperties {
-  const colors =
-    tone === "success"
-      ? {
-          background: "var(--app-color-surface-success)",
-          border: "var(--app-color-border-success)",
-          title: "var(--app-color-text-success)",
-        }
-      : tone === "warning"
-        ? {
-            background: "var(--app-color-surface-caution)",
-            border: "var(--app-color-border-caution)",
-            title: "var(--app-color-text-caution)",
-          }
-        : tone === "info"
-          ? {
-              background: "var(--app-color-surface-info)",
-              border: "var(--app-color-border-info)",
-              title: "var(--app-color-text-info)",
-            }
-          : {
-              background: v4Colors.cardSubdued,
-              border: v4Colors.cardBorder,
-              title: v4Colors.text,
-            };
-
-  return {
-    marginTop: 16,
-    padding: "12px 14px",
-    borderRadius: 14,
-    border: `1px solid ${colors.border}`,
-    background: colors.background,
-    color: colors.title,
-  };
-}
-
-const createStatusTitleStyle: CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  lineHeight: 1.45,
-  color: "inherit",
-};
-
-const createStatusDetailStyle: CSSProperties = {
-  marginTop: 4,
-  fontSize: 12,
-  lineHeight: 1.5,
-  color: v4Colors.textMuted,
 };
 
 function checkboxCardStyle(selected: boolean, disabled = false): CSSProperties {
@@ -1058,12 +936,4 @@ const checkboxInputStyle: CSSProperties = {
   height: 16,
   flexShrink: 0,
   accentColor: v4Colors.primary,
-};
-
-const checkboxDetailStyle: CSSProperties = {
-  display: "block",
-  marginTop: 4,
-  fontSize: 11,
-  lineHeight: 1.45,
-  color: v4Colors.textMuted,
 };
