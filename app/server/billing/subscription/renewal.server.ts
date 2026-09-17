@@ -1,11 +1,12 @@
 import type { Account, AppSubscription } from "../../../generated/prisma";
 import prisma from "../../../db.server";
-import {
-  canSettleAtRenewal,
-  settlePoolsAtRenewal,
-} from "../accountBalance.server";
+import { settleAccountAtRenewal } from "../accountBalance.server";
 import { expireInstallTrialCreditsIfDue } from "../grant/grantInstallCredits.server";
 import { appendBillingLog } from "../billingLog.server";
+import {
+  grantBasicFirstPayBonusIfEligible,
+  isBasicPlanKey,
+} from "../grant/grantBasicFirstPayBonus.server";
 import { APP_SUBSCRIPTION_STATUS, BILLING_LOG_EVENT } from "../types.server";
 
 export type SubscriptionPeriodSnapshot = {
@@ -27,7 +28,11 @@ export async function archivePeriodAndRenew(params: {
 }): Promise<void> {
   const { shop, subscription, next } = params;
 
-  await expireInstallTrialCreditsIfDue(shop);
+  await expireInstallTrialCreditsIfDue(
+    shop,
+    new Date(),
+    isBasicPlanKey(next.planKey) ? undefined : { forceLots: ["bonus"] },
+  );
   const account = await prisma.account.findUniqueOrThrow({ where: { shop } });
 
   const periodStart = subscription.currentPeriodStart;
@@ -72,13 +77,7 @@ export async function archivePeriodAndRenew(params: {
     },
   });
 
-  const settled = canSettleAtRenewal(account)
-    ? settlePoolsAtRenewal(account)
-    : {
-        subscriptionCredits: account.subscriptionCredits,
-        purchasedCredits: account.purchasedCredits,
-        trialCredits: account.trialCredits,
-      };
+  const settled = settleAccountAtRenewal(account);
 
   await prisma.$transaction([
     prisma.appSubscription.update({
@@ -98,9 +97,25 @@ export async function archivePeriodAndRenew(params: {
         subscriptionCredits: next.creditsPerPeriod,
         purchasedCredits: settled.purchasedCredits,
         trialCredits: settled.trialCredits,
+        trialInstallCredits: settled.trialInstallCredits,
+        trialInstallExpiresAt: settled.trialInstallExpiresAt,
+        trialBonusCredits: settled.trialBonusCredits,
+        trialBonusExpiresAt: settled.trialBonusExpiresAt,
+        trialCreditsExpiresAt: settled.trialCreditsExpiresAt,
       },
     }),
   ]);
+
+  const bonus = await grantBasicFirstPayBonusIfEligible({
+    shop,
+    planKey: next.planKey,
+    trialEndsAt: subscription.trialEndsAt,
+  });
+  if (bonus.granted) {
+    console.info(
+      `[billing] basic first-pay bonus granted on renewal shop=${shop} planKey=${next.planKey} permanent=${bonus.permanentCredits} expiring=${bonus.expiringCredits}`,
+    );
+  }
 }
 
 /** 判定 webhook 是否为续费（同一订阅、状态 ACTIVE、周期末推后）。 */

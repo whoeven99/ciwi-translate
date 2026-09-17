@@ -7,10 +7,7 @@
  * ACTIVE Shopify subscription but no local AppSubscription row.
  */
 import { randomUUID } from "node:crypto";
-import {
-  canSettleAtRenewal,
-  settlePoolsAtRenewal,
-} from "./accountBalance.js";
+import { settleAccountAtRenewal } from "./accountBalance.js";
 import {
   collectGrantedAnnualCreditCycleIndexes,
   decideAnnualCreditGrant,
@@ -26,6 +23,12 @@ import {
 import { fetchShopContact } from "./shopEmail.js";
 import { sendSubscriptionRenewalEmail } from "./workerEmail.js";
 import { notifyLifetimeFirstSubscribeFeishu } from "./lifecycleFeishuNotify.js";
+import {
+  grantBasicFirstPayBonusIfEligible,
+  isBasicPlanKey,
+  revokeBasicFirstPayBonusIfLeftBasic,
+  revokeBasicFirstPayBonusNow,
+} from "./grantBasicFirstPayBonus.js";
 import { grantInstallCreditsIfEligible } from "./grantInstallCredits.js";
 import { buildShopifyAdminGraphqlUrl } from "./shopifyAdminApiVersion.js";
 
@@ -81,6 +84,7 @@ type LocalSubscription = {
   billingInterval: string;
   status: string;
   creditsPerPeriod: number;
+  trialEndsAt: Date | null;
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
 };
@@ -91,6 +95,8 @@ type ShopifySubscriptionSnapshot = {
   status: string;
   currentPeriodEnd: Date | null;
   intervalRaw: string | null;
+  trialDays: number;
+  createdAt: Date | null;
 };
 
 let running = false;
@@ -103,6 +109,20 @@ function parseDate(value: unknown): Date | null {
 
 function toSqlDate(d: Date | null): string | null {
   return d ? d.toISOString() : null;
+}
+
+function accountForRenewal(acc: object) {
+  const row = acc as Record<string, unknown>;
+  return {
+    subscriptionCredits: Number(row.subscriptionCredits ?? 0),
+    purchasedCredits: Number(row.purchasedCredits ?? 0),
+    trialCredits: Number(row.trialCredits ?? 0),
+    usedCredits: Number(row.usedCredits ?? 0),
+    trialInstallCredits: Number(row.trialInstallCredits ?? 0),
+    trialInstallExpiresAt: parseDate(row.trialInstallExpiresAt),
+    trialBonusCredits: Number(row.trialBonusCredits ?? 0),
+    trialBonusExpiresAt: parseDate(row.trialBonusExpiresAt),
+  };
 }
 
 function mapInterval(raw?: string | null): string {
@@ -130,6 +150,46 @@ function datesDiffer(
 ): boolean {
   if (!local) return true;
   return Math.abs(local.getTime() - remote.getTime()) > toleranceMs;
+}
+
+function shopifyTrialEndsAt(sub: ShopifySubscriptionSnapshot): Date | null {
+  if (sub.trialDays > 0 && sub.createdAt) {
+    return new Date(sub.createdAt.getTime() + sub.trialDays * DAY_MS);
+  }
+  return null;
+}
+
+async function maybeGrantBasicFirstPayBonus(params: {
+  shop: string;
+  planKey: string;
+  trialEndsAt?: Date | null;
+}): Promise<void> {
+  const bonus = await grantBasicFirstPayBonusIfEligible(params);
+  if (bonus.granted) {
+    console.info(
+      `[billing reconcile] basic first-pay bonus granted shop=${params.shop} planKey=${params.planKey} permanent=${bonus.permanentCredits} expiring=${bonus.expiringCredits}`,
+    );
+  }
+}
+
+async function maybeRevokeBasicFirstPayBonus(
+  shop: string,
+  planKey: string,
+): Promise<void> {
+  const revoked = await revokeBasicFirstPayBonusIfLeftBasic(shop, planKey);
+  if (revoked) {
+    console.info(
+      `[billing reconcile] basic first-pay bonus revoked shop=${shop} planKey=${planKey}`,
+    );
+  }
+}
+
+async function expireTrialLotsForPlan(shop: string, planKey: string): Promise<void> {
+  await expireInstallTrialCreditsIfDue(
+    shop,
+    new Date(),
+    isBasicPlanKey(planKey) ? undefined : { forceLots: ["bonus"] },
+  );
 }
 
 async function shopifyGraphql<T>(
@@ -165,6 +225,8 @@ function parseShopifySubscription(node: {
   name?: string;
   status?: string;
   currentPeriodEnd?: string | null;
+  trialDays?: number | null;
+  createdAt?: string | null;
   lineItems?: Array<{
     plan?: { pricingDetails?: { interval?: string } };
   }>;
@@ -179,6 +241,8 @@ function parseShopifySubscription(node: {
     status: node.status,
     currentPeriodEnd: parseDate(node.currentPeriodEnd),
     intervalRaw,
+    trialDays: Number(node.trialDays) || 0,
+    createdAt: parseDate(node.createdAt),
   };
 }
 
@@ -202,7 +266,7 @@ async function fetchShopifyActiveSubscription(
     `query ActiveAppSubscriptions {
       currentAppInstallation {
         activeSubscriptions {
-          id name status currentPeriodEnd
+          id name status currentPeriodEnd trialDays createdAt
           lineItems {
             plan {
               pricingDetails {
@@ -239,7 +303,7 @@ async function fetchShopifySubscription(
     `query AppSubscriptionById($id: ID!) {
       node(id: $id) {
         ... on AppSubscription {
-          id name status currentPeriodEnd
+          id name status currentPeriodEnd trialDays createdAt
           lineItems {
             plan {
               pricingDetails {
@@ -299,12 +363,7 @@ async function ensureAccount(shop: string): Promise<void> {
 async function archivePeriodAndRenew(params: {
   shop: string;
   local: LocalSubscription;
-  account: {
-    subscriptionCredits: number;
-    purchasedCredits: number;
-    trialCredits: number;
-    usedCredits: number;
-  };
+  account: ReturnType<typeof accountForRenewal>;
   next: {
     planKey: string;
     creditsPerPeriod: number;
@@ -361,13 +420,7 @@ async function archivePeriodAndRenew(params: {
     ],
   });
 
-  const settled = canSettleAtRenewal(account)
-    ? settlePoolsAtRenewal(account)
-    : {
-        subscriptionCredits: account.subscriptionCredits,
-        purchasedCredits: account.purchasedCredits,
-        trialCredits: account.trialCredits,
-      };
+  const settled = settleAccountAtRenewal(account);
 
   await db.execute({
     sql: `UPDATE AppSubscription SET
@@ -391,12 +444,22 @@ async function archivePeriodAndRenew(params: {
             subscriptionCredits = ?,
             purchasedCredits = ?,
             trialCredits = ?,
+            trialInstallCredits = ?,
+            trialInstallExpiresAt = ?,
+            trialBonusCredits = ?,
+            trialBonusExpiresAt = ?,
+            trialCreditsExpiresAt = ?,
             updatedAt = ?
           WHERE shop = ?`,
     args: [
       next.creditsPerPeriod,
       settled.purchasedCredits,
       settled.trialCredits,
+      settled.trialInstallCredits,
+      toSqlDate(settled.trialInstallExpiresAt),
+      settled.trialBonusCredits,
+      toSqlDate(settled.trialBonusExpiresAt),
+      toSqlDate(settled.trialCreditsExpiresAt),
       now,
       shop,
     ],
@@ -408,6 +471,13 @@ async function cancelLocalSubscription(
   local: LocalSubscription,
   status: string,
 ): Promise<void> {
+  const revoked = await revokeBasicFirstPayBonusNow(shop);
+  if (revoked) {
+    console.info(
+      `[billing reconcile] basic first-pay bonus revoked on cancel shop=${shop}`,
+    );
+  }
+
   const db = getTsfDb();
   const now = new Date().toISOString();
   const acc = await db.execute({
@@ -478,13 +548,14 @@ async function activateOrReplaceSubscription(params: {
             shop, planKey, shopifySubscriptionId, billingInterval, status,
             creditsPerPeriod, trialEndsAt, currentPeriodStart, currentPeriodEnd,
             cancelledAt, rawPayload, createdAt, updatedAt
-          ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, NULL, ?, ?, NULL, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, NULL, ?, ?, ?)
           ON CONFLICT(shop) DO UPDATE SET
             planKey = excluded.planKey,
             shopifySubscriptionId = excluded.shopifySubscriptionId,
             billingInterval = excluded.billingInterval,
             status = 'ACTIVE',
             creditsPerPeriod = excluded.creditsPerPeriod,
+            trialEndsAt = excluded.trialEndsAt,
             currentPeriodStart = excluded.currentPeriodStart,
             currentPeriodEnd = excluded.currentPeriodEnd,
             cancelledAt = NULL,
@@ -496,6 +567,7 @@ async function activateOrReplaceSubscription(params: {
       shopifySub.id,
       billingInterval,
       creditsPerPeriod,
+      toSqlDate(shopifyTrialEndsAt(shopifySub)),
       toSqlDate(currentPeriodStart),
       toSqlDate(currentPeriodEnd),
       JSON.stringify({ source: "worker_reconcile", name: shopifySub.name }),
@@ -508,6 +580,8 @@ async function activateOrReplaceSubscription(params: {
     sql: `UPDATE Account SET subscriptionCredits = ?, updatedAt = ? WHERE shop = ?`,
     args: [creditsPerPeriod, now, shop],
   });
+
+  await maybeRevokeBasicFirstPayBonus(shop, planKey);
 
   const prior = await db.execute({
     sql: `SELECT id FROM BillingLog
@@ -534,6 +608,11 @@ async function activateOrReplaceSubscription(params: {
         }),
         now,
       ],
+    });
+    await maybeGrantBasicFirstPayBonus({
+      shop,
+      planKey,
+      trialEndsAt: shopifyTrialEndsAt(shopifySub),
     });
     void notifyLifetimeFirstSubscribeFeishu(shop).catch((err) => {
       console.error(
@@ -577,6 +656,7 @@ async function syncLocalPeriodFields(params: {
       params.shop,
     ],
   });
+  await maybeRevokeBasicFirstPayBonus(params.shop, params.planKey);
 }
 
 /**
@@ -586,12 +666,7 @@ async function syncLocalPeriodFields(params: {
 async function grantAnnualCreditCycle(params: {
   shop: string;
   local: LocalSubscription;
-  account: {
-    subscriptionCredits: number;
-    purchasedCredits: number;
-    trialCredits: number;
-    usedCredits: number;
-  };
+  account: ReturnType<typeof accountForRenewal>;
   planKey: string;
   creditsPerPeriod: number;
   billingPeriodEnd: Date;
@@ -662,13 +737,7 @@ async function grantAnnualCreditCycle(params: {
     ],
   });
 
-  const settled = canSettleAtRenewal(account)
-    ? settlePoolsAtRenewal(account)
-    : {
-        subscriptionCredits: account.subscriptionCredits,
-        purchasedCredits: account.purchasedCredits,
-        trialCredits: account.trialCredits,
-      };
+  const settled = settleAccountAtRenewal(account);
 
   await db.execute({
     sql: `UPDATE Account SET
@@ -676,12 +745,22 @@ async function grantAnnualCreditCycle(params: {
             subscriptionCredits = ?,
             purchasedCredits = ?,
             trialCredits = ?,
+            trialInstallCredits = ?,
+            trialInstallExpiresAt = ?,
+            trialBonusCredits = ?,
+            trialBonusExpiresAt = ?,
+            trialCreditsExpiresAt = ?,
             updatedAt = ?
           WHERE shop = ?`,
     args: [
       creditsPerPeriod,
       settled.purchasedCredits,
       settled.trialCredits,
+      settled.trialInstallCredits,
+      toSqlDate(settled.trialInstallExpiresAt),
+      settled.trialBonusCredits,
+      toSqlDate(settled.trialBonusExpiresAt),
+      toSqlDate(settled.trialCreditsExpiresAt),
       now,
       shop,
     ],
@@ -848,9 +927,11 @@ async function reconcileOneShop(
     datesDiffer(local.currentPeriodStart, currentPeriodStart);
 
   if (periodEndAdvanced) {
-    await expireInstallTrialCreditsIfDue(shop);
+    await expireTrialLotsForPlan(shop, plan.planKey);
     const accRs = await getTsfDb().execute({
-      sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits
+      sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits,
+                   trialInstallCredits, trialInstallExpiresAt,
+                   trialBonusCredits, trialBonusExpiresAt
             FROM Account WHERE shop = ? LIMIT 1`,
       args: [shop],
     });
@@ -866,18 +947,18 @@ async function reconcileOneShop(
       await archivePeriodAndRenew({
         shop,
         local,
-        account: {
-          subscriptionCredits: Number(acc.subscriptionCredits ?? 0),
-          purchasedCredits: Number(acc.purchasedCredits ?? 0),
-          trialCredits: Number(acc.trialCredits ?? 0),
-          usedCredits: Number(acc.usedCredits ?? 0),
-        },
+        account: accountForRenewal(acc),
         next: {
           planKey: plan.planKey,
           creditsPerPeriod: plan.credits,
           currentPeriodStart,
           currentPeriodEnd,
         },
+      });
+      await maybeGrantBasicFirstPayBonus({
+        shop,
+        planKey: plan.planKey,
+        trialEndsAt: shopifyTrialEndsAt(shopifySub) ?? local.trialEndsAt,
       });
     }
     return resultWithSnapshot(
@@ -940,9 +1021,11 @@ async function reconcileOneShop(
     });
 
     if (decision.action === "grant") {
-      await expireInstallTrialCreditsIfDue(shop);
+      await expireTrialLotsForPlan(shop, plan.planKey);
       const accRs = await getTsfDb().execute({
-        sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits
+        sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits,
+                     trialInstallCredits, trialInstallExpiresAt,
+                     trialBonusCredits, trialBonusExpiresAt
               FROM Account WHERE shop = ? LIMIT 1`,
         args: [shop],
       });
@@ -958,12 +1041,7 @@ async function reconcileOneShop(
         await grantAnnualCreditCycle({
           shop,
           local,
-          account: {
-            subscriptionCredits: Number(acc.subscriptionCredits ?? 0),
-            purchasedCredits: Number(acc.purchasedCredits ?? 0),
-            trialCredits: Number(acc.trialCredits ?? 0),
-            usedCredits: Number(acc.usedCredits ?? 0),
-          },
+          account: accountForRenewal(acc),
           planKey: plan.planKey,
           creditsPerPeriod: plan.credits,
           billingPeriodEnd: currentPeriodEnd,
@@ -1139,7 +1217,7 @@ async function listLocalSubscriptions(params: {
 
   const rs = await db.execute({
     sql: `SELECT s.shop, s.planKey, s.shopifySubscriptionId, s.billingInterval, s.status,
-                 s.creditsPerPeriod, s.currentPeriodStart, s.currentPeriodEnd
+                 s.creditsPerPeriod, s.trialEndsAt, s.currentPeriodStart, s.currentPeriodEnd
           FROM AppSubscription s
           JOIN Account a ON a.shop = s.shop AND a.deletedAt IS NULL
           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -1153,6 +1231,7 @@ async function listLocalSubscriptions(params: {
     billingInterval: String(row.billingInterval),
     status: String(row.status),
     creditsPerPeriod: Number(row.creditsPerPeriod) || 0,
+    trialEndsAt: parseDate(row.trialEndsAt),
     currentPeriodStart: parseDate(row.currentPeriodStart),
     currentPeriodEnd: parseDate(row.currentPeriodEnd),
   }));

@@ -140,8 +140,8 @@ export function QuotaOfferPanel({
       {subscriptionBenefitValue ? (
         <div style={subscriptionBenefitStyle}>
           <div style={subscriptionBenefitLabelStyle}>
-            {t("pricing.launchCreditsRow", {
-              defaultValue: "Launch credits (first subscribe)",
+            {t("pricing.firstPayBonusRow", {
+              defaultValue: "First-pay bonus (Basic)",
             })}
           </div>
           <div style={subscriptionBenefitValueStyle}>

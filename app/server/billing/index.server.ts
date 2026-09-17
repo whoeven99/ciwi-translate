@@ -44,6 +44,18 @@ export {
 } from "./lifecycleFeishuNotify.server";
 export { applyTokenPackPurchase } from "./purchase/applyTokenPack.server";
 export {
+  grantBasicFirstPayBonusIfEligible,
+  revokeBasicFirstPayBonusIfLeftBasic,
+  revokeBasicFirstPayBonusNow,
+  isBasicPlanKey,
+  isInTrialPeriod,
+  BASIC_FIRST_PAY_BONUS_REFERENCE_ID,
+  BASIC_FIRST_PAY_PERMANENT_CREDITS,
+  BASIC_FIRST_PAY_EXPIRING_CREDITS,
+  LAUNCH_CREDITS_REFERENCE_ID,
+  type GrantBasicFirstPayBonusResult,
+} from "./grant/grantBasicFirstPayBonus.server";
+export {
   grantInstallCreditsIfEligible,
   expireInstallTrialCreditsIfDue,
   installCreditsExpiresAt,

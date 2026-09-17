@@ -208,6 +208,7 @@ sweeps moved plan names, modal copy, and worker notice text into locale keys.
 
 - `app/routes/app.tsx`: app shell loader/action, navigation, app bootstrap.
   NavMenu `rel="home"` 指向 `getTranslatePagePath()`（`/app/translate-v4-mvp`），不要用 `/app`（BFS 4.1.4：`/app` 是所有嵌入路由的前缀，会抢走子页高亮）。可见导航 href / 子路径前缀见 `app/lib/appNav.ts`。
+  `/app/pricing` 整页加载时父 loader **不 await** `shopLocales` GraphQL（45s 内存缓存命中则用，否则空壳）；SPA 进定价 `shouldRevalidateAppShell` 不重验父级，避免把已有语言列表冲掉。定价子 loader 不再二次 `authenticate.admin`。
 - `app/routes/auth.$.tsx`, `app/routes/auth.login/route.tsx`: Shopify auth.
   Production `/auth/login` without `shop` 302s to the App Store listing (no extra
   login screen). Local `shopify app dev` still shows the shop-domain form.
@@ -266,7 +267,8 @@ without `shop` 302s to the App Store listing (no extra login form).
 - `/app/currency`: `app/routes/app.currency/route.tsx`.
 - `/app/switcher`: `app/routes/app.switcher/route.tsx`.
 - `/app/glossary`: `app/routes/app.glossary/route.tsx`.
-- `/app/pricing`: `app/routes/app.pricing/route.tsx`.
+- `/app/pricing`: `app/routes/app.pricing/route.tsx`. Header 套餐徽章与下次扣费走 `AppPageHeader.extra`（标题右侧）；支付回跳用 `ciwiBillingPrevTotal` 驱动可用积分 from→to 滚动（`app/hooks/useCountUpRange.ts`）。
+  loader 只读 Spark 迁移开关（不鉴权）；`action` 仍 `authenticate.admin`。
 - `/app/shop-profile`: `app/routes/app.shop-profile/route.tsx`; nav is hidden in production.
 - `/app/onboarding`: `app/routes/app.onboarding/route.tsx`; 首次翻译新手引导（无导航入口，
 仍可显式访问 `/app/onboarding`）。
@@ -523,7 +525,7 @@ and auto-translate; also runs scheduled shop-scan enqueue (target slot =
 wake/stale reset, empty auto-job cleanup, hourly v4 job retention cleanup
 (`cleanupOldJobs`，默认每小时 :40), shop_scan_jobs retention
 (`cleanupOldShopScanJobs`，默认每小时 :50), subscription reconciliation
-schedules, and install-gift expiry scan (`expireInstallTrialJob`，默认 12h；每轮最多 200 店).
+schedules, and install-gift expiry scan (`expireInstallTrialJob`，默认 1h；每轮最多 200 店).
 - `worker/src/env.ts`: required env diagnostics.
 - `worker/src/shutdown.ts`: shared shutdown flag; `index.ts` releases jobs
 claimed by the current process on SIGTERM/SIGINT before exit.
@@ -705,11 +707,12 @@ Code: `worker/src/services/shopifyFetch.ts` `chunkResources`.
 `AUTO_EMPTY_JOB_CLEANUP_INTERVAL_MS`,
 `BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`,
 `BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`,
-`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`（默认 12h）/
+`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`（默认 1h）/
 `INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS`（默认 2min）/
 `INSTALL_TRIAL_EXPIRY_JITTER_MS`（默认 0–60s 启动抖动）/
 `INSTALL_TRIAL_EXPIRY_MAX_PER_RUN`（默认 200，剩的下轮继续）/
 `INSTALL_TRIAL_EXPIRY_DELAY_MS`（默认 50ms 店间间隔）。
+Code: `expireInstallTrialJob.ts`。
 - Scheduled shop scan（计量复扫，与 auto 同一时区 / slots；目标槽
 `(currentSlot - 1) % slots`，即相对同店 auto 延后 1h）：
 `SHOP_SCAN_SCHEDULE_ENABLED` (default true),
@@ -755,7 +758,7 @@ variables consumed by `workerEmail.ts` and TSF email helpers.
 
 Models:
 
-- `Account`: TSF credit pools: subscription, purchased, trial, used；安装赠送带 `trialCreditsExpiresAt`。
+- `Account`: TSF credit pools: subscription, purchased, trial, used；试用合计 `trialCredits`，分笔 `trialInstallCredits` / `trialBonusCredits` 与各自 `expiresAt`；`trialCreditsExpiresAt` 为仍有效笔最早到期。
 - `PlanCatalog`, `AppSubscription`, `BillingLog`, `AccountPeriodUsage`.
 - `TranslateV4JobUsage`: per v4 job usage snapshot (Worker writes on terminal status).
 - `CreditUsage`: per-deduction credit audit (`single` / `image` / `v4_job`);
@@ -850,6 +853,8 @@ PaymentModal。
 `buildShopifyEmbeddedAppReturnUrl()`（按 `SHOPIFY_API_KEY` 解析 Partners app
 handle，不再读 `process.env.HANDLE`；超过 Shopify 255 字符上限时降级为无 query
 的最短路径）。改 returnUrl 时必须同时确认这个长度上限。
+Pricing 页首帧同步读 `parseBillingReturn`（赶在 `app.tsx` `replaceState` 清 query
+之前），余额增加时 `useCountUpRange` 滚动可用积分。
 
 Quota work must check:
 
@@ -863,22 +868,44 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
-  Install-gift expiry is **not** checked on quota reads. Worker scans due
-  accounts every 12h (`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`, first delay 2min +
-  0–60s jitter; max 200 shops/run, 50ms inter-shop delay).
+  Trial-gift expiry is **not** checked on quota reads or create-task estimates.
+  Worker scans due **lots** every 1h (`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`, first
+  delay 2min + 0–60s jitter; max 200 shops/run, 50ms inter-shop delay).
   Deduct and subscription renewal still settle first so expired gift is not
-  spent. Leftover `trialCredits` are zeroed and `usedCredits` is reduced by
-  the gift already consumed (gift used first; paid pools not charged for
-  leftover).
-- 安装赠送：终身首次建 `Account` 写入 `trialCredits=200000`，
-  `trialCreditsExpiresAt = now+30d`；`BillingLog` `TRIAL_GRANTED` +
-  `referenceId=install_credits` 幂等。卸载重装不补发。存量 Launch Credits
-  （`expiresAt` 为空）不追回、不过期。App `grantInstallCredits.server.ts`，
-  Worker 新建 Account 时 `grantInstallCredits.ts`。  到期扫描
-  `expireInstallTrialJob.ts`（`scheduler.ts`，每轮 LIMIT 200）；单店结算
-  `expireInstallTrialCreditsIfDue`（App 扣费/续费、Worker `tsfDb` 扣费）。
-  到期写 `BillingLog` `TRIAL_EXPIRED` + `referenceId=install_credits`
-  （`creditsDelta` 为负 leftover；用完则为 0）。
+  spent. FIFO：先安装笔后首订笔；只清到期那一笔 leftover，并从 `usedCredits`
+  剥该笔已用量（试用先耗；订阅/加量包不因过期被扣）。续费/试用转正
+  `settleAccountAtRenewal` 按 used 扣试用汇总后 FIFO 同步
+  `trialInstallCredits` / `trialBonusCredits`（余额 0 清到期时间）；App
+  `renewal.server.ts` 与 Worker `billingSubscriptionReconcile`（月续费 / 年付
+  30 天周期）同口径，再发 Basic 100 万。
+- 安装赠送：终身首次建 `Account` 写入 `trialCredits+=200000`、
+  `trialInstallCredits+=200000`，`trialInstallExpiresAt = now+30d`；
+  `trialCreditsExpiresAt` = 仍有效笔最早到期。`BillingLog` `TRIAL_GRANTED` +
+  `referenceId=install_credits` 幂等。卸载重装不补发。App
+  `grantInstallCredits.server.ts`，Worker 新建 Account 时
+  `grantInstallCredits.ts`。
+- Basic 首次付费赠送：终身首次付费且当时是 Basic 时写入 `trialCredits += 1M`、
+  `trialBonusCredits += 1M`（`trialBonusExpiresAt = now+30d`），**不覆盖**安装笔
+  到期时间。**不再**写入 `purchasedCredits`。
+  试用中不发；Pro/Premium 不发；已有 `launch_credits` 或 `basic_first_pay_bonus`
+  流水则跳过。已发出的 1.5M 永久包**不追回**。离开 Basic 升 Pro/Premium，或
+  取消/过期变免费时，立刻收回 `trialBonusCredits` leftover（`forceLots: bonus`，
+  流水 `grantKind=basic_first_pay_bonus_revoked`）；Basic 月/年互转不收。
+  安装赠送 20 万不收。App `grantBasicFirstPayBonus.server.ts` 与 Worker
+  `grantBasicFirstPayBonus.ts` 双路径；激活与试用转正（续费）都会尝试发放。
+- 到期结算 `settleExpiredInstallTrialCredits`（分笔 FIFO）。
+  单店结算 `expireInstallTrialCreditsIfDue`（App 扣费/续费、Worker `tsfDb`
+  扣费）。到期扫描 `expireInstallTrialJob.ts`（`scheduler.ts`，按 lot 列到期，
+  每轮 LIMIT 200）。每笔各写 `BillingLog` `TRIAL_EXPIRED`（`referenceId` 为该笔
+  `install_credits` / `basic_first_pay_bonus`；只跳过该笔已有过期流水，
+  `creditsDelta` 为负 leftover，用完则为 0）。App 结算与流水同一 Prisma
+  事务；Worker `tsfDb.expireInstallTrialCreditsIfDue` 用 libsql `batch`
+  write 同一事务（UPDATE 失败则 INSERT 不落）。存量 Launch Credits（`expiresAt`
+  为空）不追回、不过期。手动触发结算：`scripts/expire-trial-credits.mjs`（默认
+  dry-run；`--shop=` / `--scan`；`--backdate=` 先改到期时间；`--write` 落库）。
+  粗分在迁移 `20260916000000_account_trial_credit_lots`；漏网/两笔混在一列用
+  `scripts/backfill-trial-credit-lots.mjs`（默认 dry-run；`--write` 落库；
+  `--only-missing` 只补两笔都是 0 的店）。
 - 已停发首订 Launch Credits（Basic 4M / Pro 8M / Premium 16M）。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
@@ -1327,7 +1354,9 @@ Current models:
  `@@unique([shop, languageCode, beforeTranslation])`；采集侧 `createMany` +
  `skipDuplicates` 落 PENDING；Worker 写 DONE）。
 - `Account`, `PlanCatalog`, `AppSubscription`, `BillingLog`,
-`AccountPeriodUsage`: TSF billing/quota.
+`AccountPeriodUsage`: TSF billing/quota。`Account` 试用分笔
+ `trialInstallCredits` / `trialBonusCredits` 与各自到期时间；`trialCredits`
+ 为合计。
 - `TranslateV4JobUsage`: per-job translation usage snapshot (time, tokens,
 units, source chars); written by Worker at job terminal states.
 - `CreditUsage`: credit spend audit rows (`single` / `image` / `v4_job`);
@@ -1430,7 +1459,9 @@ For "合入PR然后发布测试环境", the script will:
 | Worker Shopify throttling        | `worker/src/services/shopifyConcurrency.ts`           | `worker/src/services/shopifyFetch.ts`, init/writeback callers                                           |
 | Translation quality report       | `worker/src/scripts/exportTranslationReport.ts`       | `worker/src/services/translationReport.ts`, Blob translate chunks                                       |
 | Quota mismatch                   | `quotaRouter.server.ts`                               | `webhooks.tsx`, TSF billing webhooks, worker `tsfQuota.ts`                                              |
+| 试用额度过期                     | `worker/src/services/expireInstallTrialJob.ts`        | `grantInstallCredits.server.ts` / `tsfDb.expireInstallTrialCreditsIfDue`、`scripts/expire-trial-credits.mjs` |
 | Subscription/purchase bug        | `app/routes/app.pricing/route.tsx`                    | `webhooks.tsx`, `app/server/billing/*`                                                                  |
+| 进定价页慢（整页 document）      | `app/routes/app.tsx` loader + `routeShouldRevalidate.ts` | 定价跳过 `shopLocales` GraphQL；侧栏仍有 Shopify 嵌入鉴权 bounce |
 | 补额度弹窗 / Shopify 回跳        | `app/utils/creditsPurchaseModal.ts`                   | `app/components/paymentModal.tsx`, `app/routes/app.tsx`, `app/utils/billingReturn.ts`, `app/lib/shopifyAppHandle.server.ts` |
 | 迁移积分到 Spark                 | `app/server/billing/migrateCreditsToSpark.server.ts`  | `SPARK_CREDIT_MIGRATION_ENABLED`（默认关）、`api.billing.migrate-credits-to-spark.ts`、定价页 `AcountInfoCard`、Spark `/api/internal/credit-migration` |
 | 任务历史页                       | `app/routes/app.translate-v4-history/route.tsx`       | `app/routes/app.translate-v4/jobFilters.ts`, `components/TaskQueueSection.tsx`, `progress.server.ts`     |
@@ -1491,7 +1522,7 @@ scripts.
  `ShopTargetLocale` + `ShopTranslationSettings` + Redis `tsf:items_count:{shop}:*` +
  Cosmos `shop_scan_jobs`（避免 install 因历史 COMPLETED 被 `skipped_existing`）；可选
  `--billing` 先 best-effort 调 Shopify `appSubscriptionCancel`（需 offline Session；
- ACTIVE/PENDING 才调），再清 `Account/AppSubscription/BillingLog/AccountPeriodUsage` 让 `isNew=true`）。
+ ACTIVE/PENDING 才调），再清 `CreditUsage/AccountPeriodUsage/BillingLog/AppSubscription/Account` 让 `isNew=true`）。
  默认 dry-run，`--write` 才落库；必须 `--shop=`； `--env=`（默认 `.env`）；Turso 认 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`
  （兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）；Redis **只连**
  `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
@@ -1509,6 +1540,16 @@ recent 72-hour window.
 - `scripts/backfill-locale-coverage-from-redis.mjs`: Redis `items_count` →
   Turso `ShopTargetLocale.coverage*`（默认 dry-run；`--write` 写线上；
   支持 `--shop=` / `--only-missing`；MOVED 重连重试；Redis 源用 `RENDER_KV`）。
+- `scripts/backfill-trial-credit-lots.mjs`: 存量试用拆回安装/首订两笔（默认
+  dry-run；`--write` 落库；`--shop=` / `--only-missing`；写产须
+  `--env=.env.prod --confirm-prod`）。FIFO 先安装 20 万后首订 100 万；
+  `expiresAt` 为空的 Launch 仍永不过期。
+- `scripts/expire-trial-credits.mjs`: 手动触发试用额度过期结算（与 Worker
+  `expireInstallTrialJob` / `tsfDb.expireInstallTrialCreditsIfDue` 同口径）。
+  默认 dry-run；`--shop=` 看单店，`--scan` 列已到期店；`--backdate=install|bonus|both`
+  把对应笔当成已到期；`--write` 立刻结算；`--mark-due --write` 只改 `*ExpiresAt`
+  留给 Worker 扫描；写产须 `--env=.env.prod --confirm-prod`。只改 `Account` 分笔 +
+  `BillingLog TRIAL_EXPIRED`（`--mark-due` 不写流水）。
 - `scripts/backfill-auto-translate-settings.mjs`: 回填
  `ShopTranslationSettings.autoTranslateHour` / `autoTranslateModules`
  （默认 dry-run；`--write`；null hour→`shopSlotIndex`；null modules→默认
@@ -1886,7 +1927,7 @@ const { logs } = await res.json();
   **有意不采文本内容** —— manage_translation 等页面的 LCP 元素可能是商户商品文案。
 - `/app` 与 `/app/translate-v4`：鉴权 + Shopify 语言列表只在父级 `app.tsx` loader
   跑一次；子页经 `useRouteLoaderData("routes/app")` 读 `shopLocales`，避免同文档
-  双鉴权把 TTFB 抬到 ~2s。标题区 `PageHeaderBar` 固定尺寸并预留积分 pill 宽度。
+  双鉴权把 TTFB 抬到 ~2s。`/app/pricing` 例外：父 loader 不打语言 GraphQL。标题区 `PageHeaderBar` 固定尺寸并预留积分 pill 宽度。
 - `ttfbMs` vs `fcpMs` vs `lcpMs`：TTFB 高 → 服务端 loader（鉴权 / Shopify GraphQL）；
   FCP 与 TTFB 差距大 → 阻塞 CSS/JS；LCP 明显晚于 FCP → 骨架屏换真实内容太晚
   （对照 `context.resources.apiTimings` 里首屏接口的 `responseEnd`）。

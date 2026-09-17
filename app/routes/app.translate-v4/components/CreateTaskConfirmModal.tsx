@@ -63,6 +63,8 @@ type PlanOption = {
   monthlyCredits: number;
   monthlyPrice: number;
   yearlyPrice: number;
+  bonusCredits: number;
+  bonusExpiringCredits: number;
   fitLabelKey: string;
   fitLabelDefault: string;
 };
@@ -76,6 +78,8 @@ const PLAN_OPTIONS: readonly PlanOption[] = [
     monthlyCredits: 1500000,
     monthlyPrice: 7.99,
     yearlyPrice: 6.39,
+    bonusCredits: 1000000,
+    bonusExpiringCredits: 1000000,
     fitLabelKey: "pricing.fit_basic",
     fitLabelDefault:
       "Good for smaller stores that need core product and page translation.",
@@ -86,6 +90,8 @@ const PLAN_OPTIONS: readonly PlanOption[] = [
     monthlyCredits: 3000000,
     monthlyPrice: 19.99,
     yearlyPrice: 15.99,
+    bonusCredits: 0,
+    bonusExpiringCredits: 0,
     fitLabelKey: "pricing.fit_pro",
     fitLabelDefault:
       "Good for stores expanding into multiple markets with regular content updates.",
@@ -96,6 +102,8 @@ const PLAN_OPTIONS: readonly PlanOption[] = [
     monthlyCredits: 8000000,
     monthlyPrice: 39.99,
     yearlyPrice: 31.99,
+    bonusCredits: 0,
+    bonusExpiringCredits: 0,
     fitLabelKey: "pricing.fit_premium",
     fitLabelDefault:
       "Good for high-volume teams managing multiple markets and frequent launches.",
@@ -715,6 +723,29 @@ export function CreateTaskConfirmModal({
                                 "Start now. Then $7.99/month after 5 days unless you cancel before billing.",
                             })}
                           </div>
+                          {recommendedPlan.bonusCredits > 0 ? (
+                            <div style={planCardTrialDescStyle}>
+                              {t("pricing.firstPayBonus", {
+                                expiring: formatConfirmCredits(
+                                  recommendedPlan.bonusExpiringCredits,
+                                ),
+                                defaultValue:
+                                  "+{{expiring}} credits (30-day trial) on first paid Basic",
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : recommendedPlan.bonusCredits > 0 ? (
+                        <div style={planCardTrialBoxStyle}>
+                          <div style={planCardTrialTitleStyle}>
+                            {t("pricing.firstPayBonus", {
+                              expiring: formatConfirmCredits(
+                                recommendedPlan.bonusExpiringCredits,
+                              ),
+                              defaultValue:
+                                "+{{expiring}} credits (30-day trial) on first paid Basic",
+                            })}
+                          </div>
                         </div>
                       ) : null}
                       <div style={planCardFitStyle}>{recommendedPlan.fitLabel}</div>
@@ -821,7 +852,9 @@ function recommendCreditPack(params: {
 
 function recommendPlanForShortfall(shortfallCredits: number) {
   return (
-    PLAN_OPTIONS.find((plan) => plan.monthlyCredits >= shortfallCredits) ??
+    PLAN_OPTIONS.find(
+      (plan) => plan.monthlyCredits + plan.bonusCredits >= shortfallCredits,
+    ) ??
     PLAN_OPTIONS[PLAN_OPTIONS.length - 1] ??
     null
   );

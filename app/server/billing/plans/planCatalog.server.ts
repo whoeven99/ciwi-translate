@@ -56,7 +56,7 @@ export async function findSubscriptionPlan(params: {
 
 /**
  * 按包名匹配加量包（webhook 用）。
- * 与 Java 侧一致：shopifyPlanName 形如 "500K Credits" / "1M Credits" ...
+ * 与 Java 侧一致：shopifyPlanName 形如 "100K Credits" / "500K Credits" / "1M Credits" ...
  */
 export async function findPackPlanByName(
   shopifyPlanName: string,

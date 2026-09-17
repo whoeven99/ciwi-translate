@@ -15,7 +15,7 @@
  * 附加（--billing，更彻底，让 isNew=true / 恢复试用资格）：
  *   8) Shopify appSubscriptionCancel（best-effort；需 Turso Session 有 offline token，
  *      且 AppSubscription 为 ACTIVE/PENDING；已 CANCELLED/EXPIRED 跳过）
- *   9) Turso  AccountPeriodUsage / BillingLog / AppSubscription / Account
+ *   9) Turso  CreditUsage / AccountPeriodUsage / BillingLog / AppSubscription / Account
  *
  * 安全设计：
  *   - 默认 dry-run，只打印将删除的条数，不落库；加 --write 才真正执行。
@@ -325,6 +325,7 @@ async function tursoDelete(table) {
     console.log(`  [ok ] Turso ${table}: 已删除 ${before} 行`);
   } catch (err) {
     console.error(`  [err] Turso ${table} 删除失败：${err?.message || err}`);
+    throw err;
   }
 }
 
@@ -565,7 +566,8 @@ async function main() {
     console.log("\n-- 步骤 6/6：清空账单（isNew=true / 恢复试用资格）--");
     console.log("  [info] 先 best-effort 取消 Shopify 侧订阅（需 offline token）…");
     await cancelShopifySubscriptionIfNeeded();
-    // 子表 → 主表顺序删除
+    // 子表 → 主表顺序删除（CreditUsage 对 Account 是 ON DELETE RESTRICT）
+    await tursoDelete("CreditUsage");
     await tursoDelete("AccountPeriodUsage");
     await tursoDelete("BillingLog");
     await tursoDelete("AppSubscription");

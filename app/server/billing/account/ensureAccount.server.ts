@@ -33,6 +33,10 @@ export async function ensureAccount(shop: string): Promise<Account> {
         purchasedCredits: 0,
         trialCredits: 0,
         trialCreditsExpiresAt: null,
+        trialInstallCredits: 0,
+        trialInstallExpiresAt: null,
+        trialBonusCredits: 0,
+        trialBonusExpiresAt: null,
         usedCredits: 0,
       },
     });

@@ -29,6 +29,7 @@ import { scheduleFirstInstallFeishuNotify } from "~/server/billing/lifecycleFeis
 import { enqueueShopScan } from "~/server/shopScan/trigger.server";
 import { markSetupGuideEligible } from "~/server/setupGuide.server";
 import {
+  getCachedShopLocales,
   loadShopLocalesForTranslation,
   type LoadedShopLocales,
 } from "~/server/translateV4/shopLocales.server";
@@ -198,17 +199,45 @@ async function runAppInitialization({
   }
 }
 
+function shopLocalesFromLoaded(loaded: LoadedShopLocales): {
+  bootstrap: AppBootstrapLocales;
+  shopLocales: AppShellShopLocales;
+} {
+  const mapped = bootstrapLocalesFromLoaded(loaded);
+  return {
+    bootstrap: { source: mapped.source, targets: mapped.targets },
+    shopLocales: {
+      primaryLocale: loaded.primaryLocale,
+      localeOptions: loaded.localeOptions,
+    },
+  };
+}
+
 async function loadAppBootstrapLocales({
   shop,
   accessToken,
+  allowShopifyFetch = true,
 }: {
   shop: string;
   accessToken?: string;
+  allowShopifyFetch?: boolean;
 }): Promise<{
   bootstrap: AppBootstrapLocales;
   shopLocales: AppShellShopLocales;
   loaded: LoadedShopLocales | null;
 }> {
+  if (!allowShopifyFetch) {
+    const cached = getCachedShopLocales(shop);
+    if (!cached) {
+      return {
+        bootstrap: { source: { code: "", name: "" }, targets: [] },
+        shopLocales: EMPTY_SHOP_LOCALES,
+        loaded: null,
+      };
+    }
+    return { ...shopLocalesFromLoaded(cached), loaded: cached };
+  }
+
   let source = { code: "", name: "" };
   let targets: AppBootstrapLocales["targets"] = [];
   let shopLocales = EMPTY_SHOP_LOCALES;
@@ -217,13 +246,10 @@ async function loadAppBootstrapLocales({
   try {
     if (accessToken) {
       loaded = await loadShopLocalesForTranslation({ shop, accessToken });
-      const mapped = bootstrapLocalesFromLoaded(loaded);
-      source = mapped.source;
-      targets = mapped.targets;
-      shopLocales = {
-        primaryLocale: loaded.primaryLocale,
-        localeOptions: loaded.localeOptions,
-      };
+      const mapped = shopLocalesFromLoaded(loaded);
+      source = mapped.bootstrap.source;
+      targets = mapped.bootstrap.targets;
+      shopLocales = mapped.shopLocales;
     }
   } catch (error) {
     logGraphQLErrorDetail("Error app bootstrap languages", error);
@@ -248,7 +274,9 @@ function applyBootstrapToStore(
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const reqStart = Date.now();
-  const perfDebug = new URL(request.url).searchParams.get("perf") === "1";
+  const requestUrl = new URL(request.url);
+  const perfDebug = requestUrl.searchParams.get("perf") === "1";
+  const skipLocaleFetch = requestUrl.pathname === APP_NAV_ITEMS.pricing;
   const adminAuthResult = await authenticate.admin(request);
   const authMs = Date.now() - reqStart;
   const { shop, accessToken } = adminAuthResult.session;
@@ -256,11 +284,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { bootstrap, shopLocales, loaded } = await loadAppBootstrapLocales({
     shop,
     accessToken: accessToken as string | undefined,
+    allowShopifyFetch: !skipLocaleFetch,
   });
   const localeMs = Date.now() - localeStart;
 
   // 语言同步 / v4 settings 不参与壳层渲染；放在父级一次完成，子页不再重复鉴权后执行。
-  if (loaded) {
+  // 定价页不打语言 GraphQL，也不用缓存结果去 sync。
+  if (loaded && !skipLocaleFetch) {
     void syncShopTargetLocalesFromShopify(
       shop,
       loaded.rows,
