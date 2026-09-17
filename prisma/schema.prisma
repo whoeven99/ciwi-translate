@@ -232,10 +232,18 @@ model Account {
   subscriptionCredits Int      @default(0)
   /// 加量包额度：结转、永不过期
   purchasedCredits    Int      @default(0)
-  /// 试用赠送额度：结转（安装赠送，不随续费刷新）；到期后写库清零剩余
+  /// 试用赠送额度合计 = 安装笔 + 首订笔（给配额展示/扣费用）
   trialCredits        Int      @default(0)
-  /// 安装赠送到期时间；null = 永不过期（存量 Launch Credits）
+  /// 仍有效试用笔里最早到期时间；两笔都过期或永不过期则为 null
   trialCreditsExpiresAt DateTime?
+  /// 安装赠送 20 万试用剩余
+  trialInstallCredits Int      @default(0)
+  /// 安装赠送到期时间；null = 该笔无到期（未发放或已结算）
+  trialInstallExpiresAt DateTime?
+  /// Basic 首订 100 万试用剩余
+  trialBonusCredits   Int      @default(0)
+  /// 首订试用到期时间；null = 该笔无到期（未发放或已结算）
+  trialBonusExpiresAt DateTime?
   /// 本周期累计已用（续费清零）
   usedCredits         Int      @default(0)
   /// 卸载/请求删除时设置，标记账号已失效；null 表示正常

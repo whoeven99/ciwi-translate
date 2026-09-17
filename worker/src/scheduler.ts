@@ -106,10 +106,10 @@ const BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INITIAL_DELAY_MS = Math.max(
   Number(process.env.BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INITIAL_DELAY_MS) ||
     5 * 60_000,
 );
-/** 安装赠送到期扫描：默认每 12 小时。 */
+/** 试用赠送到期扫描（安装笔 / 首订笔）：默认每 1 小时。 */
 const INSTALL_TRIAL_EXPIRY_INTERVAL_MS = Math.max(
   60_000,
-  Number(process.env.INSTALL_TRIAL_EXPIRY_INTERVAL_MS) || 12 * 60 * 60_000,
+  Number(process.env.INSTALL_TRIAL_EXPIRY_INTERVAL_MS) || 60 * 60_000,
 );
 const INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS = Math.max(
   0,

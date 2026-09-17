@@ -43,8 +43,10 @@ import {
   reportClientLog,
   startClientLogTrace,
 } from "~/utils/clientLog";
+import { useCountUpRange } from "~/hooks/useCountUpRange";
 import {
   buildBillingReturnPath,
+  parseBillingReturn,
   sanitizeBillingReturnPath,
 } from "~/utils/billingReturn";
 import { redirectToBillingConfirmation } from "~/utils/billingConfirmation.client";
@@ -57,6 +59,8 @@ const priceTable: Record<
   string,
   { base: number; Premium: number; Pro: number; Basic: number }
 > = {
+  "100K": { base: 1.99, Premium: 0.99, Pro: 1.49, Basic: 1.79 },
+  "300K": { base: 2.99, Premium: 1.49, Pro: 2.24, Basic: 2.69 },
   "500K": { base: 3.99, Premium: 1.99, Pro: 2.99, Basic: 3.59 },
   "1M": { base: 7.99, Premium: 3.99, Pro: 5.99, Basic: 7.19 },
   "2M": { base: 15.99, Premium: 7.99, Pro: 11.99, Basic: 14.39 },
@@ -73,8 +77,7 @@ const isBillingTestMode = (): boolean =>
   process.env.NODE_ENV === "development" ||
   process.env.NODE_ENV === "test";
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+export const loader = async () => {
   return { sparkCreditMigrationEnabled: isSparkCreditMigrationEnabled() };
 };
 
@@ -337,6 +340,26 @@ const Index = () => {
   const creditOptions: OptionType[] = useMemo(
     () => [
       {
+        key: "option-100k",
+        name: "100K",
+        Credits: 100000,
+        price: eNumPlanType({
+          planType: plan?.type,
+          optionName: "100K",
+          isInTrial: plan?.isInFreePlanTime,
+        }),
+      },
+      {
+        key: "option-300k",
+        name: "300K",
+        Credits: 300000,
+        price: eNumPlanType({
+          planType: plan?.type,
+          optionName: "300K",
+          isInTrial: plan?.isInFreePlanTime,
+        }),
+      },
+      {
         key: "option-1",
         name: "500K",
         Credits: 500000,
@@ -421,7 +444,7 @@ const Index = () => {
   );
 
   //当前选择价格
-  const [selectedOptionKey, setSelectedOption] = useState<string>("option-1");
+  const [selectedOptionKey, setSelectedOption] = useState<string>("option-100k");
 
   //是否为年费计划
   const [yearly, setYearly] = useState(false);
@@ -441,6 +464,39 @@ const Index = () => {
   const [cancelPlanWarnModal, setCancelPlanWarnModal] = useState(false);
 
   const [selectedPayPlanOption, setSelectedPayPlanOption] = useState<any>();
+
+  const billingReturnRef = useRef<ReturnType<typeof parseBillingReturn> | undefined>(
+    undefined,
+  );
+  if (billingReturnRef.current === undefined) {
+    billingReturnRef.current = parseBillingReturn(location.search);
+  }
+  const billingReturn = billingReturnRef.current;
+
+  const availableCredits = Math.max(
+    0,
+    (typeof totalChars === "number" ? totalChars : 0) -
+      (typeof chars === "number" ? chars : 0),
+  );
+  const previousAvailable =
+    billingReturn && typeof billingReturn.previousTotalChars === "number"
+      ? Math.max(
+          0,
+          billingReturn.previousTotalChars -
+            (typeof chars === "number" ? chars : 0),
+        )
+      : undefined;
+  const shouldAnimateCredits =
+    Boolean(billingReturn) &&
+    typeof previousAvailable === "number" &&
+    availableCredits > previousAvailable &&
+    !isLoading &&
+    !creditsRefreshing;
+  const displayBalance = useCountUpRange(
+    previousAvailable ?? availableCredits,
+    availableCredits,
+    { enabled: shouldAnimateCredits, durationMs: 1200 },
+  );
 
   const isQuotaExceeded = useMemo(
     () => chars >= totalChars && totalChars > 0,
@@ -644,6 +700,9 @@ const Index = () => {
         disabled: plan.type === "Basic" && yearly === !!(plan.feeType === 2),
         features: [
           t("{{credits}} credits/month", { credits: "1,500,000" }),
+          t("pricing.firstPayBonus", {
+            expiring: "1,000,000",
+          }),
           t("Glossary ({{count}} entries)", { count: 10 }),
           t("basic_features1"),
           t("basic_features2"),
@@ -760,6 +819,17 @@ const Index = () => {
         basic: t("{{credits}} credits/month", { credits: "1,500,000" }),
         pro: t("{{credits}} credits/month", { credits: "3,000,000" }),
         premium: t("{{credits}} credits/month", { credits: "8,000,000" }),
+        type: "text",
+      },
+      {
+        key: "first_pay_bonus",
+        features: t("pricing.firstPayBonusRow"),
+        free: "—",
+        basic: t("pricing.firstPayBonusTable", {
+          expiring: "1,000,000",
+        }),
+        pro: "—",
+        premium: "—",
         type: "text",
       },
       {
@@ -1176,25 +1246,30 @@ const Index = () => {
             <AppPageHeader
               title={t("Pricing")}
               backAction={homeBackAction}
-              titleMeta={
-                plan.type ? (
-                  <AppStatusBadge tone="info">
-                    {getPlanDisplayLabel(plan.type)}
-                  </AppStatusBadge>
-                ) : undefined
-              }
-              description={
-                localNextPaymentText ? (
-                  <Text className="pricing-page__next-payment" type="secondary">
-                    {t("Next payment")}: {localNextPaymentText}
-                  </Text>
+              extra={
+                plan.type || localNextPaymentText ? (
+                  <div className="pricing-page__header-meta">
+                    {plan.type ? (
+                      <AppStatusBadge tone="info">
+                        {getPlanDisplayLabel(plan.type)}
+                      </AppStatusBadge>
+                    ) : null}
+                    {localNextPaymentText ? (
+                      <Text
+                        className="pricing-page__next-payment"
+                        type="secondary"
+                      >
+                        {t("Next payment")}: {localNextPaymentText}
+                      </Text>
+                    ) : null}
+                  </div>
                 ) : undefined
               }
             />
 
             <AcountInfoCard
               loading={isLoading || creditsRefreshing}
-              translation_balance={totalChars - chars || 0}
+              translation_balance={displayBalance}
               trialCredits={typeof trialCredits === "number" ? trialCredits : 0}
               purchasedCredits={
                 typeof purchasedCredits === "number" ? purchasedCredits : 0

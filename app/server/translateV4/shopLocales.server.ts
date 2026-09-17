@@ -30,6 +30,13 @@ export function invalidateShopLocalesCache(shop: string): void {
   localesCache.delete(shop);
 }
 
+/** 只读内存缓存，未命中不打 Shopify。定价整页加载用这个避免挡住 TTFB。 */
+export function getCachedShopLocales(shop: string): LoadedShopLocales | null {
+  const cached = localesCache.get(shop);
+  if (!cached || cached.expiresAt <= Date.now()) return null;
+  return cached.value;
+}
+
 /** 与语言页 `queryShopLanguages` 同源，保证 v4 目标语言列表一致。 */
 export async function loadShopLocalesForTranslation(args: {
   shop: string;

@@ -7,7 +7,7 @@ import {
 
 const LOG = "[installTrialExpiry]";
 
-/** 单次最多结算店数，剩余顺延到下一轮 12h。 */
+/** 单次最多结算店数，剩余顺延到下一轮 1h。 */
 const DEFAULT_MAX_PER_RUN = 200;
 /** 店与店之间间隔，削平 Turso 突发写。 */
 const DEFAULT_SHOP_DELAY_MS = 50;
@@ -42,12 +42,21 @@ export async function runInstallTrialExpiryScan(): Promise<void> {
   const rs = await tsfExecute({
     sql: `SELECT shop FROM Account
           WHERE deletedAt IS NULL
-            AND trialCreditsExpiresAt IS NOT NULL
-            AND trialCreditsExpiresAt <= ?
-            AND trialCredits > 0
+            AND (
+              (
+                trialInstallCredits > 0
+                AND trialInstallExpiresAt IS NOT NULL
+                AND trialInstallExpiresAt <= ?
+              )
+              OR (
+                trialBonusCredits > 0
+                AND trialBonusExpiresAt IS NOT NULL
+                AND trialBonusExpiresAt <= ?
+              )
+            )
           ORDER BY trialCreditsExpiresAt ASC
           LIMIT ?`,
-    args: [nowIso, maxPerRun],
+    args: [nowIso, nowIso, maxPerRun],
   });
   const shops = rs.rows.map((row) => String(row.shop ?? "")).filter(Boolean);
   const truncated = shops.length >= maxPerRun;

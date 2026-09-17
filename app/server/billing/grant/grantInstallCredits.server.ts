@@ -1,5 +1,10 @@
 import prisma from "../../../db.server";
-import { settleExpiredInstallTrialCredits } from "../accountBalance.server";
+import {
+  earliestTrialLotExpiresAt,
+  settleExpiredInstallTrialCredits,
+  type InstallTrialExpiryFields,
+  type SettleExpiredTrialOptions,
+} from "../accountBalance.server";
 import { appendBillingLog } from "../billingLog.server";
 import { BILLING_LOG_EVENT } from "../types.server";
 
@@ -18,10 +23,25 @@ export function installCreditsExpiresAt(from: Date = new Date()): Date {
   );
 }
 
+function trialExpiryFieldsFromAccount(account: {
+  usedCredits: number;
+  trialInstallCredits: number;
+  trialInstallExpiresAt: Date | null;
+  trialBonusCredits: number;
+  trialBonusExpiresAt: Date | null;
+}): InstallTrialExpiryFields {
+  return {
+    usedCredits: account.usedCredits,
+    trialInstallCredits: account.trialInstallCredits,
+    trialInstallExpiresAt: account.trialInstallExpiresAt,
+    trialBonusCredits: account.trialBonusCredits,
+    trialBonusExpiresAt: account.trialBonusExpiresAt,
+  };
+}
+
 /**
- * 终身首次建 Account 后发放安装赠送 → trialCredits，30 天后到期结算。
- * 幂等：BillingLog TRIAL_GRANTED + referenceId=install_credits；
- * 同时要求 trialCreditsExpiresAt IS NULL，避免并发双发。
+ * 终身首次建 Account 后发放安装赠送 → 安装试用笔，30 天后到期结算。
+ * 幂等：BillingLog TRIAL_GRANTED + referenceId=install_credits。
  */
 export async function grantInstallCreditsIfEligible(
   shop: string,
@@ -43,10 +63,12 @@ export async function grantInstallCreditsIfEligible(
     where: {
       shop,
       deletedAt: null,
-      trialCreditsExpiresAt: null,
+      trialInstallExpiresAt: null,
     },
     data: {
       trialCredits: { increment: INSTALL_CREDITS },
+      trialInstallCredits: { increment: INSTALL_CREDITS },
+      trialInstallExpiresAt: expiresAt,
       trialCreditsExpiresAt: expiresAt,
     },
   });
@@ -70,64 +92,75 @@ export async function grantInstallCreditsIfEligible(
 }
 
 /**
- * 安装赠送到期后写库结算：试用优先抵 used，剩余试用清零，不碰订阅/加量包。
- * 无论 leftover 是否为 0 都写 BillingLog TRIAL_EXPIRED（creditsDelta = -leftover）。
- * 可重复调用。expiresAt=null 的存量 Launch Credits 不会被结算。
+ * 试用赠送到期后写库结算（安装笔 / 首订笔分开）：
+ * FIFO 先安装后首订；只清到期那一笔，不碰订阅/加量包。
+ * 每笔各写 BillingLog TRIAL_EXPIRED（creditsDelta = -leftover）。可重复调用。
  */
 export async function expireInstallTrialCreditsIfDue(
   shop: string,
   now: Date = new Date(),
+  options?: SettleExpiredTrialOptions,
 ): Promise<boolean> {
   const account = await prisma.account.findUnique({ where: { shop } });
   if (!account || account.deletedAt) return false;
 
   const settled = settleExpiredInstallTrialCredits(
-    {
-      trialCredits: account.trialCredits,
-      usedCredits: account.usedCredits,
-      trialCreditsExpiresAt: account.trialCreditsExpiresAt,
-    },
+    trialExpiryFieldsFromAccount(account),
     now,
+    options,
   );
   if (!settled.settled) return false;
+
+  const legacyExpiresAt = earliestTrialLotExpiresAt(
+    settled.trialInstallCredits,
+    settled.trialInstallExpiresAt,
+    settled.trialBonusCredits,
+    settled.trialBonusExpiresAt,
+  );
 
   const settledNow = await prisma.$transaction(async (tx) => {
     const updated = await tx.account.updateMany({
       where: {
         shop,
         deletedAt: null,
-        trialCredits: account.trialCredits,
         usedCredits: account.usedCredits,
-        trialCreditsExpiresAt: account.trialCreditsExpiresAt,
+        trialInstallCredits: account.trialInstallCredits,
+        trialBonusCredits: account.trialBonusCredits,
       },
       data: {
-        trialCredits: 0,
+        trialCredits: settled.trialCredits,
         usedCredits: settled.usedCredits,
+        trialInstallCredits: settled.trialInstallCredits,
+        trialInstallExpiresAt: settled.trialInstallExpiresAt,
+        trialBonusCredits: settled.trialBonusCredits,
+        trialBonusExpiresAt: settled.trialBonusExpiresAt,
+        trialCreditsExpiresAt: legacyExpiresAt,
       },
     });
     if (updated.count === 0) return false;
 
-    const prior = await tx.billingLog.findFirst({
-      where: {
-        shop,
-        eventType: BILLING_LOG_EVENT.TRIAL_EXPIRED,
-        referenceId: INSTALL_CREDITS_REFERENCE_ID,
-      },
-    });
-    if (!prior) {
+    for (const lot of settled.lots) {
+      const prior = await tx.billingLog.findFirst({
+        where: {
+          shop,
+          eventType: BILLING_LOG_EVENT.TRIAL_EXPIRED,
+          referenceId: lot.referenceId,
+        },
+      });
+      if (prior) continue;
       await tx.billingLog.create({
         data: {
           shop,
           eventType: BILLING_LOG_EVENT.TRIAL_EXPIRED,
-          referenceId: INSTALL_CREDITS_REFERENCE_ID,
-          creditsDelta: -settled.leftover,
+          referenceId: lot.referenceId,
+          creditsDelta: -lot.leftover,
           usedCredits: settled.usedCredits,
           metadata: {
-            grantKind: "install_credits_expired",
-            leftover: settled.leftover,
-            consumed: settled.consumed,
-            trialCreditsExpiresAt:
-              account.trialCreditsExpiresAt?.toISOString() ?? null,
+            grantKind: lot.grantKind,
+            leftover: lot.leftover,
+            consumed: lot.consumed,
+            trialCreditsExpiresAt: lot.expiresAt,
+            lot: lot.kind,
           },
         },
       });
