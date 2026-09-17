@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { BlockStack, Button, Checkbox } from "@shopify/polaris";
+import { useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
 import { message } from "~/ui/message";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { v4Colors, v4CardStyle } from "../v4Styles";
 import {
   AI_MODEL_OPTIONS,
@@ -12,7 +14,10 @@ import {
 import { localeRegionCode, localeShortName } from "../localeDisplay";
 import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
 import { getV4AiModelLabel, getV4ModuleLabel } from "../v4I18n";
-import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
+import {
+  formatEstimateCredits,
+  type CreateTaskEstimateView,
+} from "../useCreateTaskEstimate";
 import { AiModelInFlowSelect } from "./AiModelInFlowSelect";
 import {
   entitlementsForPlanType,
@@ -48,6 +53,16 @@ type Props = {
 };
 
 type TargetOption = { value: string; label: string; regionCode: string };
+type CreateTaskModuleItem = {
+  value: string;
+  label: string;
+  allowed: boolean;
+  detail?: string;
+  isLiquid?: boolean;
+  order: number;
+};
+
+const LIQUID_MODULE_KEY = "__custom_liquid__";
 
 export function CreateTaskCard({
   targetOptions,
@@ -73,6 +88,7 @@ export function CreateTaskCard({
   estimate = null,
 }: Props) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const entitlements = planEntitlements ?? entitlementsForPlanType("Free");
   const singleTargetOnly =
     Number.isFinite(entitlements.maxTargetsPerTask) &&
@@ -80,11 +96,12 @@ export function CreateTaskCard({
   const missingTargetSelection = targets.length === 0;
   const missingContentSelection = modules.length === 0 && !includeLiquid;
   const selectionInvalid = missingTargetSelection || missingContentSelection;
-  const canCreate =
-    !selectionInvalid &&
-    !creating &&
-    !createDisabled;
+  const canCreate = !selectionInvalid && !creating && !createDisabled;
   const [advancedOpen, setAdvancedOpen] = useState(advancedDefaultOpen);
+  const [upgradeModalContent, setUpgradeModalContent] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
 
   // 顺序固定（按名称），避免点选时 chip 跳动。
   const localeChips = useMemo<TargetOption[]>(
@@ -107,19 +124,56 @@ export function CreateTaskCard({
       })),
     [t],
   );
-  // 翻译内容改为内联多选 chip：顺序固定（避免点选时跳动），选中态与上方语言同色。
-  const moduleChips = CREATE_TASK_MODULE_OPTIONS.map((mod) => ({
-    value: mod,
-    label: getV4ModuleLabel(mod, t) || CREATE_TASK_MODULE_LABELS[mod] || mod,
-  }));
+  const planLabel = useMemo(() => {
+    if (entitlements.tier === "premium") return "Premium";
+    if (entitlements.tier === "pro") return t("v4.plan.pro");
+    if (entitlements.tier === "basic") return t("v4.plan.basic");
+    return t("v4.plan.free");
+  }, [entitlements.tier, t]);
   const allTargetValues = localeChips.map((locale) => locale.value);
-  const allModuleValues = moduleChips.map((mod) => mod.value);
   const allTargetsSelected =
-    allTargetValues.length > 0 && allTargetValues.every((value) => targets.includes(value));
+    allTargetValues.length > 0 &&
+    allTargetValues.every((value) => targets.includes(value));
   const someTargetsSelected = targets.length > 0 && !allTargetsSelected;
-  const allModulesSelected =
-    allModuleValues.length > 0 && allModuleValues.every((value) => modules.includes(value));
-  const someModulesSelected = modules.length > 0 && !allModulesSelected;
+  const moduleItems = useMemo<CreateTaskModuleItem[]>(() => {
+    const baseItems = CREATE_TASK_MODULE_OPTIONS.map((mod, index) => {
+      const allowed = isV2ModuleAllowedForPlan(mod, entitlements);
+      return {
+        value: mod,
+        label:
+          getV4ModuleLabel(mod, t) || CREATE_TASK_MODULE_LABELS[mod] || mod,
+        allowed,
+        detail:
+          !allowed && mod === "metadata"
+            ? t("v4.plan.metafieldRequiresPro")
+            : !allowed
+              ? t("v4.plan.moduleNotAllowed")
+              : undefined,
+        order: index,
+      };
+    });
+
+    const liquidItem: CreateTaskModuleItem = {
+      value: LIQUID_MODULE_KEY,
+      label: t("v4.createTask.includeLiquid"),
+      allowed: entitlements.allowLiquid,
+      detail: entitlements.allowLiquid
+        ? t("v4.createTask.includeLiquidHelp")
+        : t("v4.plan.liquidRequiresPro"),
+      isLiquid: true,
+      order: baseItems.length,
+    };
+
+    return [...baseItems, liquidItem].sort((a, b) => {
+      if (a.allowed !== b.allowed) return a.allowed ? -1 : 1;
+      return a.order - b.order;
+    });
+  }, [entitlements, t]);
+  const allModuleValues = moduleItems.map((mod) => mod.value);
+  const selectedContentValues = useMemo(
+    () => [...modules, ...(includeLiquid ? [LIQUID_MODULE_KEY] : [])],
+    [includeLiquid, modules],
+  );
 
   const toggleTarget = (value: string) => {
     if (singleTargetOnly) {
@@ -134,12 +188,20 @@ export function CreateTaskCard({
   };
 
   const toggleModule = (value: string) => {
-    if (!isV2ModuleAllowedForPlan(value, entitlements)) {
-      message.warning(
-        value === "metadata"
-          ? t("v4.plan.metafieldRequiresPro")
-          : t("v4.plan.moduleNotAllowed"),
-      );
+    const clickedItem = moduleItems.find((item) => item.value === value);
+    if (!clickedItem) return;
+    if (!clickedItem.allowed) {
+      const upgradeDescription = t("v4.quotaGate.upgradePlanDescription");
+      setUpgradeModalContent({
+        title: clickedItem.label,
+        body: clickedItem.detail
+          ? `${clickedItem.detail} ${upgradeDescription}`
+          : upgradeDescription,
+      });
+      return;
+    }
+    if (clickedItem.isLiquid) {
+      onIncludeLiquidChange(!includeLiquid);
       return;
     }
     onModulesChange(
@@ -154,28 +216,112 @@ export function CreateTaskCard({
     onTargetsChange(allTargetsSelected ? [] : allTargetValues);
   };
 
-  const selectableModuleValues: string[] = allModuleValues.filter((value) =>
-    isV2ModuleAllowedForPlan(value, entitlements),
-  );
+  const selectableModuleValues: string[] = moduleItems
+    .filter((item) => item.allowed)
+    .map((item) => item.value);
   const allSelectableModulesSelected =
     selectableModuleValues.length > 0 &&
-    selectableModuleValues.every((value) => modules.includes(value));
+    selectableModuleValues.every((value) =>
+      selectedContentValues.includes(value),
+    );
   const someSelectableModulesSelected =
-    modules.some((value) => selectableModuleValues.includes(value)) &&
-    !allSelectableModulesSelected;
+    selectedContentValues.some((value) =>
+      selectableModuleValues.includes(value),
+    ) && !allSelectableModulesSelected;
+  const lockedContentLabels = useMemo(() => {
+    return moduleItems
+      .filter((item) => !item.allowed)
+      .map((item) => item.label);
+  }, [moduleItems]);
+  const planNoticeLines = useMemo(() => {
+    const lines: string[] = [];
+    if (singleTargetOnly) {
+      lines.push(t("v4.plan.freeSingleTargetHint"));
+    }
+    if (lockedContentLabels.length > 0) {
+      lines.push(lockedContentLabels.join(" · "));
+    }
+    return lines;
+  }, [lockedContentLabels, singleTargetOnly, t]);
+  const advancedSummaryLabels = useMemo(() => {
+    const labels = [getV4AiModelLabel(aiModel, t)];
+    if (isCover) labels.push(t("v4.createTask.overwriteExisting"));
+    if (isHandle) labels.push(t("v4.createTask.translateHandle"));
+    return labels;
+  }, [aiModel, isCover, isHandle, t]);
+  const createStatus = useMemo(() => {
+    if (createDisabled) {
+      return {
+        tone: "subdued" as const,
+        title: disabledMessage ?? t("v4.createTask.estimateUnavailable"),
+        detail: null,
+      };
+    }
+    if (missingTargetSelection || missingContentSelection) {
+      const messages: string[] = [];
+      if (missingTargetSelection)
+        messages.push(t("v4.validation.selectTarget"));
+      if (missingContentSelection)
+        messages.push(t("v4.validation.selectModule"));
+      return {
+        tone: "warning" as const,
+        title: messages.join(" "),
+        detail: t("v4.createTask.estimateSelectFirst"),
+      };
+    }
+    if (estimate?.loading) {
+      return {
+        tone: "info" as const,
+        title: t("v4.createTask.estimateLoading"),
+        detail: t("v4.createTask.estimateFootnote"),
+      };
+    }
+    if (estimate?.loaded && estimate.estimatedCredits != null) {
+      const estimated = formatEstimateCredits(estimate.estimatedCredits);
+      const remaining = formatEstimateCredits(estimate.remainingCredits);
+      return {
+        tone: estimate.needsMoreCredits
+          ? ("warning" as const)
+          : ("success" as const),
+        title: estimate.isUpperBound
+          ? t("v4.createTask.estimateUpperBound", { estimated })
+          : t("v4.createTask.estimateNeed", { estimated }),
+        detail: estimate.needsMoreCredits
+          ? `${t("v4.createTask.estimateRemaining", { remaining })} ${t("v4.createTask.estimateShort")}`
+          : `${t("v4.createTask.estimateRemaining", { remaining })} ${t("v4.createTask.estimateFootnote")}`,
+      };
+    }
+    if (estimate?.loaded) {
+      return {
+        tone: "subdued" as const,
+        title: t("v4.createTask.estimateUnavailable"),
+        detail: t("v4.createTask.estimateFootnote"),
+      };
+    }
+    return {
+      tone: "subdued" as const,
+      title: t("v4.createTask.estimateSelectFirst"),
+      detail: null,
+    };
+  }, [
+    createDisabled,
+    disabledMessage,
+    estimate,
+    missingContentSelection,
+    missingTargetSelection,
+    t,
+  ]);
 
   const toggleAllModules = () => {
-    onModulesChange(
-      allSelectableModulesSelected ? [] : selectableModuleValues,
-    );
-  };
-
-  const onLiquidToggle = (checked: boolean) => {
-    if (checked && !entitlements.allowLiquid) {
-      message.warning(t("v4.plan.liquidRequiresPro"));
+    if (allSelectableModulesSelected) {
+      onModulesChange([]);
+      onIncludeLiquidChange(false);
       return;
     }
-    onIncludeLiquidChange(checked);
+    onModulesChange(
+      selectableModuleValues.filter((value) => value !== LIQUID_MODULE_KEY),
+    );
+    onIncludeLiquidChange(selectableModuleValues.includes(LIQUID_MODULE_KEY));
   };
 
   const handleInvalidCreateAttempt = () => {
@@ -207,7 +353,9 @@ export function CreateTaskCard({
         loading={creating}
         onClick={onCreate}
       >
-        {creating ? t("v4.createTask.creating") : t("v4.createTask.confirmAction")}
+        {creating
+          ? t("v4.createTask.creating")
+          : t("v4.createTask.confirmAction")}
       </Button>
       {selectionInvalid && !creating && !createDisabled ? (
         <button
@@ -285,9 +433,27 @@ export function CreateTaskCard({
         ) : null}
       </div>
 
+      {planNoticeLines.length > 0 && (
+        <div style={planNoticeStyle}>
+          <div style={noticeBadgeRowStyle}>
+            <InlineBadge tone="default">{planLabel}</InlineBadge>
+          </div>
+          <div style={planNoticeTextListStyle}>
+            {planNoticeLines.map((line) => (
+              <div key={line} style={planNoticeTextStyle}>
+                {line}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ marginBottom: 16 }}>
         <SectionHeader
           title={t("v4.createTask.targetLanguages")}
+          meta={
+            <InlineBadge tone="subdued">{`${targets.length}/${localeChips.length}`}</InlineBadge>
+          }
           action={
             singleTargetOnly ? undefined : (
               <CheckboxInlineAction
@@ -299,18 +465,6 @@ export function CreateTaskCard({
             )
           }
         />
-        {singleTargetOnly ? (
-          <div
-            style={{
-              marginBottom: 8,
-              fontSize: 12,
-              lineHeight: 1.5,
-              color: v4Colors.textMuted,
-            }}
-          >
-            {t("v4.plan.freeSingleTargetHint")}
-          </div>
-        ) : null}
         <div style={checkboxGridStyle}>
           {localeChips.map((locale) => {
             const selected = targets.includes(locale.value);
@@ -330,6 +484,9 @@ export function CreateTaskCard({
       <div style={{ marginBottom: 16 }}>
         <SectionHeader
           title={t("v4.createTask.content")}
+          meta={
+            <InlineBadge tone="subdued">{`${selectedContentValues.length}/${allModuleValues.length}`}</InlineBadge>
+          }
           action={
             <CheckboxInlineAction
               label={t("Check all")}
@@ -340,15 +497,18 @@ export function CreateTaskCard({
           }
         />
         <div style={checkboxGridStyle}>
-          {moduleChips.map((mod) => {
-            const selected = modules.includes(mod.value);
-            const allowed = isV2ModuleAllowedForPlan(mod.value, entitlements);
+          {moduleItems.map((mod) => {
+            const selected = mod.isLiquid
+              ? includeLiquid && mod.allowed
+              : modules.includes(mod.value);
             return (
               <CheckboxOptionCard
                 key={mod.value}
-                label={allowed ? mod.label : `${mod.label} 🔒`}
-                selected={selected && allowed}
+                label={mod.label}
+                selected={selected}
                 onToggle={() => toggleModule(mod.value)}
+                disabled={!mod.allowed}
+                detail={mod.detail}
               />
             );
           })}
@@ -385,7 +545,14 @@ export function CreateTaskCard({
             userSelect: "none",
           }}
         >
-          <span style={{ minWidth: 0, textAlign: "left", lineHeight: 1.35, overflowWrap: "anywhere" }}>
+          <span
+            style={{
+              minWidth: 0,
+              textAlign: "left",
+              lineHeight: 1.35,
+              overflowWrap: "anywhere",
+            }}
+          >
             {t("v4.createTask.advancedSettings")}
           </span>
           <span
@@ -396,6 +563,15 @@ export function CreateTaskCard({
             ⌄
           </span>
         </button>
+        {!advancedOpen ? (
+          <div style={advancedSummaryStyle}>
+            {advancedSummaryLabels.map((label) => (
+              <InlineBadge key={label} tone="subdued">
+                {label}
+              </InlineBadge>
+            ))}
+          </div>
+        ) : null}
 
         <div
           className={`v4-collapse${advancedOpen ? " v4-collapse--open" : ""}`}
@@ -414,6 +590,13 @@ export function CreateTaskCard({
                 active={advancedOpen}
               />
             </div>
+            <div style={advancedHintStyle}>
+              {advancedSummaryLabels.map((label) => (
+                <InlineBadge key={label} tone="subdued">
+                  {label}
+                </InlineBadge>
+              ))}
+            </div>
             <SectionLabel>{t("v4.createTask.translationOptions")}</SectionLabel>
             <BlockStack gap="300">
               <Checkbox
@@ -426,23 +609,16 @@ export function CreateTaskCard({
                 checked={isHandle}
                 onChange={onIsHandleChange}
               />
-              <Checkbox
-                label={
-                  entitlements.allowLiquid
-                    ? t("v4.createTask.includeLiquid")
-                    : `${t("v4.createTask.includeLiquid")} 🔒`
-                }
-                helpText={
-                  entitlements.allowLiquid
-                    ? t("v4.createTask.includeLiquidHelp")
-                    : t("v4.plan.liquidRequiresPro")
-                }
-                checked={includeLiquid && entitlements.allowLiquid}
-                onChange={onLiquidToggle}
-              />
             </BlockStack>
           </div>
         </div>
+      </div>
+
+      <div style={createStatusPanelStyle(createStatus.tone)}>
+        <div style={createStatusTitleStyle}>{createStatus.title}</div>
+        {createStatus.detail ? (
+          <div style={createStatusDetailStyle}>{createStatus.detail}</div>
+        ) : null}
       </div>
 
       {submitPlacement === "footer-center" ? (
@@ -461,15 +637,37 @@ export function CreateTaskCard({
           {submitButton}
         </div>
       ) : null}
+      <AppSModal
+        open={!!upgradeModalContent}
+        heading={upgradeModalContent?.title ?? ""}
+        onClose={() => setUpgradeModalContent(null)}
+        size="small"
+        primaryAction={{
+          content: t("v4.quotaGate.upgradePlan"),
+          onAction: () => navigate("/app/pricing"),
+        }}
+        secondaryActions={[
+          {
+            content: t("v4.quotaGate.maybeLater"),
+            onAction: () => setUpgradeModalContent(null),
+          },
+        ]}
+      >
+        <div style={{ fontSize: 14, lineHeight: 1.6, color: v4Colors.text }}>
+          {upgradeModalContent?.body}
+        </div>
+      </AppSModal>
     </div>
   );
 }
 
 function SectionHeader({
   title,
+  meta,
   action,
 }: {
   title: string;
+  meta?: ReactNode;
   action?: ReactNode;
 }) {
   return (
@@ -485,6 +683,9 @@ function SectionHeader({
     >
       <div
         style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
           fontSize: 13,
           fontWeight: 600,
           color: v4Colors.text,
@@ -493,7 +694,8 @@ function SectionHeader({
           minWidth: 0,
         }}
       >
-        {title}
+        <span style={{ minWidth: 0 }}>{title}</span>
+        {meta}
       </div>
       {action}
     </div>
@@ -502,7 +704,16 @@ function SectionHeader({
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <div style={{ fontSize: 13, fontWeight: 600, color: v4Colors.textMuted, marginBottom: 8, lineHeight: 1.35, overflowWrap: "anywhere" }}>
+    <div
+      style={{
+        fontSize: 13,
+        fontWeight: 600,
+        color: v4Colors.textMuted,
+        marginBottom: 8,
+        lineHeight: 1.35,
+        overflowWrap: "anywhere",
+      }}
+    >
       {children}
     </div>
   );
@@ -510,14 +721,18 @@ function SectionLabel({ children }: { children: string }) {
 
 function CheckboxOptionCard({
   label,
+  detail,
   selected,
   indeterminate = false,
+  disabled = false,
   onToggle,
   prefix,
 }: {
   label: string;
+  detail?: string;
   selected: boolean;
   indeterminate?: boolean;
+  disabled?: boolean;
   onToggle: () => void;
   prefix?: string;
 }) {
@@ -530,32 +745,112 @@ function CheckboxOptionCard({
   }, [indeterminate]);
 
   return (
-    <label style={checkboxCardStyle(selected)}>
+    <label style={checkboxCardStyle(selected, disabled)}>
       <input
         ref={inputRef}
         type="checkbox"
         checked={selected}
         onChange={onToggle}
         style={checkboxInputStyle}
+        disabled={disabled}
       />
-      <span style={{ minWidth: 0, display: "inline-flex", alignItems: "center", gap: 6 }}>
-        {prefix ? (
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <span
+          style={{
+            minWidth: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            justifyContent: "space-between",
+          }}
+        >
           <span
             style={{
-              opacity: selected ? 1 : 0.72,
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: "0.02em",
-              color: v4Colors.textMuted,
-              flexShrink: 0,
+              minWidth: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
-            {prefix}
+            {prefix ? (
+              <span
+                style={{
+                  opacity: selected ? 1 : 0.72,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.02em",
+                  color: v4Colors.textMuted,
+                  flexShrink: 0,
+                }}
+              >
+                {prefix}
+              </span>
+            ) : null}
+            <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+              {label}
+            </span>
           </span>
-        ) : null}
-        <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{label}</span>
+        </span>
+        {detail ? <span style={checkboxDetailStyle}>{detail}</span> : null}
       </span>
+      {disabled ? (
+        <button
+          type="button"
+          aria-label={label}
+          onClick={onToggle}
+          style={disabledActionOverlayStyle}
+        />
+      ) : null}
     </label>
+  );
+}
+
+function InlineBadge({
+  children,
+  tone = "default",
+}: {
+  children: ReactNode;
+  tone?: "default" | "subdued" | "info";
+}) {
+  const toneStyles =
+    tone === "info"
+      ? {
+          background: "rgba(46, 125, 246, 0.12)",
+          color: v4Colors.info,
+          borderColor: "rgba(46, 125, 246, 0.18)",
+        }
+      : tone === "subdued"
+        ? {
+            background: v4Colors.cardSubdued,
+            color: v4Colors.textMuted,
+            borderColor: v4Colors.cardBorder,
+          }
+        : {
+            background: v4Colors.cardBg,
+            color: v4Colors.text,
+            borderColor: v4Colors.cardBorder,
+          };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        minHeight: 22,
+        padding: "0 8px",
+        borderRadius: 999,
+        border: `1px solid ${toneStyles.borderColor}`,
+        background: toneStyles.background,
+        color: toneStyles.color,
+        fontSize: 11,
+        fontWeight: 600,
+        lineHeight: 1,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -607,8 +902,8 @@ function CheckboxInlineAction({
 
 const checkboxGridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 10,
+  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+  gap: 12,
 };
 
 const disabledActionOverlayStyle: CSSProperties = {
@@ -623,25 +918,137 @@ const disabledActionOverlayStyle: CSSProperties = {
   cursor: "not-allowed",
 };
 
-function checkboxCardStyle(selected: boolean): CSSProperties {
+const planNoticeStyle: CSSProperties = {
+  marginBottom: 16,
+  padding: "12px 14px",
+  borderRadius: 14,
+  border: `1px solid ${v4Colors.cardBorder}`,
+  background: v4Colors.cardSubdued,
+};
+
+const noticeBadgeRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const planNoticeTextStyle: CSSProperties = {
+  marginTop: 8,
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: v4Colors.textMuted,
+};
+
+const planNoticeTextListStyle: CSSProperties = {
+  display: "grid",
+  gap: 6,
+  marginTop: 8,
+};
+
+const advancedSummaryStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+  marginTop: 10,
+};
+
+const advancedHintStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+  marginBottom: 12,
+};
+
+function createStatusPanelStyle(
+  tone: "subdued" | "info" | "warning" | "success",
+): CSSProperties {
+  const colors =
+    tone === "success"
+      ? {
+          background: "var(--app-color-surface-success)",
+          border: "var(--app-color-border-success)",
+          title: "var(--app-color-text-success)",
+        }
+      : tone === "warning"
+        ? {
+            background: "var(--app-color-surface-caution)",
+            border: "var(--app-color-border-caution)",
+            title: "var(--app-color-text-caution)",
+          }
+        : tone === "info"
+          ? {
+              background: "var(--app-color-surface-info)",
+              border: "var(--app-color-border-info)",
+              title: "var(--app-color-text-info)",
+            }
+          : {
+              background: v4Colors.cardSubdued,
+              border: v4Colors.cardBorder,
+              title: v4Colors.text,
+            };
+
   return {
+    marginTop: 16,
+    padding: "12px 14px",
+    borderRadius: 14,
+    border: `1px solid ${colors.border}`,
+    background: colors.background,
+    color: colors.title,
+  };
+}
+
+const createStatusTitleStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 600,
+  lineHeight: 1.45,
+  color: "inherit",
+};
+
+const createStatusDetailStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: v4Colors.textMuted,
+};
+
+function checkboxCardStyle(selected: boolean, disabled = false): CSSProperties {
+  return {
+    position: "relative",
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 10,
-    minHeight: 42,
-    padding: "10px 12px",
+    minHeight: 48,
+    padding: "11px 12px",
     borderRadius: 12,
-    border: "none",
-    background: selected ? "rgba(46, 125, 246, 0.10)" : v4Colors.cardSubdued,
-    color: selected ? v4Colors.info : v4Colors.text,
+    border: `1px solid ${
+      selected
+        ? "rgba(46, 125, 246, 0.18)"
+        : disabled
+          ? v4Colors.cardBorder
+          : "transparent"
+    }`,
+    background: selected
+      ? "rgba(46, 125, 246, 0.10)"
+      : disabled
+        ? "rgba(15, 23, 42, 0.02)"
+        : v4Colors.cardSubdued,
+    color: selected
+      ? v4Colors.info
+      : disabled
+        ? v4Colors.textMuted
+        : v4Colors.text,
     fontSize: 13,
     fontWeight: selected ? 600 : 500,
     lineHeight: 1.35,
-    cursor: "pointer",
-    transition: "background-color 0.15s, color 0.15s, opacity 0.15s",
+    cursor: disabled ? "not-allowed" : "pointer",
+    transition:
+      "background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s",
     fontFamily: "inherit",
     userSelect: "none",
-    opacity: 1,
+    opacity: disabled ? 0.8 : 1,
   };
 }
 
@@ -651,4 +1058,12 @@ const checkboxInputStyle: CSSProperties = {
   height: 16,
   flexShrink: 0,
   accentColor: v4Colors.primary,
+};
+
+const checkboxDetailStyle: CSSProperties = {
+  display: "block",
+  marginTop: 4,
+  fontSize: 11,
+  lineHeight: 1.45,
+  color: v4Colors.textMuted,
 };
