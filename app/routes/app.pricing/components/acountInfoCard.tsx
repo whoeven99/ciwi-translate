@@ -31,6 +31,7 @@ type CreditUsageMetadata = {
 
 type CreditUsageRow = {
   id: string;
+  direction?: "in" | "out";
   source: string;
   credits: number;
   createdAt: string;
@@ -217,7 +218,19 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
       dataIndex: "credits",
       key: "credits",
       align: "right",
-      render: (value: number) => formatCredits(value),
+      render: (value: number, row: CreditUsageRow) => {
+        const amount = formatCredits(value);
+        const isIn = row.direction === "in";
+        return (
+          <span
+            className={
+              isIn ? "pricing-usage-credits--in" : "pricing-usage-credits--out"
+            }
+          >
+            {isIn ? `+${amount}` : `-${amount}`}
+          </span>
+        );
+      },
     },
   ];
 

@@ -3,8 +3,9 @@ import { authenticate } from "~/shopify.server";
 import { listCreditUsage } from "~/server/billing/quota/listCreditUsage.server";
 
 /**
- * GET /api/billing/credit-usage?take=&cursor= —— 本店 CreditUsage 消费列表。
- * 返回 { ok, items, nextCursor }。
+ * GET /api/billing/credit-usage?take=&cursor= —— 本店积分明细
+ * （CreditUsage 消耗 + BillingLog 商户可感知入账）。
+ * 返回 { ok, items, nextCursor }；cursor 为 `u:{id}` / `b:{id}`。
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);

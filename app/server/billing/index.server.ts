@@ -78,6 +78,7 @@ export {
 } from "./quota/recordCreditUsage.server";
 export {
   listCreditUsage,
+  type CreditLedgerDirection,
   type CreditUsageListItem,
   type ListCreditUsageParams,
   type ListCreditUsageResult,
