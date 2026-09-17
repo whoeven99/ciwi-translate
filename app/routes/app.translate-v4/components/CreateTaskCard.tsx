@@ -190,12 +190,13 @@ export function CreateTaskCard({
       return;
     }
     if (targetSelectionLimitReached) {
-      const upgradeDescription = t("v4.quotaGate.upgradePlanDescription");
       setUpgradeModalContent({
-        title: t("v4.createTask.targetLanguages"),
+        title: t("v4.createTask.targetLimitUpgradeTitle"),
         body: singleTargetOnly
-          ? `${t("v4.plan.freeSingleTargetHint")} ${upgradeDescription}`
-          : `${t("v4.plan.targetLimitHint", { count: targetSelectionCap })} ${upgradeDescription}`,
+          ? t("v4.createTask.targetLimitUpgradeBody", { count: 1 })
+          : t("v4.createTask.targetLimitUpgradeBody", {
+              count: targetSelectionCap,
+            }),
       });
       return;
     }
@@ -206,12 +207,15 @@ export function CreateTaskCard({
     const clickedItem = moduleItems.find((item) => item.value === value);
     if (!clickedItem) return;
     if (!clickedItem.allowed) {
-      const upgradeDescription = t("v4.quotaGate.upgradePlanDescription");
       setUpgradeModalContent({
-        title: clickedItem.label,
-        body: clickedItem.detail
-          ? `${clickedItem.detail} ${upgradeDescription}`
-          : upgradeDescription,
+        title: t("v4.createTask.moduleUpgradeTitle", {
+          module: clickedItem.label,
+        }),
+        body:
+          clickedItem.detail ??
+          t("v4.createTask.moduleUpgradeBody", {
+            module: clickedItem.label,
+          }),
       });
       return;
     }
@@ -790,19 +794,7 @@ function formatAiModelOptionLabel({
   if (planTierRank(currentTier) >= planTierRank(requiredTier)) {
     return baseLabel;
   }
-  return `${baseLabel} ${t("v4.createTask.planAvailableFromSuffix", {
-    plan: getPlanTierLabel(requiredTier, t),
-  })}`;
-}
-
-function getPlanTierLabel(
-  tier: ModelPlanTier,
-  t: ReturnType<typeof useTranslation>["t"],
-): string {
-  if (tier === "premium") return t("pricing.plan.premium");
-  if (tier === "pro") return t("v4.plan.pro");
-  if (tier === "basic") return t("v4.plan.basic");
-  return t("v4.plan.free");
+  return `${baseLabel} ${t("v4.createTask.planPaidOnlySuffix")}`;
 }
 
 function planTierRank(tier: ModelPlanTier): number {
