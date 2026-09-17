@@ -165,26 +165,39 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     // if (recommendOption) setSelectedOption(recommendOption);
   };
 
-  const ctaLabel = taskContext
-    ? t("Pay and continue translation")
-    : singleTranslateContext
-      ? t("Pay and translate")
-    : createTaskContext
-      ? t("Pay and translate")
-      : t("Buy now");
+  const ctaLabel = taskContext || singleTranslateContext || createTaskContext
+    ? t("paymentModal.cta.continue", {
+        defaultValue: "Add credits and continue",
+      })
+    : t("Buy now");
   const heading = taskContext
-    ? t("Buy credits to continue task")
+    ? t("paymentModal.heading.task", {
+        defaultValue: "Add credits to continue this task",
+      })
     : singleTranslateContext
-      ? t("Buy credits to translate this field")
+      ? t("paymentModal.heading.singleTranslate", {
+          defaultValue: "Add credits to continue this field",
+        })
       : createTaskContext
-        ? t("Buy credits to create task")
+        ? t("paymentModal.heading.createTask", {
+            defaultValue: "Add credits to continue creating this task",
+          })
         : t("Buy credits");
   const headingDescription = taskContext
-    ? t("Review the remaining credits for this task and choose a pack.")
+    ? t("paymentModal.description.task", {
+        defaultValue:
+          "This task is ready to continue. Review the shortfall and choose a pack.",
+      })
     : singleTranslateContext
-      ? t("Review the estimated credits for this field and choose a pack.")
+      ? t("paymentModal.description.singleTranslate", {
+          defaultValue:
+            "Your current field settings are ready. Review the shortfall and choose a pack.",
+        })
       : createTaskContext
-        ? t("Review the estimated credits for this task and choose a pack.")
+        ? t("paymentModal.description.createTask", {
+            defaultValue:
+              "Your current task setup is ready. Review the shortfall and choose a pack.",
+          })
         : t("Choose a pack for this task.");
 
   return (
@@ -243,7 +256,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
                 gap: 12,
               }}
             >
@@ -312,7 +325,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
                 gap: 12,
               }}
             >
@@ -359,7 +372,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
                 gap: 12,
               }}
             >
@@ -374,6 +387,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <TaskStat
                 label={t("Estimated total")}
                 value={formatCreditsValue(createTaskContext.estimatedCredits, t)}
+              />
+              <TaskStat
+                label={t("Available now")}
+                value={formatCreditsValue(
+                  createTaskContext.currentRemainingCredits,
+                  t,
+                )}
               />
               <TaskStat
                 label={t("Need to top up")}

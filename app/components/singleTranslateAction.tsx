@@ -11,6 +11,7 @@ import { AiModelInFlowSelect } from "~/routes/app.translate-v4/components/AiMode
 import { AppSModal } from "~/ui/components/AppSModal";
 import Button, { type AppButtonProps } from "~/ui/components/AppButton";
 import {
+  ConfirmInfoCard,
   CreditsEstimatePanel,
   formatConfirmCredits,
 } from "~/routes/app.translate-v4/components/CreditsConfirmPanel";
@@ -34,11 +35,8 @@ interface SingleTranslateActionProps {
   existingTranslation?: string | null;
   isOutdated?: boolean;
   loading?: boolean;
-  /** 源文字段（用于积分预估）。 */
   sourceText?: string | null;
-  /** 目标语言 locale。 */
   targetLocale?: string | null;
-  /** Shopify 字段 key（handle 走专用 prompt）。 */
   fieldKey?: string | null;
   onSubmit: (payload: SingleTranslateSubmitPayload) => void | Promise<void>;
   triggerProps?: AppButtonProps;
@@ -243,8 +241,13 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
   }, [open, quotaLoading, currentRemainingCredits, openSingleTranslateCreditsModal, t]);
 
   const actionLabel = getActionLabel(modalState, t);
+  const modalTitle = getModalTitle(modalState, t);
+  const modalDescription = getModalDescription(modalState, t);
   const submitLabel = getSubmitLabel(modalState, t);
   const promptLabel = t("manage.singleTranslate.promptSuggestion");
+  const stateLabel = getStateLabel(modalState, t);
+  const targetLabel = normalizeText(targetLocale).toUpperCase() || "TARGET";
+  const fieldLabel = fieldKey?.trim() || "value";
   const requiredCreditsValue = quotaPrecheckPending
     ? t("v4.createTask.confirmEstimateComputing")
     : estimatedCredits == null
@@ -333,7 +336,7 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
       </Button>
       <AppSModal
         open={open}
-        heading={getModalTitle(modalState, t)}
+        heading={modalTitle}
         onClose={closeModal}
         size="base"
         primaryAction={{
@@ -351,10 +354,44 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
         ]}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Text type="secondary" style={{ display: "block", lineHeight: 1.6 }}>
+            {modalDescription}
+          </Text>
+
+          <ConfirmInfoCard title={t("manage.singleTranslate.summaryTitle")}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <Text strong style={{ display: "block" }}>
+                  {`${targetLabel} · ${stateLabel}`}
+                </Text>
+                <Text
+                  type="secondary"
+                  style={{ display: "block", marginTop: 4, fontSize: 12 }}
+                >
+                  {fieldLabel}
+                </Text>
+              </div>
+            </div>
+            <Text
+              type="secondary"
+              style={{ display: "block", marginTop: 10, lineHeight: 1.6 }}
+            >
+              {t("manage.singleTranslate.estimateHint")}
+            </Text>
+          </ConfirmInfoCard>
+
           <CreditsEstimatePanel
             requiredValue={requiredCreditsValue}
             availableValue={availableCreditsValue}
-            hint={t("v4.createTask.confirmEstimateExactHint")}
+            hint={t("manage.singleTranslate.estimateHint")}
           />
 
           <div>
@@ -373,6 +410,12 @@ const SingleTranslateAction: React.FC<SingleTranslateActionProps> = ({
           <div>
             <Text strong style={{ display: "block", marginBottom: 4 }}>
               {promptLabel}
+            </Text>
+            <Text
+              type="secondary"
+              style={{ display: "block", marginBottom: 8, lineHeight: 1.6 }}
+            >
+              {getPromptDescription(modalState, t)}
             </Text>
             <TextArea
               rows={4}
@@ -413,6 +456,33 @@ function getSubmitLabel(
   if (state === "missing") return t("manage.singleTranslate.submitMissing");
   if (state === "outdated") return t("manage.singleTranslate.submitOutdated");
   return t("manage.singleTranslate.submitQuality");
+}
+
+function getStateLabel(
+  state: SingleTranslateModalState,
+  t: (key: string) => string,
+) {
+  if (state === "missing") return t("manage.singleTranslate.stateMissing");
+  if (state === "outdated") return t("manage.singleTranslate.stateOutdated");
+  return t("manage.singleTranslate.stateQuality");
+}
+
+function getModalDescription(
+  state: SingleTranslateModalState,
+  t: (key: string) => string,
+) {
+  if (state === "missing") return t("manage.singleTranslate.descMissing");
+  if (state === "outdated") return t("manage.singleTranslate.descOutdated");
+  return t("manage.singleTranslate.descQuality");
+}
+
+function getPromptDescription(
+  state: SingleTranslateModalState,
+  t: (key: string) => string,
+) {
+  if (state === "missing") return t("manage.singleTranslate.promptDescMissing");
+  if (state === "outdated") return t("manage.singleTranslate.promptDescOutdated");
+  return t("manage.singleTranslate.promptDescQuality");
 }
 
 export default SingleTranslateAction;

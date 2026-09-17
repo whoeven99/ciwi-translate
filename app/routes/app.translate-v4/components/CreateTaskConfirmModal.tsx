@@ -16,6 +16,7 @@ import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
 import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
 import { reportClientLog } from "~/utils/clientLog";
+import { buildPaymentOptions, type OptionType } from "../../../components/paymentModal.shared";
 import {
   ConfirmInfoCard,
   CreditsEstimatePanel,
@@ -38,7 +39,6 @@ type Props = {
   isCover: boolean;
   isHandle: boolean;
   includeLiquid: boolean;
-  /** 源语言（TM key）；缺省由服务端 primary 兜底 */
   sourceLocale?: string;
   estimate: CreateTaskEstimateView | null;
   scenario: CreateTaskConfirmScenario;
@@ -47,7 +47,6 @@ type Props = {
   onClose: () => void;
   onConfirmCreate: () => void;
   onBuyCredits: (estimatedCredits?: number | null) => void;
-  /** Persist create-task selections before Shopify billing redirect. */
   onBeforeBilling?: () => void;
 };
 
@@ -55,6 +54,53 @@ type TranslateFn = (
   key: string,
   options?: Record<string, unknown>,
 ) => string;
+
+type PlanTier = "basic" | "pro" | "premium";
+
+type PlanOption = {
+  title: string;
+  tier: PlanTier;
+  monthlyCredits: number;
+  monthlyPrice: number;
+  yearlyPrice: number;
+  fitLabelKey: string;
+  fitLabelDefault: string;
+};
+
+type RecommendationSelection = "plan" | "credits";
+
+const PLAN_OPTIONS: readonly PlanOption[] = [
+  {
+    title: "Basic",
+    tier: "basic",
+    monthlyCredits: 1500000,
+    monthlyPrice: 7.99,
+    yearlyPrice: 6.39,
+    fitLabelKey: "pricing.fit_basic",
+    fitLabelDefault:
+      "Good for smaller stores that need core product and page translation.",
+  },
+  {
+    title: "Pro",
+    tier: "pro",
+    monthlyCredits: 3000000,
+    monthlyPrice: 19.99,
+    yearlyPrice: 15.99,
+    fitLabelKey: "pricing.fit_pro",
+    fitLabelDefault:
+      "Good for stores expanding into multiple markets with regular content updates.",
+  },
+  {
+    title: "Premium",
+    tier: "premium",
+    monthlyCredits: 8000000,
+    monthlyPrice: 39.99,
+    yearlyPrice: 31.99,
+    fitLabelKey: "pricing.fit_premium",
+    fitLabelDefault:
+      "Good for high-volume teams managing multiple markets and frequent launches.",
+  },
+] as const;
 
 export function CreateTaskConfirmModal({
   open,
@@ -84,6 +130,8 @@ export function CreateTaskConfirmModal({
       typeof window !== "undefined" &&
       window.matchMedia("(max-width: 768px)").matches,
   );
+  const [selectedRecommendation, setSelectedRecommendation] =
+    useState<RecommendationSelection>("plan");
   const planFetcher = useFetcher<{
     success?: boolean;
     response?: { confirmationUrl?: string };
@@ -234,64 +282,171 @@ export function CreateTaskConfirmModal({
   const isInsufficientPaid = scenario === "insufficient_paid";
   const isTrialOffer = scenario === "insufficient_trial";
   const isInsufficientPricing = scenario === "insufficient_pricing";
-  const showTaskDetails = isReady;
+  const isPlanSelectionVisible = isTrialOffer || isInsufficientPricing;
   const hasPositiveCredits = remainingCredits != null && remainingCredits > 0;
   const hasNonPositiveCredits = remainingCredits != null && remainingCredits <= 0;
-  const canStartPartial = !isReady && !hasNonPositiveCredits && hasPositiveCredits;
+  const canStartPartial = isInsufficientPaid && !hasNonPositiveCredits && hasPositiveCredits;
   const scenarioTitle = getConfirmScenarioTitle(t, scenario, canStartPartial);
-  const recommendedPlan =
-    shortfallCredits > 0 ? recommendPlanForShortfall(shortfallCredits) : null;
-  const recommendedPaidUpgradePlan =
-    scenario === "insufficient_paid" && !canStartPartial
-      ? recommendPaidUpgradePlan({
-          currentPlanType: planType ?? null,
-          estimatedCredits,
-        })
-      : null;
-  const showPaidUpgradeAction =
-    scenario === "insufficient_paid" &&
-    !canStartPartial &&
-    recommendedPaidUpgradePlan != null;
-  const subscriptionBenefitValue = null;
-  const subscriptionBenefitCaption =
-    recommendedPlan &&
-    scenario === "insufficient_pricing"
-      ? t("v4.createTask.confirmRecommendedPlanMonthlyValue", {
-          plan: recommendedPlan.title,
-          monthly: formatConfirmCredits(recommendedPlan.monthlyCredits),
-          defaultValue: "{{plan}} · {{monthly}} credits/month",
-        })
-      : null;
   const estimateHint = detailedDone
     ? t("v4.createTask.detailedEstimateDoneHint")
     : detailed.progress.status === "error"
       ? t("v4.createTask.detailedEstimateErrorHint")
       : t("v4.createTask.confirmEstimateExactHint");
 
+  const planOptions = useMemo(
+    () => buildPlanOptions(t),
+    [t],
+  );
+  const recommendedPlanTitle = isTrialOffer
+    ? "Basic"
+    : (recommendPlanForShortfall(shortfallCredits)?.title ??
+      planOptions[1]?.title ??
+      "Pro");
+  const recommendedPlan =
+    planOptions.find((item) => item.title === recommendedPlanTitle) ??
+    planOptions[0];
+  const recommendedPack = useMemo(
+    () => recommendCreditPack({
+      shortfallCredits,
+      planType: planType ?? null,
+    }),
+    [shortfallCredits, planType],
+  );
+  const recommendedPlanStartsWithTrial =
+    isTrialOffer && recommendedPlan?.title === "Basic";
+  const recommendedPaidUpgradePlan =
+    isInsufficientPaid && !canStartPartial
+      ? recommendPaidUpgradePlan({
+          currentPlanType: planType ?? null,
+          estimatedCredits,
+        })
+      : null;
+  const showPaidUpgradeAction =
+    isInsufficientPaid && !canStartPartial && recommendedPaidUpgradePlan != null;
+  const planPickerDescription = isTrialOffer
+    ? t("v4.createTask.planPickerTrialDescription", {
+        defaultValue:
+          "We picked the closest monthly plan and credit pack for this task. Basic includes a 5-day free trial and starts billing after the trial ends unless you cancel first.",
+      })
+    : t("v4.createTask.planPickerDescription", {
+        defaultValue:
+          "We picked the closest monthly plan and credit pack for this task so you can compare the amount directly.",
+      });
+  const displayPlanCost =
+    recommendedPlanStartsWithTrial && recommendedPlan ? 0 : (recommendedPlan?.monthlyPrice ?? null);
+  const planCost = displayPlanCost;
+  const packCost = recommendedPack?.price.currentPrice ?? null;
+  const planMuchLessCostEffective =
+    planCost != null &&
+    packCost != null &&
+    planCost > packCost * 1.2;
+  const planAndPackAreSimilar =
+    planCost != null &&
+    packCost != null &&
+    !planMuchLessCostEffective &&
+    Math.abs(planCost - packCost) <= Math.min(planCost, packCost) * 0.12;
+  const shouldShowPlanOption = !planMuchLessCostEffective && Boolean(recommendedPlan);
+  const shouldShowCreditsOption = Boolean(recommendedPack) && !planAndPackAreSimilar;
+  const shouldShowComparison =
+    shouldShowPlanOption &&
+    shouldShowCreditsOption &&
+    planCost != null &&
+    packCost != null;
+  const recommendedCreditsLabel = recommendedPack
+    ? `${Number(recommendedPack.Credits).toLocaleString("en-US")} ${t("credits")}`
+    : null;
+  const recommendedCreditsPriceLabel = recommendedPack
+    ? t("v4.createTask.recommendationCreditsPrice", {
+        price: recommendedPack.price.currentPrice.toFixed(2),
+      })
+    : null;
+  const recommendedPlanPriceLabel = recommendedPlanStartsWithTrial
+    ? t("v4.createTask.recommendationPlanTrialUnit", {
+        defaultValue: "5-day trial",
+      })
+    : t("/month");
+  const recommendedPlanEyebrow = recommendedPlanStartsWithTrial
+    ? t("v4.createTask.recommendationPlanTrialTitle", {
+        defaultValue: "Free trial",
+      })
+    : t("v4.createTask.recommendationPlanTitle", {
+        defaultValue: "Monthly plan",
+      });
+  const recommendedPlanCaption = recommendedPlanStartsWithTrial
+    ? t("v4.createTask.recommendationPlanTrialCaption", {
+        defaultValue:
+          "Start with $0 today. Then $7.99/month after 5 days unless you cancel before billing.",
+      })
+    : t("v4.createTask.recommendationPlanCaption", {
+        defaultValue:
+          "Better if you expect follow-up translation work after this task.",
+      });
+
+  useEffect(() => {
+    if (!open) return;
+    if (shouldShowPlanOption && !shouldShowCreditsOption) {
+      setSelectedRecommendation("plan");
+      return;
+    }
+    if (!shouldShowPlanOption && shouldShowCreditsOption) {
+      setSelectedRecommendation("credits");
+      return;
+    }
+    if (shouldShowPlanOption && shouldShowCreditsOption) {
+      setSelectedRecommendation(
+        isTrialOffer || (planCost != null && packCost != null && planCost <= packCost)
+          ? "plan"
+          : "credits",
+      );
+    }
+  }, [
+    open,
+    shouldShowPlanOption,
+    shouldShowCreditsOption,
+    isTrialOffer,
+    planCost,
+    packCost,
+  ]);
+
   const primaryActionLabel = isReady
     ? t("v4.createTask.confirmStartNow")
-    : canStartPartial
-      ? t("v4.createTask.confirmStartPartial")
-      : isInsufficientPaid
-        ? t("v4.createTask.confirmBuyCreditsAndStart")
-        : isTrialOffer
-          ? t("v4.createTask.confirmTrialAndStart")
+    : isPlanSelectionVisible
+      ? selectedRecommendation === "plan"
+        ? recommendedPlanStartsWithTrial
+          ? t("v4.createTask.confirmBasicTrialAndStart", {
+              defaultValue: "Start Basic trial",
+            })
+          : t("v4.createTask.confirmSelectedPlanAndStart", {
+              defaultValue: "Continue with selected plan",
+            })
+        : t("paymentModal.cta.continue", {
+            defaultValue: "Add credits and continue",
+          })
+      : canStartPartial
+        ? t("v4.createTask.confirmStartPartial")
+        : isInsufficientPaid
+          ? t("v4.createTask.confirmBuyCreditsAndStart")
           : t("v4.createTask.confirmBuyCreditsOnly");
+
   const secondaryActionLabel = isReady
     ? null
-    : canStartPartial
-      ? isTrialOffer
-        ? t("v4.createTask.confirmTrialAndStart")
-        : scenario === "insufficient_pricing"
+    : isPlanSelectionVisible
+      ? canStartPartial
+        ? t("v4.createTask.confirmStartPartial")
+        : !shouldShowPlanOption || !shouldShowCreditsOption
+          ? null
+        : selectedRecommendation === "plan" && shouldShowCreditsOption
+          ? t("v4.createTask.confirmBuyCreditsOnly")
+          : selectedRecommendation === "credits" && shouldShowPlanOption
+            ? t("v4.createTask.confirmSelectedPlanSecondary", {
+                defaultValue: "Choose monthly plan",
+              })
+            : t("v4.createTask.confirmBuyCreditsOnly")
+      : canStartPartial
+        ? t("v4.createTask.confirmBuyCreditsOnly")
+        : isInsufficientPaid && showPaidUpgradeAction
           ? t("v4.createTask.confirmViewPlans")
-          : t("v4.createTask.confirmBuyCreditsOnly")
-      : isInsufficientPaid
-        ? showPaidUpgradeAction
-          ? t("v4.createTask.confirmViewPlans")
-          : null
-        : isTrialOffer
-          ? t("v4.createTask.confirmViewPlans")
-        : null;
+          : null;
 
   const buildReturnPathForPlan = () => {
     if (typeof window === "undefined") return undefined;
@@ -302,15 +457,16 @@ export function CreateTaskConfirmModal({
     });
   };
 
-  const handleTrialAction = () => {
+  const handleSelectedPlanAction = () => {
+    if (!recommendedPlan) return;
     onBeforeBilling?.();
     const payload: Record<string, string> = {
       payForPlan: JSON.stringify({
-        title: "Basic",
-        monthlyPrice: 7.99,
-        yearlyPrice: 6.39,
+        title: recommendedPlan.title,
+        monthlyPrice: recommendedPlan.monthlyPrice,
+        yearlyPrice: recommendedPlan.yearlyPrice,
         yearly: false,
-        trialDays: 5,
+        trialDays: recommendedPlanStartsWithTrial ? 5 : 0,
       }),
     };
     const returnPath = buildReturnPathForPlan();
@@ -352,6 +508,15 @@ export function CreateTaskConfirmModal({
       onConfirmCreate();
       return;
     }
+    if (isPlanSelectionVisible) {
+      if (selectedRecommendation === "plan") {
+        handleSelectedPlanAction();
+        return;
+      }
+      onBeforeBilling?.();
+      onBuyCredits(estimatedCredits);
+      return;
+    }
     if (canStartPartial) {
       logConfirmStart("start_partial");
       onConfirmCreate();
@@ -362,40 +527,31 @@ export function CreateTaskConfirmModal({
       onBuyCredits(estimatedCredits);
       return;
     }
-    if (isTrialOffer) {
-      handleTrialAction();
-      return;
-    }
-    if (isInsufficientPricing) {
+    onBeforeBilling?.();
+    onBuyCredits(estimatedCredits);
+  };
+
+  const handleSecondaryAction = () => {
+    if (isPlanSelectionVisible) {
+      if (canStartPartial) {
+        logConfirmStart("start_partial");
+        onConfirmCreate();
+        return;
+      }
+      if (selectedRecommendation === "plan" && shouldShowCreditsOption) {
+        onBeforeBilling?.();
+        onBuyCredits(estimatedCredits);
+        return;
+      }
+      if (selectedRecommendation === "credits" && shouldShowPlanOption) {
+        handleSelectedPlanAction();
+        return;
+      }
       onBeforeBilling?.();
       onBuyCredits(estimatedCredits);
       return;
     }
-    onBeforeBilling?.();
-    const returnPath = buildReturnPathForPlan();
-    onClose();
-    navigate(
-      returnPath ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}` : "/app/pricing",
-    );
-  };
-
-  const handleSecondaryAction = () => {
     if (canStartPartial) {
-      if (isTrialOffer) {
-        handleTrialAction();
-        return;
-      }
-      if (scenario === "insufficient_pricing") {
-        onBeforeBilling?.();
-        const returnPath = buildReturnPathForPlan();
-        onClose();
-        navigate(
-          returnPath
-            ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}`
-            : "/app/pricing",
-        );
-        return;
-      }
       onBeforeBilling?.();
       onBuyCredits(estimatedCredits);
       return;
@@ -410,21 +566,7 @@ export function CreateTaskConfirmModal({
           ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}`
           : "/app/pricing",
       );
-      return;
     }
-    if (isTrialOffer) {
-      onBeforeBilling?.();
-      const returnPath = buildReturnPathForPlan();
-      onClose();
-      navigate(
-        returnPath
-          ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}`
-          : "/app/pricing",
-      );
-      return;
-    }
-    onBeforeBilling?.();
-    onBuyCredits(estimatedCredits);
   };
 
   const handleDetailedEstimate = () => {
@@ -467,45 +609,169 @@ export function CreateTaskConfirmModal({
       }
     >
       <div style={bodyStyle}>
-          <CreditsEstimatePanel
-            requiredValue={requiredCreditsValue}
-            availableValue={availableCreditsValue}
-            hint={estimateHint}
-            requiredAction={
-              <Button
-                size="slim"
-                variant="secondary"
-                onClick={handleDetailedEstimate}
-                loading={detailedRunning}
-                disabled={creating || detailedRunning || targets.length === 0}
-              >
-                {detailedDone
-                  ? t("v4.createTask.detailedEstimateRerun")
-                  : t("v4.createTask.detailedEstimateAction")}
-              </Button>
-            }
-          />
+        <CreditsEstimatePanel
+          requiredValue={requiredCreditsValue}
+          availableValue={availableCreditsValue}
+          hint={estimateHint}
+          requiredAction={
+            <Button
+              size="slim"
+              variant="secondary"
+              onClick={handleDetailedEstimate}
+              loading={detailedRunning}
+              disabled={creating || detailedRunning || targets.length === 0}
+            >
+              {detailedDone
+                ? t("v4.createTask.detailedEstimateRerun")
+                : t("v4.createTask.detailedEstimateAction")}
+            </Button>
+          }
+        />
 
-          {showTaskDetails ? (
-            <ConfirmInfoCard title={t("v4.createTask.confirmTaskDetailTitle")}>
-              <div style={detailListStyle}>
-                {detailItems.map((item) => (
-                  <DetailLine
-                    key={item.label}
-                    label={item.label}
-                    value={item.value}
-                  />
-                ))}
-              </div>
-            </ConfirmInfoCard>
-          ) : null}
+        <ConfirmInfoCard title={t("v4.createTask.confirmTaskDetailTitle")}>
+          <div style={detailListStyle}>
+            {detailItems.map((item) => (
+              <DetailLine
+                key={item.label}
+                label={item.label}
+                value={item.value}
+              />
+            ))}
+          </div>
+        </ConfirmInfoCard>
 
+        {!isTrialOffer ? (
           <QuotaOfferPanel
             scenario={scenario}
-            subscriptionBenefitValue={subscriptionBenefitValue}
-            subscriptionBenefitCaption={subscriptionBenefitCaption}
+            subscriptionBenefitValue={null}
+            subscriptionBenefitCaption={null}
           />
-        </div>
+        ) : null}
+
+        {isPlanSelectionVisible ? (
+          <ConfirmInfoCard
+            title={t("v4.createTask.planPickerTitle", {
+              defaultValue: "Choose the best way to continue",
+            })}
+          >
+            <div style={planPickerDescriptionStyle}>{planPickerDescription}</div>
+            {shouldShowComparison ? (
+              <div style={planPickerCompareStyle}>
+                {recommendedPlanStartsWithTrial
+                  ? t("v4.createTask.planPickerTrialCompareHint", {
+                      packPrice: packCost?.toFixed(2) ?? "--",
+                    })
+                  : t("v4.createTask.planPickerCompareHint", {
+                      planPrice: planCost?.toFixed(2) ?? "--",
+                      packPrice: packCost?.toFixed(2) ?? "--",
+                    })}
+              </div>
+            ) : null}
+            <div style={planGridStyle}>
+              {shouldShowPlanOption && recommendedPlan ? (
+                (() => {
+                  const selected = selectedRecommendation === "plan";
+                  const includesTrial = recommendedPlanStartsWithTrial;
+                  return (
+                    <button
+                      key={recommendedPlan.title}
+                      type="button"
+                      onClick={() => setSelectedRecommendation("plan")}
+                      style={{
+                        ...planCardStyle,
+                        ...(selected ? planCardSelectedStyle : null),
+                      }}
+                    >
+                      <div style={planCardHeaderStyle}>
+                        <div>
+                          <div style={planCardEyebrowStyle}>
+                            {recommendedPlanEyebrow}
+                          </div>
+                          <div style={planCardTitleStyle}>{recommendedPlan.title}</div>
+                          <div style={planCardPriceStyle}>
+                            ${planCost?.toFixed(2) ?? "0.00"}
+                            <span style={planCardPriceUnitStyle}>
+                              {recommendedPlanPriceLabel}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={planCardBadgeStyle}>{t("Recommended")}</div>
+                      </div>
+                      <div style={planCardCreditsStyle}>
+                        {t("{{credits}} credits/month", {
+                          credits: Number(recommendedPlan.monthlyCredits).toLocaleString("en-US"),
+                        })}
+                      </div>
+                      {includesTrial ? (
+                        <div style={planCardTrialBoxStyle}>
+                          <div style={planCardTrialTitleStyle}>
+                            {t("v4.createTask.planBasicTrialTitle", {
+                              defaultValue: "5-day free trial included",
+                            })}
+                          </div>
+                          <div style={planCardTrialDescStyle}>
+                            {t("v4.createTask.planBasicTrialDesc", {
+                              defaultValue:
+                                "Start now. Then $7.99/month after 5 days unless you cancel before billing.",
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+                      <div style={planCardFitStyle}>{recommendedPlan.fitLabel}</div>
+                      <div style={planCardCaptionStyle}>
+                        {recommendedPlanCaption}
+                      </div>
+                    </button>
+                  );
+                })()
+              ) : null}
+              {shouldShowCreditsOption && recommendedPack ? (
+                <button
+                  key={recommendedPack.key}
+                  type="button"
+                  onClick={() => setSelectedRecommendation("credits")}
+                  style={{
+                    ...planCardStyle,
+                    ...(selectedRecommendation === "credits"
+                      ? planCardSelectedStyle
+                      : null),
+                  }}
+                >
+                  <div style={planCardHeaderStyle}>
+                    <div>
+                      <div style={planCardEyebrowStyle}>
+                        {t("v4.createTask.recommendationCreditsTitle", {
+                          defaultValue: "One-time credits",
+                        })}
+                      </div>
+                      <div style={planCardTitleStyle}>{recommendedPack.name}</div>
+                      <div style={planCardPriceStyle}>
+                        ${recommendedPack.price.currentPrice.toFixed(2)}
+                        <span style={planCardPriceUnitStyle}>
+                          {t("v4.createTask.recommendationCreditsUnit", {
+                            defaultValue: "once",
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                    {!shouldShowPlanOption ? (
+                      <div style={planCardBadgeStyle}>{t("Recommended")}</div>
+                    ) : null}
+                  </div>
+                  <div style={planCardCreditsStyle}>{recommendedCreditsLabel}</div>
+                  <div style={planCardFitStyle}>{recommendedCreditsPriceLabel}</div>
+                  <div style={planCardCaptionStyle}>
+                    {t("v4.createTask.recommendationCreditsCaption", {
+                      defaultValue:
+                        "Better if you only need a one-time top-up for this task.",
+                    })}
+                  </div>
+                </button>
+              ) : null}
+            </div>
+          </ConfirmInfoCard>
+        ) : null}
+      </div>
     </AppSModal>
   );
 }
@@ -519,23 +785,49 @@ function DetailLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-const PLAN_RECOMMENDATIONS = [
-  { title: "Basic", tier: "basic", monthlyCredits: 1500000 },
-  { title: "Pro", tier: "pro", monthlyCredits: 3000000 },
-  { title: "Premium", tier: "premium", monthlyCredits: 8000000 },
-] as const;
+function buildPlanOptions(t: TranslateFn) {
+  return PLAN_OPTIONS.map((plan) => ({
+    ...plan,
+    fitLabel: t(plan.fitLabelKey, {
+      defaultValue: plan.fitLabelDefault,
+    }),
+  }));
+}
 
-function recommendPlanForShortfall(shortfallCredits: number) {
+function recommendCreditPack(params: {
+  shortfallCredits: number;
+  planType: string | null;
+}): OptionType | null {
+  const { shortfallCredits, planType } = params;
+  if (!Number.isFinite(shortfallCredits) || shortfallCredits <= 0) return null;
+
+  const normalizedTier = normalizePaidPlanTier(planType);
+  const pricingPlan =
+    normalizedTier === "basic"
+      ? { type: "Basic" }
+      : normalizedTier === "pro"
+        ? { type: "Pro" }
+        : normalizedTier === "premium"
+          ? { type: "Premium" }
+          : null;
+
+  const options = buildPaymentOptions(pricingPlan);
   return (
-    PLAN_RECOMMENDATIONS.find(
-      (plan) => plan.monthlyCredits >= shortfallCredits,
-    ) ??
-    PLAN_RECOMMENDATIONS[PLAN_RECOMMENDATIONS.length - 1] ??
+    options.find((option) => option.Credits >= shortfallCredits) ??
+    options[options.length - 1] ??
     null
   );
 }
 
-function normalizePaidPlanTier(planType: string | null): "basic" | "pro" | "premium" | null {
+function recommendPlanForShortfall(shortfallCredits: number) {
+  return (
+    PLAN_OPTIONS.find((plan) => plan.monthlyCredits >= shortfallCredits) ??
+    PLAN_OPTIONS[PLAN_OPTIONS.length - 1] ??
+    null
+  );
+}
+
+function normalizePaidPlanTier(planType: string | null): PlanTier | null {
   if (!planType) return null;
 
   const normalized = planType.trim().toLowerCase();
@@ -563,11 +855,11 @@ function recommendPaidUpgradePlan(params: {
   const currentTier = normalizePaidPlanTier(currentPlanType);
   if (!currentTier) return null;
 
-  const currentIndex = PLAN_RECOMMENDATIONS.findIndex((plan) => plan.tier === currentTier);
+  const currentIndex = PLAN_OPTIONS.findIndex((plan) => plan.tier === currentTier);
   if (currentIndex < 0) return null;
 
   return (
-    PLAN_RECOMMENDATIONS.slice(currentIndex + 1).find(
+    PLAN_OPTIONS.slice(currentIndex + 1).find(
       (plan) => plan.monthlyCredits >= estimatedCredits,
     ) ?? null
   );
@@ -625,4 +917,143 @@ const detailValueStyle = {
   color: v4Colors.text,
   fontWeight: 400,
   wordBreak: "break-word",
+} as const;
+
+const planPickerDescriptionStyle = {
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: "18px",
+  marginBottom: 14,
+} as const;
+
+const planPickerCompareStyle = {
+  color: v4Colors.text,
+  fontSize: 12,
+  fontWeight: 600,
+  lineHeight: "18px",
+  marginBottom: 14,
+} as const;
+
+const planGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+} as const;
+
+const planCardStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  width: "100%",
+  padding: "16px 14px",
+  borderRadius: 16,
+  border: `1px solid ${v4Colors.cardBorder}`,
+  background: v4Colors.cardBg,
+  textAlign: "left",
+  cursor: "pointer",
+} as const;
+
+const planCardSelectedStyle = {
+  borderColor: "rgba(33, 128, 255, 0.4)",
+  boxShadow: "0 10px 28px rgba(33, 128, 255, 0.12)",
+  background: "rgba(33, 128, 255, 0.04)",
+} as const;
+
+const planCardHeaderStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+} as const;
+
+const planCardTitleStyle = {
+  color: v4Colors.text,
+  fontSize: 15,
+  fontWeight: 700,
+  lineHeight: "22px",
+} as const;
+
+const planCardEyebrowStyle = {
+  color: v4Colors.textMuted,
+  fontSize: 11,
+  fontWeight: 700,
+  lineHeight: "16px",
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+  marginBottom: 4,
+} as const;
+
+const planCardPriceStyle = {
+  color: v4Colors.text,
+  fontSize: 26,
+  fontWeight: 700,
+  lineHeight: "30px",
+  marginTop: 4,
+} as const;
+
+const planCardPriceUnitStyle = {
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 600,
+  lineHeight: "18px",
+  marginLeft: 4,
+} as const;
+
+const planCardBadgeStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "4px 8px",
+  borderRadius: 999,
+  background: "rgba(33, 128, 255, 0.1)",
+  color: v4Colors.primary,
+  fontSize: 11,
+  fontWeight: 700,
+  lineHeight: "16px",
+  whiteSpace: "nowrap",
+} as const;
+
+const planCardCreditsStyle = {
+  color: v4Colors.text,
+  fontSize: 13,
+  fontWeight: 700,
+  lineHeight: "20px",
+} as const;
+
+const planCardTrialBoxStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  padding: "10px 12px",
+  borderRadius: 12,
+  background: "rgba(33, 128, 255, 0.08)",
+  border: "1px solid rgba(33, 128, 255, 0.16)",
+} as const;
+
+const planCardTrialTitleStyle = {
+  color: v4Colors.primary,
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: "18px",
+} as const;
+
+const planCardTrialDescStyle = {
+  color: v4Colors.text,
+  fontSize: 12,
+  fontWeight: 600,
+  lineHeight: "18px",
+} as const;
+
+const planCardFitStyle = {
+  color: v4Colors.textMuted,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: "18px",
+} as const;
+
+const planCardCaptionStyle = {
+  color: v4Colors.text,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: "18px",
 } as const;
