@@ -97,33 +97,56 @@ function isLibraryDeprecationWarningMessage(message: string | undefined): boolea
   );
 }
 
+const STALE_ASSETS_RELOAD_KEY = "ciwi:stale-assets-reloaded";
+
 function isStaleAssetUrl(url: string | undefined): boolean {
   if (!url) return false;
-  return /\/assets\/(route|manifest|entry\.client|root)-.*\.(js|css)(\?|$)/i.test(
-    url,
-  );
+  return /\/assets\/[^"'?\s]+\.(js|css)(\?|$)/i.test(url);
+}
+
+function staleChunkErrorText(error: unknown): string {
+  const { name, message, stack } = getErrorDetails(error);
+  let extra = "";
+  if (error && typeof error === "object") {
+    const value = error as { data?: unknown; error?: unknown };
+    if (typeof value.data === "string") extra += ` ${value.data}`;
+    else if (value.data != null) {
+      try {
+        extra += ` ${JSON.stringify(value.data)}`;
+      } catch {
+        extra += "";
+      }
+    }
+    const nested = getErrorDetails(value.error);
+    extra += ` ${nested.message ?? ""}`;
+  }
+  return `${name ?? ""} ${message ?? ""} ${stack ?? ""} ${extra}`;
 }
 
 function isStaleChunkError(error: unknown): boolean {
-  const { name, message, stack } = getErrorDetails(error);
-  const text = `${name ?? ""} ${message ?? ""} ${stack ?? ""}`;
+  const text = staleChunkErrorText(error);
   return (
     /ChunkLoadError/i.test(text) ||
     /Loading chunk [\w-]+ failed/i.test(text) ||
     /Failed to fetch dynamically imported module/i.test(text) ||
     /Importing a module script failed/i.test(text) ||
     /Failed to load module script/i.test(text) ||
+    /No route matches URL\s+"\/assets\//i.test(text) ||
     /\/assets\/(route|manifest|entry\.client|root)-.*\.js/i.test(text)
   );
 }
 
+function hasStaleAssetsReloadMarker(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.sessionStorage.getItem(STALE_ASSETS_RELOAD_KEY));
+}
+
 function reloadOnceForStaleAssets(reason: string, url?: string) {
   if (typeof window === "undefined") return false;
-  const key = "ciwi:stale-assets-reloaded";
-  const existing = window.sessionStorage.getItem(key);
-  if (existing) return false;
+  if (window.location.pathname.startsWith("/assets/")) return false;
+  if (hasStaleAssetsReloadMarker()) return false;
   window.sessionStorage.setItem(
-    key,
+    STALE_ASSETS_RELOAD_KEY,
     JSON.stringify({
       reason,
       url,
@@ -167,6 +190,7 @@ function shouldIgnoreConsoleErrorReport(args: unknown[]): boolean {
     .filter(Boolean)
     .join(" ");
   return (
+    (firstArg === "Root Error:" && isStaleChunkError(errorArg ?? args[1])) ||
     /failed to fetch an idtoken|idtoken unavailable/i.test(normalizedArgs) ||
     isLibraryDeprecationWarningMessage(normalizedArgs) ||
     /Unexpected value for attribute "loading" on <button>/i.test(normalizedArgs) ||
@@ -250,11 +274,18 @@ export function ErrorBoundary() {
       : sanitizeEmbeddedAppHref(
           `${window.location.pathname}${window.location.search}${window.location.hash}`,
         );
+  const pendingStaleReload =
+    isStaleChunkError(error) && !hasStaleAssetsReloadMarker();
 
   useLayoutEffect(() => {
-    if (!recoverableHref) return;
-    window.location.replace(recoverableHref);
-  }, [recoverableHref]);
+    if (recoverableHref) {
+      window.location.replace(recoverableHref);
+      return;
+    }
+    if (pendingStaleReload) {
+      reloadOnceForStaleAssets("error_boundary");
+    }
+  }, [recoverableHref, pendingStaleReload]);
 
   const htmlErrorStatusCode = getHtmlErrorStatusCode(error);
   let errorCode = "500";
@@ -319,7 +350,7 @@ export function ErrorBoundary() {
 
   const currentError = errorMessages[errorCode] || errorMessages["500"];
 
-  if (!recoverableHref) {
+  if (!recoverableHref && !pendingStaleReload) {
     console.error("Root Error:", error);
   }
 
@@ -331,6 +362,7 @@ export function ErrorBoundary() {
     ) {
       return;
     }
+    if (pendingStaleReload) return;
     loggedRef.current = true;
     void reportClientError("root_error_boundary", error, {
       shop: globalStore.shop,
@@ -346,7 +378,7 @@ export function ErrorBoundary() {
         isNetworkFetchError: isNetworkFetchError(error),
       },
     });
-  }, [currentError.title, error, errorCode]);
+  }, [currentError.title, error, errorCode, pendingStaleReload]);
 
 
   // 服务器端渲染时直接返回基础结构
