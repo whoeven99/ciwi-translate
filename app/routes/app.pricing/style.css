@@ -203,7 +203,51 @@
 
 .pricing-usage-history .ant-table-thead > tr > th,
 .pricing-usage-history .ant-table-tbody > tr > td {
-  padding: 6px 10px;
+  padding: 10px 12px;
+  vertical-align: top;
+}
+
+.pricing-usage-history__source-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pricing-usage-history__source-title {
+  color: var(--app-color-text);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.pricing-usage-history__source-detail {
+  color: var(--app-color-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.pricing-usage-history__meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--app-color-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.pricing-usage-history__change {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pricing-usage-history__change--decrease {
+  color: #d14343;
+}
+
+.pricing-usage-history__change--increase {
+  color: #0f8a5f;
 }
 
 .pricing-usage-credits--in {

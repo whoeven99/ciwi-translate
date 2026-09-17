@@ -1539,6 +1539,8 @@
   "pricing.usage.col.time": "时间",
   "pricing.usage.col.source": "来源",
   "pricing.usage.col.credits": "积分",
+  "pricing.usage.col.change": "增减",
+  "pricing.usage.type.manual": "手动翻译",
   "pricing.usage.source.single": "单字段",
   "pricing.usage.source.image": "图片",
   "pricing.usage.source.v4_job": "批量任务",

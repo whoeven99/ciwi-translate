@@ -1539,6 +1539,8 @@
   "pricing.usage.col.time": "Time",
   "pricing.usage.col.source": "Source",
   "pricing.usage.col.credits": "Credits",
+  "pricing.usage.col.change": "Change",
+  "pricing.usage.type.manual": "Manual translation",
   "pricing.usage.source.single": "Single field",
   "pricing.usage.source.image": "Image",
   "pricing.usage.source.v4_job": "Batch task",
