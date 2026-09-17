@@ -214,13 +214,27 @@ export async function fetchSwitcherConfig({ shop }) {
     languageSelector: true,
     currencySelector: true,
     ipOpen: false,
+    browserLanguageOpen: true,
+    marketCurrencyOpen: true,
     fontColor: "#303030",
     backgroundColor: "#ffffff",
     buttonColor: "#ffffff",
     buttonBackgroundColor: "#f6f6f7",
     optionBorderColor: "#d4d4d8",
     selectorPosition: "bottom_left",
-    positionData: 10,
+    positionData: "10",
+    isTransparent: false,
+    autoLiquidCollect: true,
+  };
+
+  // 读不到真实配置时的 fail-safe 兜底：一律关闭自动适配（IP/浏览器语言/市场货币），
+  // 绝不替商户和用户自动切换语言/货币/市场，避免覆盖「已关闭」设置与手动选择。
+  // 仅用于请求失败 / 非 success 分支；真正读到的成功配置照常使用。
+  const failSafeData = {
+    ...initData,
+    ipOpen: false,
+    browserLanguageOpen: false,
+    marketCurrencyOpen: false,
   };
 
   try {
@@ -230,7 +244,7 @@ export async function fetchSwitcherConfig({ shop }) {
         success: true,
         errorCode: 10001,
         errorMsg: "APP_PROXY_MISSING",
-        response: initData,
+        response: failSafeData,
       };
     }
     const { data } = await fetchJson(
@@ -263,7 +277,7 @@ export async function fetchSwitcherConfig({ shop }) {
         success: true,
         errorCode: 10001,
         errorMsg: "SERVER_ERROR",
-        response: initData,
+        response: failSafeData,
       };
     }
   } catch (error) {
@@ -272,7 +286,7 @@ export async function fetchSwitcherConfig({ shop }) {
       success: true,
       errorCode: 10001,
       errorMsg: "SERVER_ERROR",
-      response: initData,
+      response: failSafeData,
     };
   }
 }

@@ -19,7 +19,6 @@ import {
 } from "~/server/translateV4/shopLocales.server";
 import { getCoverageSummaryFromCache } from "~/server/translateV4/coverage.server";
 import { estimateCreateTaskCredits } from "~/server/translateV4/creditEstimate.server";
-import { listV4Jobs } from "~/server/translateV4/cosmos.server";
 import type {
   OnboardingLocaleOption,
   OnboardingSummary,
@@ -199,32 +198,12 @@ export async function saveOnboardingRecommendation(
 
 /**
  * `/app` 入口决策：是否重定向到 `/app/onboarding`。
- * 规则（对齐方案 7.1）：
- * - 已 skipped / completed → 不再打断，进默认流程。
- * - 已创建过任何 v4 任务 → 视为老用户，标记 completed 后进默认流程（省下次判断）。
- * - 否则 → 进入引导。
+ * 新手引导已暂时关闭，始终返回 false。
  */
 export async function shouldRedirectToOnboarding(
-  shop: string,
+  _shop: string,
 ): Promise<boolean> {
-  const state = await getOnboardingState(shop);
-  if (state && (state.status === "skipped" || state.status === "completed")) {
-    return false;
-  }
-
-  // 有任何历史任务 → 老用户，不打扰；顺手落一个 completed，避免每次进 /app 都查 Cosmos。
-  try {
-    const jobs = await listV4Jobs(shop, 1);
-    if (jobs.length > 0) {
-      await markOnboardingCompleted(shop);
-      return false;
-    }
-  } catch (err) {
-    // Cosmos 查询失败不应阻塞入口；保守起见仍展示引导（可跳过）。
-    console.error("[onboarding] first-task check failed:", err);
-  }
-
-  return true;
+  return false;
 }
 
 function chooseSuggestedTargets(targets: ShopLocaleRow[]): string[] {

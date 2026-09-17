@@ -1,5 +1,4 @@
 import { Page } from "@shopify/polaris";
-import { TitleBar } from "@shopify/app-bridge-react";
 import {
   Alert,
   Typography,
@@ -7,12 +6,12 @@ import {
   Flex,
   Table,
   Switch,
-  Modal,
   Skeleton,
-  Card,
   Checkbox,
 } from "antd";
 import Button from "~/ui/components/AppButton";
+import { AppSModal } from "~/ui/components/AppSModal";
+import AppMobileListCard from "~/ui/components/AppMobileListCard";
 import {
   useCallback,
   useEffect,
@@ -53,6 +52,7 @@ import { invalidateShopLocalesCache, loadShopLocalesForTranslation } from "~/ser
 import {
   setAutoTranslateCompat,
   listLanguageCoverageCompat,
+  setAutoTranslateSettingsCompat,
 } from "./languageClient";
 import TranslatedIcon from "~/components/translateIcon";
 import { useTranslation } from "react-i18next";
@@ -67,7 +67,11 @@ import styles from "./styles.module.css";
 import languageLocaleData from "~/utils/language-locale-data";
 import { withEmbeddedSearch } from "~/utils/embeddedAction";
 import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import AppSectionCard from "~/ui/components/AppSectionCard";
+import { InFlowSelect } from "~/ui/components/InFlowSelect";
 import { getTranslatePagePath } from "~/lib/translateNavigation";
 import { message } from "~/ui/message";
 import {
@@ -85,18 +89,50 @@ import {
   type ShopLocaleOption,
 } from "~/lib/createTranslateV4Tasks";
 import { normalizeShopQuota } from "~/lib/translationQuota";
-import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
+import {
+  notifyIfCreateTaskBlockedByCredits,
+  shouldBlockCreateTaskByCredits,
+} from "~/lib/createTranslateQuotaGuard";
 import type { ShopQuota } from "~/lib/translationQuota";
-import { DEFAULT_AI_MODEL, DEFAULT_MODULE_KEYS } from "../app.translate-v4/constants";
-import { expandV2ModuleKeys } from "~/server/translateV4/moduleCatalog";
+import {
+  AI_MODEL_OPTIONS,
+  DEFAULT_AI_MODEL,
+  DEFAULT_MODULE_KEYS,
+} from "../app.translate-v4/constants";
+import {
+  clampAutoTranslateIntervalHours,
+  entitlementsForPlanType,
+  filterV2ModulesForPlan,
+  isV2ModuleAllowedForPlan,
+} from "~/lib/planEntitlements";
+import {
+  AUTO_TRANSLATE_V2_MODULE_KEYS,
+  expandV2ModuleKeys,
+} from "~/server/translateV4/moduleCatalog";
+import { getAutoTranslateShopSettings } from "~/server/translateV4/autoTranslateSettings.server";
 import { CreateTaskCard } from "../app.translate-v4/components/CreateTaskCard";
-import { CreateTaskQuotaGateModal } from "../app.translate-v4/components/CreateTaskQuotaGateModal";
+import { CreateTaskConfirmModal } from "../app.translate-v4/components/CreateTaskConfirmModal";
+import {
+  buildUntranslatedRatioByLocale,
+  useCreateTaskEstimate,
+} from "../app.translate-v4/useCreateTaskEstimate";
 import {
   formatV4CreateTasksMessage,
+  getV4ModuleLabel,
   translateV4Message,
 } from "../app.translate-v4/v4I18n";
 import { localeRegionCode } from "../app.translate-v4/localeDisplay";
-import { v4Colors } from "../app.translate-v4/v4Styles";
+import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
+import { buildCreateTaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
+import {
+  clearCreateTaskDraft,
+  loadCreateTaskDraft,
+  saveCreateTaskDraft,
+} from "~/utils/createTaskDraft";
+import {
+  parseBillingReturn,
+  stripBillingReturnParams,
+} from "~/utils/billingReturn";
 
 const { Text } = Typography;
 
@@ -202,6 +238,17 @@ function applyCoverageToLanguageRows(
   });
 }
 
+/** UI 用 UTC 展示；API/Worker 存 Asia/Shanghai（UTC+8）小时。 */
+const AUTO_TRANSLATE_SHANGHAI_UTC_OFFSET = 8;
+
+function shanghaiHourToUtcDisplay(hour: number): number {
+  return (((hour - AUTO_TRANSLATE_SHANGHAI_UTC_OFFSET) % 24) + 24) % 24;
+}
+
+function utcDisplayToShanghaiHour(hour: number): number {
+  return (((hour + AUTO_TRANSLATE_SHANGHAI_UTC_OFFSET) % 24) + 24) % 24;
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const adminAuthResult = await authenticate.admin(request);
   const { shop, accessToken } = adminAuthResult.session;
@@ -234,10 +281,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.error("[language] loader shopLanguages failed:", err);
   }
 
+  let autoSettings = {
+    hour: 0,
+    intervalHours: 24 as number,
+    allowedIntervalHours: [24] as number[],
+    modules: [...AUTO_TRANSLATE_V2_MODULE_KEYS],
+  };
+  try {
+    const settings = await getAutoTranslateShopSettings(shop);
+    autoSettings = {
+      hour: settings.hour,
+      intervalHours: settings.intervalHours,
+      allowedIntervalHours: [...settings.allowedIntervalHours],
+      modules: settings.modules,
+    };
+  } catch (err) {
+    console.error("[language] loader autoSettings failed:", err);
+  }
+
   return json({
     mobile: isMobile as boolean,
     shop,
     shopLanguages,
+    autoSettings,
   });
 };
 
@@ -443,16 +509,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 const Index = () => {
-  const { shop, mobile, shopLanguages: loaderShopLanguages } =
-    useLoaderData<typeof loader>();
+  const {
+    shop,
+    mobile,
+    shopLanguages: loaderShopLanguages,
+    autoSettings: loaderAutoSettings,
+  } = useLoaderData<typeof loader>();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const homeBackAction = useAppHomeBackAction();
   const dispatch = useDispatch();
   const { plan, source, isNew } = useSelector((state: any) => ({
     plan: state.userConfig?.plan,
     source: state.userConfig?.source,
     isNew: state.userConfig?.isNew ?? null,
   }));
+  const planEntitlements = useMemo(
+    () => entitlementsForPlanType(plan?.type),
+    [plan?.type],
+  );
 
   const dataSource: LanguagesDataType[] = useSelector(
     (state: any) => state.languageTableData.rows,
@@ -468,6 +543,10 @@ const Index = () => {
   const pollFailureLoggedRef = useRef(false);
   const skipWebPresencesResyncRef = useRef(true);
   const coverageRequestRef = useRef<Promise<void> | null>(null);
+  const billingDraftRestoredRef = useRef(false);
+  const [coverageLocales, setCoverageLocales] = useState<LanguageCoverageRow[]>(
+    [],
+  );
   const [markets, setMarkets] = useState<MarketType[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]); //表格多选控制key
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false); // 控制Modal显示的状态
@@ -484,6 +563,22 @@ const Index = () => {
     useState<string>("");
   const [showWarnModal, setShowWarnModal] = useState(false);
   const [autoTranslateAlert, setAutoTranslateAlert] = useState<string>("");
+  const [autoHour, setAutoHour] = useState<number>(
+    () => loaderAutoSettings?.hour ?? 0,
+  );
+  const [autoIntervalHours, setAutoIntervalHours] = useState<number>(
+    () => loaderAutoSettings?.intervalHours ?? 24,
+  );
+  const [autoModules, setAutoModules] = useState<string[]>(
+    () => loaderAutoSettings?.modules ?? [...AUTO_TRANSLATE_V2_MODULE_KEYS],
+  );
+  const [autoSettingsModalOpen, setAutoSettingsModalOpen] = useState(false);
+  const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
+  const [draftAutoHour, setDraftAutoHour] = useState(0);
+  const [draftAutoIntervalHours, setDraftAutoIntervalHours] = useState(24);
+  const [draftAutoModules, setDraftAutoModules] = useState<string[]>([]);
+  const [editAutoLocale, setEditAutoLocale] = useState<string | null>(null);
+  const [draftLocaleAuto, setDraftLocaleAuto] = useState(false);
   const [translateModalOpen, setTranslateModalOpen] = useState(false);
   const [translateTargets, setTranslateTargets] = useState<string[]>([]);
   const [translateModuleKeys, setTranslateModuleKeys] =
@@ -492,10 +587,9 @@ const Index = () => {
     useState<string>(DEFAULT_AI_MODEL);
   const [translateIsCover, setTranslateIsCover] = useState(false);
   const [translateIsHandle, setTranslateIsHandle] = useState(false);
+  const [translateIncludeLiquid, setTranslateIncludeLiquid] = useState(false);
   const [translateCreating, setTranslateCreating] = useState(false);
-  const [translateQuotaGateMode, setTranslateQuotaGateMode] = useState<
-    "trial" | "pricing" | null
-  >(null);
+  const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
   const [quota, setQuota] = useState<ShopQuota | null>(null);
   const [strictQuotaGate, setStrictQuotaGate] = useState(false);
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
@@ -523,6 +617,61 @@ const Index = () => {
   const { reportClick, report } = useReport();
   const location = useLocation();
   const planType = plan?.type?.trim() || null;
+  const remainingCredits = normalizedQuota?.remaining ?? null;
+  const normalizedPlanType = planType?.trim().toLowerCase() || "";
+  const hasPaidPlan =
+    normalizedPlanType !== "" && normalizedPlanType !== "free";
+  const createShouldGateByCredits = shouldBlockCreateTaskByCredits({
+    remainingCredits,
+  });
+  const createQuotaGatePending = createShouldGateByCredits && isNew == null;
+  const createQuotaGateMode: "trial" | "pricing" | null =
+    createShouldGateByCredits && isNew != null
+      ? isNew
+        ? "trial"
+        : "pricing"
+      : null;
+  const untranslatedRatioByLocale = useMemo(
+    () => buildUntranslatedRatioByLocale(coverageLocales),
+    [coverageLocales],
+  );
+  const taskEstimate = useCreateTaskEstimate({
+    modules: translateModuleKeys,
+    targets: translateTargets,
+    isCover: translateIsCover,
+    includeLiquid: translateIncludeLiquid,
+    untranslatedRatioByLocale,
+    remainingCredits,
+  });
+  const createConfirmScenario:
+    | "ready"
+    | "insufficient_paid"
+    | "insufficient_trial"
+    | "insufficient_pricing" =
+    createShouldGateByCredits
+      ? hasPaidPlan
+        ? "insufficient_paid"
+        : createQuotaGateMode === "trial"
+          ? "insufficient_trial"
+          : "insufficient_pricing"
+      : "ready";
+
+  const persistCreateTaskDraft = useCallback(() => {
+    saveCreateTaskDraft(shop, {
+      targets: translateTargets,
+      modules: translateModuleKeys,
+      aiModel: translateAiModel,
+      isCover: translateIsCover,
+      isHandle: translateIsHandle,
+    });
+  }, [
+    shop,
+    translateAiModel,
+    translateIsCover,
+    translateIsHandle,
+    translateModuleKeys,
+    translateTargets,
+  ]);
 
   const targetOptions = useMemo<ShopLocaleOption[]>(
     () =>
@@ -570,6 +719,7 @@ const Index = () => {
           const coverageData = await listLanguageCoverageCompat({ targets });
           const coverageRows = (coverageData?.summary?.locales ??
             []) as LanguageCoverageRow[];
+          setCoverageLocales(coverageRows);
           dispatch(
             setLanguageTableData(applyCoverageToLanguageRows(baseRows, coverageRows)),
           );
@@ -590,6 +740,7 @@ const Index = () => {
                   });
                   latestRows = (refreshed?.summary?.locales ??
                     latestRows) as LanguageCoverageRow[];
+                  setCoverageLocales(latestRows);
                   dispatch(
                     setLanguageTableData(
                       applyCoverageToLanguageRows(baseRows, latestRows),
@@ -606,6 +757,7 @@ const Index = () => {
           }
         } catch (error) {
           console.error("[language] load coverage status failed:", error);
+          setCoverageLocales([]);
           dispatch(setLanguageTableData(baseRows));
         } finally {
           setLoading(false);
@@ -829,6 +981,7 @@ const Index = () => {
         const targets = dataSource.map((lang) => lang.locale).filter(Boolean);
         const coverageData = await listLanguageCoverageCompat({ targets });
         const rows = (coverageData?.summary?.locales ?? []) as LanguageCoverageRow[];
+        setCoverageLocales(rows);
         const nextStatusSignature = dataSource
           .map((lang) => {
             const row = rows.find((r) =>
@@ -960,22 +1113,9 @@ const Index = () => {
       width: "10%",
       render: (_: any, record: any) => (
         <Switch
-          checked={
-            record.published &&
-            markets?.some((item) => {
-              // console.log("item: ", item);
-              // console.log("record: ", record);
-
-              return (
-                Object.keys(item.domain).some((key) => {
-                  // 检查 domain[key] 数组中是否包含 record?.locale
-                  return item.domain[key].includes(record?.locale);
-                }) || item.defaultLocale == record?.locale
-              );
-            })
-          }
+          checked={Boolean(record.published)}
           onChange={(checked) => handlePublishChange(record.locale, checked)}
-          loading={record.publishLoading} // 使用每个项的 loading 状态
+          loading={record.publishLoading}
         />
       ),
     },
@@ -983,15 +1123,28 @@ const Index = () => {
       title: t("Auto translation"),
       dataIndex: "autoTranslate",
       key: "autoTranslate",
-      width: "15%",
+      width: "18%",
       render: (_: any, record: any) => (
-        <Switch
-          checked={record.autoTranslate}
-          onChange={(checked) =>
-            handleAutoUpdateTranslationChange(record.locale, checked)
-          }
-          loading={record.autoTranslateLoading} // 使用每个项的 loading 状态
-        />
+        <Flex align="center" gap="small" wrap="wrap">
+          <Text
+            style={{
+              color: record.autoTranslate
+                ? "var(--p-color-text-success)"
+                : "var(--app-color-text-secondary)",
+            }}
+          >
+            {record.autoTranslate
+              ? t("v4.autoSettings.statusOn")
+              : t("v4.autoSettings.statusOff")}
+          </Text>
+          <Button
+            size="small"
+            loading={record.autoTranslateLoading}
+            onClick={() => openAutoSettingsModal(record.locale)}
+          >
+            {t("v4.autoSettings.edit")}
+          </Button>
+        </Flex>
       ),
     },
     {
@@ -1020,8 +1173,16 @@ const Index = () => {
     const nextTargets = selectedLanguageCode.filter((locale) =>
       targetOptions.some((option) => option.value === locale),
     );
-    setTranslateTargets(nextTargets);
-    setTranslateModuleKeys(DEFAULT_MODULE_KEYS);
+    setTranslateTargets(
+      Number.isFinite(planEntitlements.maxTargetsPerTask) &&
+        planEntitlements.maxTargetsPerTask <= 1
+        ? nextTargets.slice(0, 1)
+        : nextTargets,
+    );
+    setTranslateModuleKeys(
+      filterV2ModulesForPlan(DEFAULT_MODULE_KEYS, planEntitlements),
+    );
+    setTranslateIncludeLiquid(false);
     setTranslateAiModel(DEFAULT_AI_MODEL);
     setTranslateIsCover(false);
     setTranslateIsHandle(false);
@@ -1039,36 +1200,64 @@ const Index = () => {
     reportClick("language_list_translate");
   };
 
-  const handleCreateTranslateTasks = useCallback(async () => {
+  const handleCreateRequest = useCallback(() => {
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (shouldBlockCreateTaskByCredits({ remainingCredits })) {
+      setTranslateModalOpen(false);
+      setCreateConfirmOpen(true);
+      return;
+    }
+    setTranslateModalOpen(false);
+    setCreateConfirmOpen(true);
+  }, [createQuotaGatePending, remainingCredits, t]);
+
+  const handleCreateConfirm = useCallback(async () => {
     if (!source?.code) {
       message.warning(t("Primary language not found"));
       return;
     }
+    if (createQuotaGatePending) {
+      message.info(
+        t("Checking your trial eligibility. Please try again in a moment."),
+      );
+      return;
+    }
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
+      return;
+    }
 
-    // 创建前刷新额度，避免语言页仍用过期余额绕过 gate。
     const freshQuota = await refreshQuota();
-    const remainingCredits =
-      freshQuota?.remainingCredits ?? normalizedQuota?.remaining ?? null;
-    if (remainingCredits == null) {
+    const remaining =
+      freshQuota?.remainingCredits ?? remainingCredits;
+    if (remaining == null) {
       message.info(t("v4.create.quotaUnavailable"));
       return;
     }
-    const shouldGateByCredits = shouldBlockCreateTaskByCredits({
-      remainingCredits,
-    });
-
-    if (shouldGateByCredits) {
-      if (isNew === null) {
-        message.info(
-          t("Checking your trial eligibility. Please try again in a moment."),
-        );
-        return;
-      }
-      setTranslateModalOpen(false);
-      setTranslateQuotaGateMode(isNew ? "trial" : "pricing");
+    if (
+      notifyIfCreateTaskBlockedByCredits({
+        remainingCredits: remaining,
+        t,
+        notify: message.warning,
+      })
+    ) {
+      setCreateConfirmOpen(false);
       return;
     }
 
+    setCreateConfirmOpen(false);
+    clearCreateTaskDraft(shop);
     setTranslateCreating(true);
     try {
       const result = await createTranslateV4Tasks({
@@ -1078,6 +1267,7 @@ const Index = () => {
         aiModel: translateAiModel,
         isCover: translateIsCover,
         isHandle: translateIsHandle,
+        includeLiquid: translateIncludeLiquid,
         targetOptions,
         shop,
       });
@@ -1089,7 +1279,6 @@ const Index = () => {
 
       const summary = formatV4CreateTasksMessage(result, t, localeRegionCode);
       if (result.created.length === 0) {
-        // 服务端额度拒绝时走升级/试用引导，与首页一致。
         if (
           result.failed.some(
             (item) =>
@@ -1105,8 +1294,8 @@ const Index = () => {
             );
             return;
           }
-          setTranslateModalOpen(false);
-          setTranslateQuotaGateMode(isNew ? "trial" : "pricing");
+          await refreshQuota();
+          message.warning(t("v4.create.insufficientCredits"));
           return;
         }
         message.error(summary);
@@ -1119,7 +1308,6 @@ const Index = () => {
         message.success(summary);
       }
 
-      setTranslateModalOpen(false);
       navigate(getTranslatePagePath(), {
         state: {
           from: "/app/language",
@@ -1134,19 +1322,75 @@ const Index = () => {
       setTranslateCreating(false);
     }
   }, [
+    createQuotaGatePending,
     isNew,
     navigate,
-    normalizedQuota?.remaining,
+    remainingCredits,
     refreshQuota,
     shop,
     source?.code,
     t,
     targetOptions,
     translateAiModel,
+    translateIncludeLiquid,
     translateIsCover,
     translateIsHandle,
     translateModuleKeys,
     translateTargets,
+  ]);
+
+  useEffect(() => {
+    if (billingDraftRestoredRef.current) return;
+    const billing = parseBillingReturn(location.search);
+    if (!billing) return;
+    if (loading) return;
+    if (targetOptions.length === 0) return;
+    billingDraftRestoredRef.current = true;
+
+    const cleanedPath = stripBillingReturnParams(
+      `${location.pathname}${location.search}${location.hash}`,
+    );
+    navigate(cleanedPath, { replace: true });
+
+    const draft = loadCreateTaskDraft(shop);
+    if (!draft) return;
+
+    const allowedTargets = new Set(targetOptions.map((option) => option.value));
+    const restoredTargets = draft.targets.filter((locale) =>
+      allowedTargets.has(locale),
+    );
+    const allowedModules = new Set<string>(DEFAULT_MODULE_KEYS);
+    const restoredModules = draft.modules.filter((mod) =>
+      allowedModules.has(mod),
+    );
+    const allowedModels = new Set(
+      AI_MODEL_OPTIONS.map((option) => option.value),
+    );
+    const restoredModel = allowedModels.has(draft.aiModel)
+      ? draft.aiModel
+      : DEFAULT_AI_MODEL;
+
+    if (restoredTargets.length > 0) setTranslateTargets(restoredTargets);
+    if (restoredModules.length > 0) setTranslateModuleKeys(restoredModules);
+    setTranslateAiModel(restoredModel);
+    setTranslateIsCover(draft.isCover);
+    setTranslateIsHandle(draft.isHandle);
+    if (restoredTargets.length > 0) {
+      setCreateConfirmOpen(true);
+      void refreshQuota();
+      message.info(t("v4.create.draftRestored"));
+    }
+  }, [
+    loading,
+    location.hash,
+    location.pathname,
+    location.search,
+    navigate,
+    refreshQuota,
+    shop,
+    t,
+    targetOptions,
+    remainingCredits,
   ]);
 
   const navigateToManage = (selectedLanguageCode: string) => {
@@ -1301,6 +1545,164 @@ const Index = () => {
     );
   };
 
+  const autoHourOptions = useMemo(
+    () =>
+      Array.from({ length: 24 }, (_, hour) => ({
+        value: String(hour),
+        label: `${String(hour).padStart(2, "0")}:00`,
+      })),
+    [],
+  );
+
+  const autoIntervalOptions = useMemo(() => {
+    const allowed =
+      planEntitlements.allowedAutoTranslateIntervalHours ?? [24];
+    return allowed.map((hours) => ({
+      value: String(hours),
+      label: t("v4.autoSettings.intervalOption", { hours }),
+    }));
+  }, [planEntitlements.allowedAutoTranslateIntervalHours, t]);
+
+  const autoModuleChips = useMemo(
+    () =>
+      AUTO_TRANSLATE_V2_MODULE_KEYS.map((mod) => ({
+        value: mod,
+        label: isV2ModuleAllowedForPlan(mod, planEntitlements)
+          ? getV4ModuleLabel(mod, t)
+          : `${getV4ModuleLabel(mod, t)} 🔒`,
+        allowed: isV2ModuleAllowedForPlan(mod, planEntitlements),
+      })),
+    [planEntitlements, t],
+  );
+
+  const selectableAutoModuleValues = useMemo(
+    () =>
+      autoModuleChips
+        .filter((mod) => mod.allowed)
+        .map((mod) => String(mod.value)),
+    [autoModuleChips],
+  );
+
+  const editAutoLocaleLabel = useMemo(() => {
+    if (!editAutoLocale) return "";
+    const row = dataSource.find((item: any) => item.locale === editAutoLocale);
+    if (!row) return editAutoLocale;
+    const name = row.name || row.localeName || "";
+    return name ? `${name} (${editAutoLocale})` : editAutoLocale;
+  }, [dataSource, editAutoLocale]);
+
+  const allDraftModulesSelected =
+    selectableAutoModuleValues.length > 0 &&
+    selectableAutoModuleValues.every((value) =>
+      draftAutoModules.includes(value),
+    );
+  const someDraftModulesSelected =
+    draftAutoModules.some((value) =>
+      selectableAutoModuleValues.includes(value),
+    ) && !allDraftModulesSelected;
+
+  const openAutoSettingsModal = (locale: string) => {
+    setDraftAutoHour(shanghaiHourToUtcDisplay(autoHour));
+    setDraftAutoIntervalHours(
+      clampAutoTranslateIntervalHours(autoIntervalHours, planEntitlements),
+    );
+    setDraftAutoModules(
+      filterV2ModulesForPlan(autoModules, planEntitlements),
+    );
+    const row = dataSource.find((item: any) => item.locale === locale);
+    setEditAutoLocale(locale);
+    setDraftLocaleAuto(Boolean(row?.autoTranslate));
+    setAutoSettingsModalOpen(true);
+  };
+
+  const closeAutoSettingsModal = () => {
+    if (autoSettingsSaving) return;
+    setAutoSettingsModalOpen(false);
+    setEditAutoLocale(null);
+  };
+
+  const toggleDraftAutoModule = (value: string) => {
+    if (!isV2ModuleAllowedForPlan(value, planEntitlements)) {
+      message.warning(
+        value === "metadata"
+          ? t("v4.plan.metafieldRequiresPro")
+          : t("v4.plan.moduleNotAllowed"),
+      );
+      return;
+    }
+    setDraftAutoModules((prev) =>
+      prev.includes(value) ? prev.filter((m) => m !== value) : [...prev, value],
+    );
+  };
+
+  const toggleAllDraftAutoModules = () => {
+    setDraftAutoModules(
+      allDraftModulesSelected ? [] : selectableAutoModuleValues.slice(),
+    );
+  };
+
+  const handleSaveAutoSettings = async () => {
+    if (draftAutoModules.length === 0) {
+      message.warning(t("v4.autoSettings.selectModule"));
+      return;
+    }
+    setAutoSettingsSaving(true);
+    try {
+      const data = await setAutoTranslateSettingsCompat({
+        hour: utcDisplayToShanghaiHour(draftAutoHour),
+        intervalHours: draftAutoIntervalHours,
+        modules: draftAutoModules,
+      });
+      if (!data?.success) {
+        message.error(
+          getTranslateV4ErrorMessage(
+            t,
+            data?.errorMsg,
+            TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_AUTO_SETTINGS_INVALID,
+          ),
+        );
+        return;
+      }
+
+      const nextHour =
+        data.response?.hour ?? utcDisplayToShanghaiHour(draftAutoHour);
+      const nextInterval =
+        data.response?.intervalHours ?? draftAutoIntervalHours;
+      const nextModules = Array.isArray(data.response?.modules)
+        ? data.response.modules
+        : draftAutoModules;
+      setAutoHour(nextHour);
+      setAutoIntervalHours(nextInterval);
+      setAutoModules(nextModules);
+
+      if (editAutoLocale) {
+        const row = dataSource.find(
+          (item: any) => item.locale === editAutoLocale,
+        );
+        if (row && Boolean(row.autoTranslate) !== draftLocaleAuto) {
+          await handleAutoUpdateTranslationChange(
+            editAutoLocale,
+            draftLocaleAuto,
+          );
+        }
+      }
+
+      setAutoSettingsModalOpen(false);
+      setEditAutoLocale(null);
+      message.success(t("v4.autoSettings.saved"));
+      reportClick("language_auto_settings_save");
+    } catch {
+      message.error(
+        getTranslateV4ErrorMessage(
+          t,
+          TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_SAVE_FAILED,
+        ),
+      );
+    } finally {
+      setAutoSettingsSaving(false);
+    }
+  };
+
   const handleDelete = () => {
     setDeleteConfirmModalVisible(false);
     if (dontPromptAgain) {
@@ -1346,7 +1748,7 @@ const Index = () => {
 
   return (
     <Page>
-      <TitleBar title={t("Language")} />
+      <AppSubpageTitleBar title={t("Language")} />
       <ScrollNotice
         text={t(
           "Welcome to our app! If you have any questions, feel free to email us at support@ciwi.ai, and we will respond as soon as possible.",
@@ -1355,16 +1757,15 @@ const Index = () => {
       <div className={styles.languagePage}>
         <div className={styles.languagePageInner}>
           <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-            <AppPageHeader title={t("Languages")} extra={<PrimaryLanguage />} />
+            <AppPageHeader
+              title={t("Languages")}
+              description={<PrimaryLanguage />}
+              backAction={homeBackAction}
+            />
             <AppSectionCard bodyPadding="16px" style={{ width: "100%" }}>
               <div className={styles.languageTable_action}>
-                <Flex
-                  className={styles.languageToolbar}
-                  align="center"
-                  justify="space-between" // 使按钮左右分布
-                  style={{ width: "100%", marginBottom: "16px" }}
-                >
-                  <Flex align="center" gap="middle">
+                <div className={styles.languageToolbar}>
+                  <Flex align="center" gap="middle" wrap="wrap">
                     <Button
                       disabled={!hasSelected}
                       loading={deleteloading}
@@ -1385,12 +1786,12 @@ const Index = () => {
                     </Text>
                   </Flex>
                   {loading ? (
-                    <Space>
+                    <Space wrap>
                       <Skeleton.Button active />
                       <Skeleton.Button active />
                     </Space>
                   ) : (
-                    <Space>
+                    <Space wrap>
                       {!isMobile && (
                         <Button type="default" onClick={PreviewClick}>
                           {t("Preview store")}
@@ -1401,7 +1802,7 @@ const Index = () => {
                       </Button>
                     </Space>
                   )}
-                </Flex>
+                </div>
                 {autoTranslateAlert ? (
                   <Alert
                     type="error"
@@ -1412,35 +1813,26 @@ const Index = () => {
                   />
                 ) : null}
                 {isMobile ? (
-                  <Card
-                    className={styles.languageMobileCard}
-                    title={
-                      <Checkbox
-                        checked={allCurrentPageSelected && !loading}
-                        indeterminate={
-                          someCurrentPageSelected && !allCurrentPageSelected
-                        }
-                        onChange={(e: any) =>
-                          setSelectedRowKeys(
-                            e.target.checked
-                              ? dataSource.map((item) => item.key)
-                              : [],
-                          )
-                        }
-                      >
-                        {t("Languages")}
-                      </Checkbox>
-                    }
-                    loading={loading}
-                    style={{ border: "none", boxShadow: "none" }}
-                  >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <Checkbox
+                      checked={allCurrentPageSelected && !loading}
+                      indeterminate={
+                        someCurrentPageSelected && !allCurrentPageSelected
+                      }
+                      onChange={(e: any) =>
+                        setSelectedRowKeys(
+                          e.target.checked
+                            ? dataSource.map((item) => item.key)
+                            : [],
+                        )
+                      }
+                    >
+                      {t("Languages")}
+                    </Checkbox>
                     {dataSource.map((item: any) => (
-                      <Card.Grid key={item.key} style={{ width: "100%" }}>
-                        <Space
-                          direction="vertical"
-                          size="middle"
-                          style={{ width: "100%" }}
-                        >
+                      <AppMobileListCard
+                        key={item.key}
+                        title={
                           <Checkbox
                             checked={selectedRowKeys.includes(item.key)}
                             onChange={(e: any) => {
@@ -1455,54 +1847,81 @@ const Index = () => {
                           >
                             {item.name}
                           </Checkbox>
-                          <div>
-                            <TranslatedIcon
-                              status={item.status}
-                              detail={item.statusDetail}
-                            />
-                          </div>
-                          <Flex justify="space-between">
-                            <Text>{t("Publish")}</Text>
-                            <Switch
-                              checked={item.published}
-                              onChange={(checked) =>
-                                handlePublishChange(item.locale, checked)
-                              }
-                            />
-                          </Flex>
-                          <Flex justify="space-between">
-                            <Text>{t("Auto translation")}</Text>
-                            <Switch
-                              checked={item.autoTranslate}
-                              onChange={(checked) =>
-                                handleAutoUpdateTranslationChange(
-                                  item.locale,
-                                  checked,
-                                )
-                              }
-                            />
-                          </Flex>
-                          <Button
-                            type="primary"
-                            style={{ width: "100%" }}
-                            onClick={() => openTranslateModal([item.locale])}
-                          >
-                            {t("Translate")}
-                          </Button>
-                          <Button
-                            style={{ width: "100%" }}
-                            onClick={() => {
-                              navigate(
-                                `/app/manage_translation?language=${item?.locale}`,
-                              );
-                            }}
-                          >
-                            {t("Manage")}
-                          </Button>
-                        </Space>
-                      </Card.Grid>
+                        }
+                        rows={[
+                          {
+                            key: "status",
+                            label: t("Status"),
+                            value: (
+                              <TranslatedIcon
+                                status={item.status}
+                                detail={item.statusDetail}
+                              />
+                            ),
+                          },
+                          {
+                            key: "publish",
+                            label: t("Publish"),
+                            value: (
+                              <Switch
+                                checked={Boolean(item.published)}
+                                onChange={(checked) =>
+                                  handlePublishChange(item.locale, checked)
+                                }
+                                loading={item.publishLoading}
+                              />
+                            ),
+                          },
+                          {
+                            key: "auto",
+                            label: t("Auto translation"),
+                            value: (
+                              <Flex align="center" gap="small" wrap="wrap">
+                                <Text
+                                  style={{
+                                    color: item.autoTranslate
+                                      ? "var(--p-color-text-success)"
+                                      : "var(--app-color-text-secondary)",
+                                  }}
+                                >
+                                  {item.autoTranslate
+                                    ? t("v4.autoSettings.statusOn")
+                                    : t("v4.autoSettings.statusOff")}
+                                </Text>
+                                <Button
+                                  size="small"
+                                  onClick={() =>
+                                    openAutoSettingsModal(item.locale)
+                                  }
+                                >
+                                  {t("v4.autoSettings.edit")}
+                                </Button>
+                              </Flex>
+                            ),
+                          },
+                        ]}
+                        actions={
+                          <>
+                            <Button
+                              type="primary"
+                              onClick={() => openTranslateModal([item.locale])}
+                            >
+                              {t("Translate")}
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                navigate(
+                                  `/app/manage_translation?language=${item?.locale}`,
+                                );
+                              }}
+                            >
+                              {t("Manage")}
+                            </Button>
+                          </>
+                        }
+                      />
                     ))}
-                  </Card>
+                  </div>
                 ) : (
                   <Table
                     className={styles.languageTable}
@@ -1524,45 +1943,113 @@ const Index = () => {
         setIsModalOpen={setIsLanguageModalOpen}
         languageLocaleData={languageLocaleData}
       />
-      <Modal
-        open={translateModalOpen}
-        onCancel={() => setTranslateModalOpen(false)}
-        footer={null}
-        centered
-        destroyOnHidden
-        width={760}
-        closeIcon={
-          <span
-            aria-hidden
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 24,
-              height: 24,
-              fontSize: 18,
-              color: v4Colors.textMuted,
-              lineHeight: 1,
-            }}
-          >
-            ×
-          </span>
-        }
-        styles={{
-          content: {
-            padding: 0,
-            overflow: "hidden",
-            borderRadius: 20,
-            border: `1px solid ${v4Colors.cardBorder}`,
-            background: v4Colors.cardBg,
-            boxShadow: "var(--app-shadow-card-strong)",
-          },
-          body: {
-            padding: 0,
-            maxHeight: "min(720px, calc(100vh - 96px))",
-            overflowY: "auto",
+      <AppSModal
+        open={autoSettingsModalOpen}
+        heading={t("v4.autoSettings.title")}
+        onClose={closeAutoSettingsModal}
+        size="base"
+        primaryAction={{
+          content: t("v4.autoSettings.save"),
+          loading: autoSettingsSaving,
+          disabled: draftAutoModules.length === 0 || autoSettingsSaving,
+          onAction: () => {
+            void handleSaveAutoSettings();
           },
         }}
+        secondaryActions={[
+          {
+            content: t("Cancel"),
+            disabled: autoSettingsSaving,
+            onAction: closeAutoSettingsModal,
+          },
+        ]}
+      >
+        <div className={styles.autoSettingsModalBody}>
+          <p className={styles.autoSettingsModalHint}>
+            {t("v4.autoSettings.help")}
+          </p>
+
+          <div className={styles.autoSettingsModalRow}>
+            <div className={styles.autoSettingsModalRowLabel}>
+              <div className={styles.autoSettingsModalLabel}>
+                {t("v4.autoSettings.localeToggle")}
+              </div>
+              <div className={styles.autoSettingsModalMeta}>
+                {editAutoLocaleLabel}
+              </div>
+            </div>
+            <Switch
+              checked={draftLocaleAuto}
+              onChange={setDraftLocaleAuto}
+            />
+          </div>
+
+          <div className={styles.autoSettingsModalSchedule}>
+            <div className={styles.autoSettingsModalField}>
+              <InFlowSelect
+                label={t("v4.autoSettings.interval")}
+                options={autoIntervalOptions}
+                value={String(draftAutoIntervalHours)}
+                onChange={(value) => setDraftAutoIntervalHours(Number(value))}
+                active={autoSettingsModalOpen}
+              />
+            </div>
+            <div className={styles.autoSettingsModalField}>
+              <InFlowSelect
+                label={`${t("v4.autoSettings.hour")} · ${t("v4.autoSettings.timezone")}`}
+                options={autoHourOptions}
+                value={String(draftAutoHour)}
+                onChange={(value) => setDraftAutoHour(Number(value))}
+                active={autoSettingsModalOpen}
+              />
+            </div>
+          </div>
+          <p className={styles.autoSettingsModalHint}>
+            {t("v4.autoSettings.hourHelp", {
+              timezone: t("v4.autoSettings.timezone"),
+            })}
+          </p>
+
+          <div className={styles.autoSettingsModalModules}>
+            <div className={styles.autoSettingsModalModulesHead}>
+              <span className={styles.autoSettingsModalLabel}>
+                {t("v4.autoSettings.modules")}
+              </span>
+              <Checkbox
+                checked={allDraftModulesSelected}
+                indeterminate={someDraftModulesSelected}
+                onChange={() => toggleAllDraftAutoModules()}
+              >
+                {t("Check all")}
+              </Checkbox>
+            </div>
+            <div className={styles.autoModuleGrid}>
+              {autoModuleChips.map((mod) => {
+                const selected = draftAutoModules.includes(mod.value);
+                return (
+                  <button
+                    key={mod.value}
+                    type="button"
+                    className={
+                      selected
+                        ? styles.autoModuleChipSelected
+                        : styles.autoModuleChip
+                    }
+                    onClick={() => toggleDraftAutoModule(mod.value)}
+                  >
+                    {mod.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </AppSModal>
+      <AppSModal
+        open={translateModalOpen}
+        heading={t("Translate")}
+        onClose={() => setTranslateModalOpen(false)}
+        size="large"
       >
         <CreateTaskCard
           targetOptions={targetOptions}
@@ -1573,17 +2060,21 @@ const Index = () => {
           creating={translateCreating}
           createDisabled={normalizedQuota == null}
           disabledMessage={createDisabledMessage}
-          onCreate={handleCreateTranslateTasks}
+          onCreate={handleCreateRequest}
           aiModel={translateAiModel}
           onAiModelChange={setTranslateAiModel}
           isCover={translateIsCover}
           onIsCoverChange={setTranslateIsCover}
           isHandle={translateIsHandle}
           onIsHandleChange={setTranslateIsHandle}
+          includeLiquid={translateIncludeLiquid}
+          onIncludeLiquidChange={setTranslateIncludeLiquid}
+          planEntitlements={planEntitlements}
+          estimate={taskEstimate}
           advancedDefaultOpen
           submitPlacement="footer-center"
         />
-      </Modal>
+      </AppSModal>
       <DeleteConfirmModal
         isVisible={deleteConfirmModalVisible}
         setVisible={setDeleteConfirmModalVisible}
@@ -1596,24 +2087,22 @@ const Index = () => {
           "Are you sure to delete this language? After deletion, the translation data will be deleted together",
         )}
       />
-      <Modal
-        title={t("The 20 language limit has been reached")}
+      <AppSModal
         open={showWarnModal}
-        onCancel={() => setShowWarnModal(false)}
-        centered
-        width={700}
-        footer={
-          <Space>
-            <Button onClick={() => setShowWarnModal(false)}>{t("OK")}</Button>
-          </Space>
-        }
+        heading={t("The 20 language limit has been reached")}
+        onClose={() => setShowWarnModal(false)}
+        size="base"
+        primaryAction={{
+          content: t("OK"),
+          onAction: () => setShowWarnModal(false),
+        }}
       >
         <Text>
           {t(
             "Based on Shopify's language limit, you can only add up to 20 languages.Please delete some languages and then continue.",
           )}
         </Text>
-      </Modal>
+      </AppSModal>
       <PublishModal
         markets={markets}
         setMarkets={setMarkets}
@@ -1621,10 +2110,40 @@ const Index = () => {
         setIsModalOpen={setIsPublishModalOpen}
         publishLangaugeCode={publishModalLanguageCode}
       />
-      <CreateTaskQuotaGateModal
-        open={translateQuotaGateMode !== null}
-        mode={translateQuotaGateMode ?? "pricing"}
-        onClose={() => setTranslateQuotaGateMode(null)}
+      <CreateTaskConfirmModal
+        open={createConfirmOpen}
+        creating={translateCreating}
+        planType={planType}
+        targetOptions={targetOptions}
+        targets={translateTargets}
+        modules={translateModuleKeys}
+        aiModel={translateAiModel}
+        isCover={translateIsCover}
+        isHandle={translateIsHandle}
+        includeLiquid={translateIncludeLiquid}
+        sourceLocale={source?.code}
+        estimate={taskEstimate}
+        scenario={createConfirmScenario}
+        quotaOfferMode={hasPaidPlan ? "paid" : isNew === true ? "trial" : "pricing"}
+        onClose={() => {
+          if (!translateCreating) {
+            setCreateConfirmOpen(false);
+          }
+        }}
+        onConfirmCreate={handleCreateConfirm}
+        onBeforeBilling={persistCreateTaskDraft}
+        onBuyCredits={(detailedCredits) => {
+          setCreateConfirmOpen(false);
+          openCreditsPurchaseModal(
+            buildCreateTaskCreditsPurchaseContext({
+              estimatedCredits:
+                detailedCredits ?? taskEstimate?.estimatedCredits ?? null,
+              currentRemainingCredits: remainingCredits,
+              targetsCount: translateTargets.length,
+              modulesCount: translateModuleKeys.length,
+            }),
+          );
+        }}
       />
     </Page>
   );

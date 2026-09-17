@@ -7,6 +7,7 @@ import { getLatestShopScanJob } from "~/server/shopScan/cosmos.server";
 import { getShopCreditQuota } from "~/server/billing/quota/quotaRouter.server";
 import { expandV2ModuleKeys } from "./moduleCatalog";
 import { sumPendingLiquidChars } from "./liquidRule.server";
+import { resolvePersistedJobCredits } from "./persistedJobCredits";
 
 /** 历史上限系数：credits ≈ ceil(sourceChars × k)。 */
 const ESTIMATE_CREDITS_PER_CHAR = Number(
@@ -173,25 +174,47 @@ export async function estimateCreateTaskCredits(args: {
 /**
  * 创建任务时写入 Cosmos 的单语言额度上限（字符×k，无覆盖率缩放）。
  * 与确认弹窗公式同源字符口径，但不乘未译比例、不乘多语言。
+ * includeLiquid 时按该 job 的 target 加上 PENDING Liquid 字符。
  */
 export async function estimatePersistedJobCredits(args: {
   shop: string;
   v4Modules: string[];
+  includeLiquid?: boolean;
+  target?: string;
 }): Promise<number | null> {
   const v4Modules = [
     ...new Set(args.v4Modules.map((m) => m.trim().toUpperCase()).filter(Boolean)),
   ];
-  if (v4Modules.length === 0) return null;
+  const includeLiquid = Boolean(args.includeLiquid);
+  if (v4Modules.length === 0 && !includeLiquid) return null;
 
-  const scan = await getLatestShopScanJob(args.shop).catch(() => null);
-  const moduleStats = scan?.summary?.moduleStats;
-  const { chars: scannedChars, hitCount } = sumCharsForModules(
-    moduleStats,
-    v4Modules,
-  );
-  const chars =
-    hitCount > 0
-      ? scannedChars
-      : fallbackChars(moduleStats, [], v4Modules);
-  return estimateCreditsFromChars(chars);
+  let shopifyChars = 0;
+  if (v4Modules.length > 0) {
+    const scan = await getLatestShopScanJob(args.shop).catch(() => null);
+    const moduleStats = scan?.summary?.moduleStats;
+    const { chars: scannedChars, hitCount } = sumCharsForModules(
+      moduleStats,
+      v4Modules,
+    );
+    shopifyChars =
+      hitCount > 0
+        ? scannedChars
+        : fallbackChars(moduleStats, [], v4Modules);
+  }
+
+  let liquidChars = 0;
+  const target = args.target?.trim() ?? "";
+  if (includeLiquid && target) {
+    liquidChars = await sumPendingLiquidChars(args.shop, [target]).catch(
+      () => 0,
+    );
+  }
+
+  return resolvePersistedJobCredits({
+    hasShopifyModules: v4Modules.length > 0,
+    includeLiquid,
+    shopifyChars,
+    liquidChars,
+    creditsFromChars: estimateCreditsFromChars,
+  });
 }

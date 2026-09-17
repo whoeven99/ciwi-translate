@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { BlockStack, Button, Checkbox, Select } from "@shopify/polaris";
+import { BlockStack, Button, Checkbox } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
+import { message } from "~/ui/message";
 import { v4Colors, v4CardStyle } from "../v4Styles";
 import {
   AI_MODEL_OPTIONS,
@@ -12,6 +13,12 @@ import { localeRegionCode, localeShortName } from "../localeDisplay";
 import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
 import { getV4AiModelLabel, getV4ModuleLabel } from "../v4I18n";
 import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
+import { AiModelInFlowSelect } from "./AiModelInFlowSelect";
+import {
+  entitlementsForPlanType,
+  isV2ModuleAllowedForPlan,
+  type PlanEntitlements,
+} from "~/lib/planEntitlements";
 
 export type { CreateTaskEstimateView };
 
@@ -31,6 +38,8 @@ type Props = {
   onIsHandleChange: (v: boolean) => void;
   includeLiquid: boolean;
   onIncludeLiquidChange: (v: boolean) => void;
+  /** 套餐能力；缺省按 Free 收紧（避免漏传放开）。 */
+  planEntitlements?: PlanEntitlements | null;
   advancedDefaultOpen?: boolean;
   submitPlacement?: "header" | "footer-center";
   createDisabled?: boolean;
@@ -56,6 +65,7 @@ export function CreateTaskCard({
   onIsHandleChange,
   includeLiquid,
   onIncludeLiquidChange,
+  planEntitlements = null,
   advancedDefaultOpen = true,
   submitPlacement = "header",
   createDisabled = false,
@@ -63,9 +73,15 @@ export function CreateTaskCard({
   estimate = null,
 }: Props) {
   const { t } = useTranslation();
+  const entitlements = planEntitlements ?? entitlementsForPlanType("Free");
+  const singleTargetOnly =
+    Number.isFinite(entitlements.maxTargetsPerTask) &&
+    entitlements.maxTargetsPerTask <= 1;
+  const missingTargetSelection = targets.length === 0;
+  const missingContentSelection = modules.length === 0 && !includeLiquid;
+  const selectionInvalid = missingTargetSelection || missingContentSelection;
   const canCreate =
-    targets.length > 0 &&
-    (modules.length > 0 || includeLiquid) &&
+    !selectionInvalid &&
     !creating &&
     !createDisabled;
   const [advancedOpen, setAdvancedOpen] = useState(advancedDefaultOpen);
@@ -91,7 +107,6 @@ export function CreateTaskCard({
       })),
     [t],
   );
-
   // 翻译内容改为内联多选 chip：顺序固定（避免点选时跳动），选中态与上方语言同色。
   const moduleChips = CREATE_TASK_MODULE_OPTIONS.map((mod) => ({
     value: mod,
@@ -107,6 +122,10 @@ export function CreateTaskCard({
   const someModulesSelected = modules.length > 0 && !allModulesSelected;
 
   const toggleTarget = (value: string) => {
+    if (singleTargetOnly) {
+      onTargetsChange(targets.includes(value) ? [] : [value]);
+      return;
+    }
     onTargetsChange(
       targets.includes(value)
         ? targets.filter((item) => item !== value)
@@ -115,6 +134,14 @@ export function CreateTaskCard({
   };
 
   const toggleModule = (value: string) => {
+    if (!isV2ModuleAllowedForPlan(value, entitlements)) {
+      message.warning(
+        value === "metadata"
+          ? t("v4.plan.metafieldRequiresPro")
+          : t("v4.plan.moduleNotAllowed"),
+      );
+      return;
+    }
     onModulesChange(
       modules.includes(value)
         ? modules.filter((m) => m !== value)
@@ -123,16 +150,51 @@ export function CreateTaskCard({
   };
 
   const toggleAllTargets = () => {
+    if (singleTargetOnly) return;
     onTargetsChange(allTargetsSelected ? [] : allTargetValues);
   };
 
+  const selectableModuleValues: string[] = allModuleValues.filter((value) =>
+    isV2ModuleAllowedForPlan(value, entitlements),
+  );
+  const allSelectableModulesSelected =
+    selectableModuleValues.length > 0 &&
+    selectableModuleValues.every((value) => modules.includes(value));
+  const someSelectableModulesSelected =
+    modules.some((value) => selectableModuleValues.includes(value)) &&
+    !allSelectableModulesSelected;
+
   const toggleAllModules = () => {
-    onModulesChange(allModulesSelected ? [] : allModuleValues);
+    onModulesChange(
+      allSelectableModulesSelected ? [] : selectableModuleValues,
+    );
+  };
+
+  const onLiquidToggle = (checked: boolean) => {
+    if (checked && !entitlements.allowLiquid) {
+      message.warning(t("v4.plan.liquidRequiresPro"));
+      return;
+    }
+    onIncludeLiquidChange(checked);
+  };
+
+  const handleInvalidCreateAttempt = () => {
+    const errors: string[] = [];
+    if (missingTargetSelection) {
+      errors.push(t("v4.validation.selectTarget"));
+    }
+    if (missingContentSelection) {
+      errors.push(t("v4.validation.selectModule"));
+    }
+    if (errors.length > 0) {
+      message.warning(errors.join(" "));
+    }
   };
 
   const submitButton = (
     <div
       style={{
+        position: "relative",
         maxWidth: "100%",
         minWidth: submitPlacement === "footer-center" ? 220 : undefined,
       }}
@@ -147,12 +209,20 @@ export function CreateTaskCard({
       >
         {creating ? t("v4.createTask.creating") : t("v4.createTask.confirmAction")}
       </Button>
+      {selectionInvalid && !creating && !createDisabled ? (
+        <button
+          type="button"
+          aria-label={t("v4.createTask.confirmAction")}
+          onClick={handleInvalidCreateAttempt}
+          style={disabledActionOverlayStyle}
+        />
+      ) : null}
     </div>
   );
 
   return (
     <div
-      className="v4-create-task-card v4-lift"
+      className="v4-create-task-card"
       style={{
         ...v4CardStyle,
         borderRadius: 18,
@@ -219,14 +289,28 @@ export function CreateTaskCard({
         <SectionHeader
           title={t("v4.createTask.targetLanguages")}
           action={
-            <CheckboxInlineAction
-              label={t("Check all")}
-              selected={allTargetsSelected}
-              indeterminate={someTargetsSelected}
-              onToggle={toggleAllTargets}
-            />
+            singleTargetOnly ? undefined : (
+              <CheckboxInlineAction
+                label={t("Check all")}
+                selected={allTargetsSelected}
+                indeterminate={someTargetsSelected}
+                onToggle={toggleAllTargets}
+              />
+            )
           }
         />
+        {singleTargetOnly ? (
+          <div
+            style={{
+              marginBottom: 8,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: v4Colors.textMuted,
+            }}
+          >
+            {t("v4.plan.freeSingleTargetHint")}
+          </div>
+        ) : null}
         <div style={checkboxGridStyle}>
           {localeChips.map((locale) => {
             const selected = targets.includes(locale.value);
@@ -249,8 +333,8 @@ export function CreateTaskCard({
           action={
             <CheckboxInlineAction
               label={t("Check all")}
-              selected={allModulesSelected}
-              indeterminate={someModulesSelected}
+              selected={allSelectableModulesSelected}
+              indeterminate={someSelectableModulesSelected}
               onToggle={toggleAllModules}
             />
           }
@@ -258,11 +342,12 @@ export function CreateTaskCard({
         <div style={checkboxGridStyle}>
           {moduleChips.map((mod) => {
             const selected = modules.includes(mod.value);
+            const allowed = isV2ModuleAllowedForPlan(mod.value, entitlements);
             return (
               <CheckboxOptionCard
                 key={mod.value}
-                label={mod.label}
-                selected={selected}
+                label={allowed ? mod.label : `${mod.label} 🔒`}
+                selected={selected && allowed}
                 onToggle={() => toggleModule(mod.value)}
               />
             );
@@ -313,21 +398,20 @@ export function CreateTaskCard({
         </button>
 
         <div
-          className="v4-collapse"
+          className={`v4-collapse${advancedOpen ? " v4-collapse--open" : ""}`}
           style={{
-            maxHeight: advancedOpen ? 420 : 0,
+            maxHeight: advancedOpen ? "none" : 0,
             opacity: advancedOpen ? 1 : 0,
           }}
         >
           <div style={{ marginTop: 12 }}>
-            <SectionLabel>{t("v4.createTask.aiModel")}</SectionLabel>
             <div style={{ marginBottom: 16 }}>
-              <Select
+              <AiModelInFlowSelect
                 label={t("v4.createTask.aiModel")}
-                labelHidden
-                options={aiModelOptions}
                 value={aiModel}
+                options={aiModelOptions}
                 onChange={onAiModelChange}
+                active={advancedOpen}
               />
             </div>
             <SectionLabel>{t("v4.createTask.translationOptions")}</SectionLabel>
@@ -343,10 +427,18 @@ export function CreateTaskCard({
                 onChange={onIsHandleChange}
               />
               <Checkbox
-                label={t("v4.createTask.includeLiquid")}
-                helpText={t("v4.createTask.includeLiquidHelp")}
-                checked={includeLiquid}
-                onChange={onIncludeLiquidChange}
+                label={
+                  entitlements.allowLiquid
+                    ? t("v4.createTask.includeLiquid")
+                    : `${t("v4.createTask.includeLiquid")} 🔒`
+                }
+                helpText={
+                  entitlements.allowLiquid
+                    ? t("v4.createTask.includeLiquidHelp")
+                    : t("v4.plan.liquidRequiresPro")
+                }
+                checked={includeLiquid && entitlements.allowLiquid}
+                onChange={onLiquidToggle}
               />
             </BlockStack>
           </div>
@@ -519,6 +611,18 @@ const checkboxGridStyle: CSSProperties = {
   gap: 10,
 };
 
+const disabledActionOverlayStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  width: "100%",
+  height: "100%",
+  border: "none",
+  padding: 0,
+  margin: 0,
+  background: "transparent",
+  cursor: "not-allowed",
+};
+
 function checkboxCardStyle(selected: boolean): CSSProperties {
   return {
     display: "flex",
@@ -529,7 +633,7 @@ function checkboxCardStyle(selected: boolean): CSSProperties {
     borderRadius: 12,
     border: "none",
     background: selected ? "rgba(46, 125, 246, 0.10)" : v4Colors.cardSubdued,
-    color: selected ? v4Colors.primary : v4Colors.text,
+    color: selected ? v4Colors.info : v4Colors.text,
     fontSize: 13,
     fontWeight: selected ? 600 : 500,
     lineHeight: 1.35,

@@ -120,6 +120,7 @@ export function getV4ModuleLabel(moduleKey: string, t: TFunction): string {
     delivery: t("Delivery"),
     shipping: t("Shipping"),
     handle: "Handle(URL)",
+    CUSTOM_LIQUID: t("v4.module.CUSTOM_LIQUID"),
   };
   return labels[moduleKey] ?? moduleKey;
 }

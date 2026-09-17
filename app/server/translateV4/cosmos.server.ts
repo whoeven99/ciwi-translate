@@ -177,6 +177,7 @@ export type V4JobSummaryDoc = Pick<
   | "source"
   | "target"
   | "modules"
+  | "includeLiquid"
   | "aiModel"
   | "taskSource"
   | "metrics"
@@ -194,6 +195,7 @@ const V4_JOB_SUMMARY_SELECT = [
   "c.source",
   "c.target",
   "c.modules",
+  "c.includeLiquid",
   "c.aiModel",
   "c.taskSource",
   "c.metrics",

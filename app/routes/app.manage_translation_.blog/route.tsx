@@ -11,7 +11,8 @@ import {
 import Button from "~/ui/components/AppButton";
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react"; // 引入 useNavigate, useLocation, useSearchParams
-import { Page, Pagination, Select } from "@shopify/polaris";
+import { Page, Pagination } from "@shopify/polaris";
+import { InFlowSelect as Select } from "~/ui/components/InFlowSelect";
 import { ActionFunctionArgs } from "@remix-run/node";
 import { queryNextTransType, queryPreviousTransType } from "~/api/admin";
 import { SingleTextTranslate } from "~/api/translateV4Client";
@@ -24,6 +25,8 @@ import { useSingleTranslateQuotaGate } from "~/hooks/useSingleTranslateQuotaGate
 import { authenticate } from "~/shopify.server";
 import { useTranslation } from "react-i18next";
 import { SaveBar } from "@shopify/app-bridge-react";
+import { useContextualSaveBar } from "~/hooks/useContextualSaveBar";
+import { runAfterSaveBarLeave } from "~/lib/saveBarNavigation";
 import { useSelector } from "react-redux";
 import { globalStore } from "~/globalStore";
 import { useConsumableFetcherData } from "~/hooks/useConsumableFetcherData";
@@ -397,13 +400,7 @@ const Index = () => {
     setSuccessTranslatedKey([]);
   }, [confirmFetcher.data, consumeConfirmResponse, fetcher, t]);
 
-  useEffect(() => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.show("save-bar");
-    } else {
-      shopify.saveBar.hide("save-bar");
-    }
-  }, [confirmData]);
+  useContextualSaveBar("save-bar", confirmData.length > 0);
 
   const renderTranslateAction = (record: any) => {
     if (!record) return null;
@@ -413,18 +410,6 @@ const Index = () => {
         triggerProps={{
           type: "default",
           size: "small",
-          style: {
-            height: 22,
-            paddingInline: 6,
-            fontWeight: 500,
-            fontSize: 12,
-            lineHeight: 1,
-            color: "var(--app-accent-primary)",
-            borderColor: "var(--app-accent-primary)",
-            borderRadius: 6,
-            backgroundColor: "var(--p-color-bg-surface)",
-            whiteSpace: "nowrap",
-          },
         }}
         loading={loadingItems.includes(record?.key || "")}
         existingTranslation={
@@ -575,10 +560,7 @@ const Index = () => {
   };
 
   const handleLanguageChange = (language: string) => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       setIsLoading(true);
       dataFetcher.submit(
         {
@@ -595,26 +577,20 @@ const Index = () => {
       isManualChangeRef.current = true;
       setSelectedLanguage(language);
       navigate(`/app/manage_translation/blog?language=${language}`);
-    }
+    });
   };
 
   const handleItemChange = (item: string) => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       setIsLoading(true);
       isManualChangeRef.current = true;
       setSelectedItem(item);
       navigate(`/app/manage_translation/${item}?language=${searchTerm}`);
-    }
+    });
   };
 
   const onPrevious = () => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       dataFetcher.submit(
         {
           startCursor: JSON.stringify({
@@ -627,7 +603,7 @@ const Index = () => {
           action: `/app/manage_translation/blog?language=${searchTerm}`,
         },
       ); // 提交表单请求
-    }
+    });
   };
 
   const refreshCurrentPageData = () => {
@@ -649,10 +625,7 @@ const Index = () => {
     );
   };
   const onNext = () => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       dataFetcher.submit(
         {
           endCursor: JSON.stringify({
@@ -665,16 +638,13 @@ const Index = () => {
           action: `/app/manage_translation/blog?language=${searchTerm}`,
         },
       ); // 提交表单请求
-    }
+    });
   };
 
   const handleMenuChange = (key: string) => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       setSelectBlogKey(key);
-    }
+    });
   };
 
   const handleConfirm = () => {
@@ -696,7 +666,6 @@ const Index = () => {
   };
 
   const handleDiscard = () => {
-    shopify.saveBar.hide("save-bar");
     const selectedData = blogsData.find(
       (item: any) => item?.resourceId == selectBlogKey,
     );
@@ -751,12 +720,9 @@ const Index = () => {
   };
 
   const onCancel = () => {
-    if (confirmData.length > 0) {
-      shopify.saveBar.leaveConfirmation();
-    } else {
-      shopify.saveBar.hide("save-bar");
+    runAfterSaveBarLeave(() => {
       navigate(`/app/manage_translation?language=${searchTerm}`); // 跳转�?/app/manage_translation
-    }
+    });
   };
 
   return (
@@ -775,7 +741,7 @@ const Index = () => {
         >
           {t("Save")}
         </button>
-        <button onClick={handleDiscard}>{t("Cancel")}</button>
+        <button onClick={handleDiscard}>{t("Discard")}</button>
       </SaveBar>
       <Layout
         style={{

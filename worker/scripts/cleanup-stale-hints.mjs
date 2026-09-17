@@ -2,20 +2,27 @@
  * Remove stale entries from translation v4 Redis hint queues.
  * Keeps only hints whose Cosmos job is still in the expected queued status.
  *
- * Credentials: ../.env.prod (REDIS_URL, COSMOS_*)
+ * Credentials: 默认测环境 .env + .env.test + .env.worker.test；生产 --env=.env.prod
  *
  * Usage:
- *   node scripts/cleanup-stale-hints.mjs              # dry-run (default)
- *   node scripts/cleanup-stale-hints.mjs --apply      # rewrite queues
- *   node scripts/cleanup-stale-hints.mjs --stage init # init queue only
+ *   node worker/scripts/cleanup-stale-hints.mjs              # dry-run (default)
+ *   node worker/scripts/cleanup-stale-hints.mjs --apply      # rewrite queues
+ *   node worker/scripts/cleanup-stale-hints.mjs --stage init # init queue only
+ *   node worker/scripts/cleanup-stale-hints.mjs --env=.env.prod --apply --confirm-prod
  */
 import IORedis from "ioredis";
 import { CosmosClient } from "@azure/cosmos";
-import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  assertProdWriteAllowed,
+  loadStackedEnv,
+  resolveCosmos,
+  resolveRedisUrl,
+} from "../../scripts/lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, "../..");
 
 const STAGE_CONFIG = {
   init: {
@@ -48,26 +55,20 @@ const STAGE_CONFIG = {
   },
 };
 
-function loadEnvProd() {
-  const envPath = resolve(__dirname, "../../.env.prod");
-  const env = {};
-  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i <= 0) continue;
-    env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
-  }
-  return env;
-}
-
 function parseArgs(argv) {
   const apply = argv.includes("--apply");
+  let stage = "all";
+  for (const a of argv) {
+    if (a.startsWith("--stage=")) stage = a.slice("--stage=".length).trim();
+  }
   const stageIdx = argv.indexOf("--stage");
-  const stage =
-    stageIdx >= 0 && argv[stageIdx + 1] ? argv[stageIdx + 1].trim() : "all";
+  if (stageIdx >= 0 && argv[stageIdx + 1] && !argv[stageIdx + 1].startsWith("--")) {
+    stage = argv[stageIdx + 1].trim();
+  }
   if (stage !== "all" && !STAGE_CONFIG[stage]) {
-    console.error(`Unknown --stage ${stage}. Use: init|translate|writeback|verify|all`);
+    console.error(
+      `Unknown --stage ${stage}. Use: init|translate|writeback|verify|all`,
+    );
     process.exit(1);
   }
   return { apply, stage };
@@ -183,27 +184,33 @@ async function cleanupStage(redis, container, stageName, config, apply) {
 }
 
 const { apply, stage } = parseArgs(process.argv.slice(2));
-const env = loadEnvProd();
+const { env, overlay } = loadStackedEnv({ root });
+if (apply) {
+  assertProdWriteAllowed(process.argv.slice(2), overlay);
+}
+const { url: redisUrl } = resolveRedisUrl(env);
+const cosmosCfg = resolveCosmos(env);
 
-const redisUrl = env.REDIS_URL?.trim();
-const cosmosEndpoint = env.COSMOS_ENDPOINT?.trim();
-const cosmosKey = env.COSMOS_KEY?.trim();
-const dbId = env.COSMOS_TRANSLATION_DATABASE_ID?.trim() || "translation";
-const containerId =
-  env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER?.trim() || "translation_v4_jobs";
-
-if (!redisUrl || !cosmosEndpoint || !cosmosKey) {
-  console.error("Missing REDIS_URL / COSMOS_ENDPOINT / COSMOS_KEY in .env.prod");
+if (!redisUrl || !cosmosCfg.endpoint || !cosmosCfg.key) {
+  console.error("Missing RENDER_KV / COSMOS 凭据（默认测环境）");
   process.exit(1);
 }
 
 console.log(`mode=${apply ? "APPLY" : "DRY-RUN"} stage=${stage}`);
 
-const redis = new IORedis(redisUrl, { maxRetriesPerRequest: 2, connectTimeout: 20000 });
+const redis = new IORedis(redisUrl, {
+  maxRetriesPerRequest: 2,
+  connectTimeout: 20000,
+});
 await redis.ping();
 
-const cosmos = new CosmosClient({ endpoint: cosmosEndpoint, key: cosmosKey });
-const container = cosmos.database(dbId).container(containerId);
+const cosmos = new CosmosClient({
+  endpoint: cosmosCfg.endpoint,
+  key: cosmosCfg.key,
+});
+const container = cosmos
+  .database(cosmosCfg.databaseId)
+  .container(cosmosCfg.containerId);
 
 const stages =
   stage === "all" ? Object.entries(STAGE_CONFIG) : [[stage, STAGE_CONFIG[stage]]];

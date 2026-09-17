@@ -4,6 +4,10 @@ import {
   sanitizeBillingReturnPath,
 } from "~/utils/billingReturn";
 
+/** Public App Store listing slug (differs from Partners handle). */
+export const SHOPIFY_APP_STORE_LISTING_URL =
+  "https://apps.shopify.com/translator-by-ciwi";
+
 /** Partners app handle by API key (see shopify.app.*.toml). */
 const APP_HANDLE_BY_API_KEY: Record<string, string> = {
   dec512b68e658e4f21588e3d4de0e748: "ciwi-test",

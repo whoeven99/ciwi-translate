@@ -2,6 +2,7 @@
 /**
  * 包含价格转换、解析和格式化的工具函数
  */
+import { getStorageItem, setStorageItem, removeStorageItem } from "./ciwi-storage.js";
 
 export function convertToNumberFromMoneyFormat(moneyFormat, formattedPrice) {
   let number = formattedPrice;
@@ -370,12 +371,67 @@ export function transformPrices({ rate, moneyFormat, selectedCurrency, nodes }) 
 /**
  * 跳转页面
  */
+function normalizeLocaleCode(locale) {
+  return String(locale || "")
+    .trim()
+    .replace(/_/g, "-")
+    .toLowerCase();
+}
+
+function stripLeadingLocalePrefix(pathname, locales = []) {
+  const path = String(pathname || "").trim() || "/";
+  if (path === "/") return "/";
+
+  const normalizedLocales = Array.from(
+    new Set(
+      locales
+        .map((locale) => normalizeLocaleCode(locale))
+        .filter(Boolean),
+    ),
+  ).sort((left, right) => right.length - left.length);
+
+  for (const locale of normalizedLocales) {
+    const prefix = `/${locale}`;
+    if (path === prefix) return "/";
+    if (path.startsWith(`${prefix}/`)) {
+      return path.slice(prefix.length) || "/";
+    }
+  }
+
+  return path;
+}
+
+export function buildLocalizationReturnTo({
+  currentLanguage,
+  language,
+  markManual = false,
+} = {}) {
+  if (typeof window === "undefined") return "/";
+
+  const currentUrl = new URL(window.location.href);
+  const localeCandidates = [
+    currentLanguage,
+    window.Shopify?.locale,
+    document.documentElement.lang,
+  ];
+
+  currentUrl.pathname = stripLeadingLocalePrefix(
+    currentUrl.pathname,
+    localeCandidates,
+  );
+
+  if (markManual) {
+    currentUrl.searchParams.set("ciwi_manual_localization", "1");
+  } else {
+    currentUrl.searchParams.delete("ciwi_manual_localization");
+  }
+
+  return `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+}
+
 export function updateLocalization({ country, language }) {
   const formId = crypto.randomUUID();
-  const returnTo =
-    typeof window !== "undefined"
-      ? `${window.location.pathname}${window.location.search}${window.location.hash}`
-      : "/";
+  const returnTo = buildLocalizationReturnTo({ language });
   const formHtml = `
     <form id="${formId}" action="/localization" method="POST" hidden>
       <input name="_method" value="PUT">
@@ -391,27 +447,31 @@ export function updateLocalization({ country, language }) {
 const CIWI_MANUAL_LOCALIZATION_KEY = "ciwi_manual_localization_preference";
 const CIWI_MANUAL_LOCALIZATION_TTL_MS = 24 * 60 * 60 * 1000;
 
-export function persistManualLocalizationPreference({ country, language }) {
-  if (typeof localStorage === "undefined") return;
+export function persistManualLocalizationPreference({ country, language, shop }) {
   if (!country && !language) return;
 
   try {
-    localStorage.setItem(
+    setStorageItem(
       CIWI_MANUAL_LOCALIZATION_KEY,
       JSON.stringify({
         country: country || "",
         language: language || "",
         updatedAt: Date.now(),
       }),
+      {
+        scope: shop,
+        legacyKeys: [CIWI_MANUAL_LOCALIZATION_KEY],
+      },
     );
   } catch {}
 }
 
-export function getManualLocalizationPreference() {
-  if (typeof localStorage === "undefined") return null;
-
+export function getManualLocalizationPreference(shop) {
   try {
-    const raw = localStorage.getItem(CIWI_MANUAL_LOCALIZATION_KEY);
+    const raw = getStorageItem(CIWI_MANUAL_LOCALIZATION_KEY, {
+      scope: shop,
+      legacyKeys: [CIWI_MANUAL_LOCALIZATION_KEY],
+    });
     if (!raw) return null;
 
     const parsed = JSON.parse(raw);
@@ -420,7 +480,10 @@ export function getManualLocalizationPreference() {
       typeof parsed.updatedAt === "number" ? parsed.updatedAt : 0;
 
     if (!updatedAt || Date.now() - updatedAt > CIWI_MANUAL_LOCALIZATION_TTL_MS) {
-      localStorage.removeItem(CIWI_MANUAL_LOCALIZATION_KEY);
+      removeStorageItem(CIWI_MANUAL_LOCALIZATION_KEY, {
+        scope: shop,
+        legacyKeys: [CIWI_MANUAL_LOCALIZATION_KEY],
+      });
       return null;
     }
 

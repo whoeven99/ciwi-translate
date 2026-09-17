@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
 import {
   Form,
   useActionData,
@@ -22,17 +22,36 @@ import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { login } from "../../shopify.server";
 
 import { loginErrorMessage } from "./error.server";
+import { isProductionNodeEnv } from "~/config/nodeEnv.server";
 import { globalStore } from "~/globalStore";
+import { SHOPIFY_APP_STORE_LISTING_URL } from "~/lib/shopifyAppHandle.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
+function shopFromSearch(request: Request): string {
+  return new URL(request.url).searchParams.get("shop")?.trim() ?? "";
+}
+
+async function shopFromForm(request: Request): Promise<string> {
+  const formData = await request.clone().formData();
+  return String(formData.get("shop") ?? "").trim();
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  if (isProductionNodeEnv() && !shopFromSearch(request)) {
+    throw redirect(SHOPIFY_APP_STORE_LISTING_URL);
+  }
+
   const errors = loginErrorMessage(await login(request));
 
   return json({ errors, polarisTranslations });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  if (isProductionNodeEnv() && !(await shopFromForm(request))) {
+    throw redirect(SHOPIFY_APP_STORE_LISTING_URL);
+  }
+
   const errors = loginErrorMessage(await login(request));
 
   return json({

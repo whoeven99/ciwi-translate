@@ -1,20 +1,28 @@
-import { config } from "dotenv";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { CosmosClient } from "@azure/cosmos";
+import { loadStackedEnv, resolveCosmos } from "./lib/loadEnv.mjs";
 
-config();
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const { env } = loadStackedEnv({ root });
+const cosmos = resolveCosmos(env);
+
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error(
+    "缺少 Cosmos 凭据。默认叠 .env + .env.test + .env.worker.test；可用 --env=.env.prod",
+  );
+  process.exit(1);
+}
 
 const client = new CosmosClient({
-  endpoint: process.env.COSMOS_ENDPOINT_V4,
-  key: process.env.COSMOS_KEY_V4,
+  endpoint: cosmos.endpoint,
+  key: cosmos.key,
 });
-const db = process.env.COSMOS_TRANSLATION_DATABASE_ID_V4 || "translation";
 const container = client
-  .database(db)
-  .container(
-    process.env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER_V4 || "translation_v4_jobs",
-  );
+  .database(cosmos.databaseId)
+  .container(cosmos.containerId);
 
-const prefixes = process.argv.slice(2);
+const prefixes = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 if (prefixes.length) {
   for (const prefix of prefixes) {
     const { resources } = await container.items

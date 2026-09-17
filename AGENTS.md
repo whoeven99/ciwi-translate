@@ -69,7 +69,7 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `app/root.tsx`                                               | Global Remix root, Redux provider, GTM/web-vitals, global client error reporting.         |
 | `app/entry.client.tsx` / `app/entry.server.tsx`              | Remix hydrate/SSR. Server inlines i18n boot (`app/lib/i18nBoot.ts`) so client hydrate does not await `/locales/*.json`. |
 | `app/shopify.server.ts`                                      | Shopify app config, auth exports, API version, session storage.                           |
-| `app/db.server.ts`                                           | Turso/Prisma client creation and runtime env loading.                                     |
+| `app/db.server.ts`                                           | Turso/Prisma client；凭据 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（见 `tursoTarget.server.ts`）。 |
 | `app/routes/app.tsx`                                         | Embedded app shell, auth, nav, bootstrap, install-time init, shop scan trigger.           |
 | `app/routes/*`                                               | Remix flat routes for pages and API endpoints.                                            |
 | `app/server/*`                                               | Server-side business logic. Prefer adding feature helpers here and keeping routes thin.   |
@@ -85,10 +85,10 @@ temporary debug note is needed, delete or merge it after the issue is resolved.
 | `worker/src/*`                                               | Background workers and services for translation, shop scan, email, Cosmos/Blob/Redis/LLM. |
 | `extensions/ciwi-switcher/*`                                 | Storefront language/currency switcher theme extension.                                    |
 | `extensions/web-pixel/*`                                     | Shopify web pixel extension.                                                              |
-| `scripts/*`                                                  | Migration, audit, diagnostic, cleanup, and one-off operational scripts.                   |
+| `scripts/*`                                                  | 运维 / 诊断 / 迁移 / 审计脚本；共用 `scripts/lib/loadEnv.mjs`；`eventReport.ts` 为 App 运行时埋点。 |
 | `public/locales/*/translation.json`                          | App i18n strings (15 locales，清单在 `app/lib/appI18nLanguages.ts`)。手写 `en` + `zh-CN`，其余可用 `npm run translate` 机翻补齐。 |
 | `.github/workflows/tsf-deploy.yml`                           | Manual Shopify extension/config and Render app/worker deployment workflow.                |
-| `Dockerfile`                                                 | Render container build for the Remix app; the worker is built from `worker/`.             |
+| `Dockerfile`                                                 | Render container build for the Remix app (`node:22-slim`); the worker is built from `worker/`. |
 
 
 
@@ -109,7 +109,8 @@ make a focused build/type check more useful for small changes.
 - `npm run core:build`: build shared `packages/translation-core` into `.build`.
 - `npm run turso:migrate:test` / `npm run turso:migrate:prod`: run Turso migrations.
 - `npm run deployTest` / `npm run deployProd`: Shopify app deploy with matching config.
-- `npm run push:pr`: commit (skips secrets) → push → create/reuse PR (`PR_URL:`).
+- `npm run push:pr`: AI 写中文标题/摘要后 commit → push → create/update PR（`PR_URL:`）。
+- `npm run rebase:pr`: 相对 master 压成一条中文 commit，改 PR 标题正文，`--force-with-lease` 推送。
 - `npm run merge:deploy:test`: squash-merge current PR to master, then trigger
 test web + worker deploy (`MERGED_PR_URL:`, `DEPLOY_RUN_URL:`).
 
@@ -134,24 +135,51 @@ enough for repeated work, and not like a marketing landing page.
 - Polaris is the visual and semantic baseline. Ant Design is allowed for complex
 tables, charts, dense filters, modal interiors, and high-density business
 controls.
-- **Dropdowns in the embedded app:** prefer Polaris `Select` for single-select
-and chip / `ChoiceList` / `Combobox` for multi-select. Avoid Ant Design
-`Select` on translate-v4 / create-task surfaces unless there is a strong
-reason; do not add page-local CSS that overrides `.ant-select-selection-item`
-globally inside a card (it breaks Ant single-select layout). ESLint
+- Primary action buttons must use native Polaris `--p-color-bg-fill-brand` /
+`--p-color-bg-fill-brand-hover` / `--p-color-bg-fill-brand-active` (Admin
+brand fill, currently dark). Do not override those tokens to Ciwi purple or
+v4 indigo. `--app-accent-primary` remains for links, chips, Switch, and
+progress rings. `AppButton type="primary"` and Polaris `variant="primary"`
+both consume the native tokens via `app/styles.css`.
+- **Text contrast (WCAG 2.1 AA / BFS 4.1.1):** body and chip/pill/badge copy
+must be ≥4.5:1 against its background. Tinted chips use Polaris
+`--p-color-text-{info,success,caution,critical}` on `--p-color-bg-surface-*`
+(`AppPill` / `AppStatusBadge` / `--app-color-text-*`). Do not put `--app-accent-*`
+fill hexes on `--app-accent-*-soft` as 12px text — those pairs fail AA.
+- **Dropdowns in the embedded app:** merchant-facing **single-select** uses
+`InFlowSelect` (`app/ui/components/InFlowSelect.tsx`) — in-component list, no
+portal, no native `<select>`. Polaris `Select` / `Popover` and Ant `Select`
+are clipped or intercepted inside `AppSModal` and `overflow: hidden` cards.
+Multi-select stays chip / `ChoiceList` / `Combobox` + `allowMultiple`. ESLint
 `no-restricted-imports` blocks `Select` from `antd` under
-`app/routes/app.translate-v4/**`（`.eslintrc.cjs` override；`app.translate-v4-history`
-目前不在该 glob 内，新增下拉仍请用 Polaris）。Remaining Ant Selects
-(allow for now, 已核对):
-`app/components/singleTranslateAction.tsx`（AI 模型）、manage-translation 头部
-（`app.manage_translation/route.tsx`）、custom liquid `updateCustomTransModal`、
-glossary `updateGlossaryModal`、currency `currencyEditModal` — prefer Polaris
-when those screens are next touched。`app/components/paymentModal.tsx` 已是
-Polaris `Select` 的参考实现。Cursor rule: `.cursor/rules/polaris-dropdowns.mdc`.
+`app/routes/app.translate-v4/**`. Do not add page-local CSS that overrides
+`.ant-select-selection-item`. Callers: CreateTaskCard / singleTranslate
+(`AiModelInFlowSelect` re-export), Switcher type+position, glossary Apply for,
+currency edit, payment credit pack, manage homepage locale, manage resource
+language/module filters, product-image language pair. Cursor rule:
+`.cursor/rules/polaris-dropdowns.mdc`.
 - Ant Design theme values should be derived from Polaris-like tokens through
 `app/ui/theme.ts`; avoid creating a second visual system.
 - Prefer existing shared wrappers in `app/ui/components/*`, including
-`AppPageHeader`, `AppSectionCard`, `AppStatusBadge`, and `AppButton`.
+  `AppPageHeader`, `AppSubpageTitleBar`, `AppSectionCard`, `AppStatusBadge`,
+  `AppButton`, `AppSModal`, and `InFlowSelect`.
+- **BFS 4.1.6 modals:** merchant-facing overlays with a primary/secondary CTA
+  must use App Home `<s-modal>` via `AppSModal` (`heading` + `primary-action` /
+  `secondary-actions` slots). Do not put those CTAs in the modal body. Polaris
+  web components load from `polaris-1.js` in `app/root.tsx`. In-body actions
+  (e.g. Precise estimate) stay in children. Remaining Ant dialogs are mainly
+  manage-translation resource pages (P2).
+- Sub-pages (NavMenu children, history, custom create-task, shop-profile) must offer a
+  back control to the parent: `AppSubpageTitleBar` (App Bridge breadcrumb) plus
+  `AppPageHeader` `backAction` (Polaris arrow beside the in-page title; visual match
+  of `Page` Header BreadcrumbWrapper — transparent arrow, not a filled secondary
+  Button). Parent of sidebar pages is the app home (`getTranslatePagePath()` /
+  `/app/translate-v4-mvp`). Nested manage resource pages already use Polaris `Page`
+  `backAction`. App home (`translate-v4-mvp`) must not show a back button.
+- BFS 4.1.4 parent highlight is App Bridge URL-prefix matching. Nested pages must
+  sit under their visible NavMenu href (`/app/manage_translation/product` keeps
+  Manage Translation active). Do not point `rel="home"` at `/app`. Path table:
+  `app/lib/appNav.ts`.
 - Avoid new hard-coded colors, ad hoc font sizes, one-off radius values, and
 large inline style blocks in route files.
 - Page patterns:
@@ -179,37 +207,59 @@ sweeps moved plan names, modal copy, and worker notice text into locale keys.
 ### App Shell, Auth, Webhooks
 
 - `app/routes/app.tsx`: app shell loader/action, navigation, app bootstrap.
+  NavMenu `rel="home"` 指向 `getTranslatePagePath()`（`/app/translate-v4-mvp`），不要用 `/app`（BFS 4.1.4：`/app` 是所有嵌入路由的前缀，会抢走子页高亮）。可见导航 href / 子路径前缀见 `app/lib/appNav.ts`。
 - `app/routes/auth.$.tsx`, `app/routes/auth.login/route.tsx`: Shopify auth.
+  Production `/auth/login` without `shop` 302s to the App Store listing (no extra
+  login screen). Local `shopify app dev` still shows the shop-domain form.
 - `app/routes/webhooks.tsx`: Shopify webhook topic handling. Billing and uninstall
 logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
 `cleanupBillingOnUninstall` (local `cancelSubscription`; SHOP_REDACT only
 best-effort Shopify cancel when token present) before Account soft-delete and
 Session delete.
 `APP_UNINSTALLED` snapshots subscription/quota/size via
-`uninstallSnapshot.server.ts` before cleanup, then sends that text to Feishu.
+`uninstallSnapshot.server.ts` before cleanup, then fire-and-forgets
+`uninstallEmail.server.ts`: uninstall Feishu (same billing snapshot text;
+title is `emoji 店铺卸载 · 分群：shop`; if winback is skipped, last line is
+`挽回邮件：未发（原因）`) plus optional winback SES + Feishu metadata (no email
+body; payload `email` / `customer_email`; 互斥：已付费未完成 `212617` → 剩余积分
+`212612` → 从未 COMPLETED `212616`; 额度用清理前快照; Redis
+`tsf:uninstall-email:{shop}` NX 7d 只挡 SES；duplicate 仍发卸载飞书且标题
+仍带分群，末行 `挽回邮件：未发（7 天内已发过）`)。`SHOP_REDACT` does not send winback.
+Lifetime-first install (`bound: true` Account create in `app.tsx` loader) and
+lifetime-first `BillingLog.SUBSCRIPTION_ACTIVATED` (count === 1) also send to
+the same support webhook via `lifecycleFeishuNotify.server.ts`; reinstall /
+plan change / resubscribe do not. Worker `billingSubscriptionReconcile`
+notifies only when it inserts the shop's first ACTIVATED row (webhook miss).
 Billing webhooks ACK first and process in the background
 (`APP_PURCHASES_ONE_TIME_UPDATE` / `APP_SUBSCRIPTIONS_UPDATE` are fire-and-forget
 with `.catch`; ledger writes are idempotent and failures are recovered by worker
 `billingSubscriptionReconcile.ts`). Every `APP_UNINSTALLED` step is best-effort
 try/catch and never blocks the `200`.
 - `app/routes/currencyInit.tsx`: currency initialization route.
-- `app/routes/web-vitals-metrics.tsx`: web vitals receiver.
+- `app/routes/web-vitals-metrics.tsx`: 兼容保留的 web vitals receiver；已无调用方
+（要过 `authenticate.admin`，且 `fetcher.submit` 上报会触发全量 loader revalidate）。
 - `app/routes/log.tsx`: structured client log receiver plus legacy form payload
-compatibility; client helpers live in `app/utils/clientLog.ts`.
+compatibility; client helpers live in `app/utils/clientLog.ts`。对
+`event=lcp_diagnostics` 额外输出可 grep 的 `[perf][lcp] {json}` 单行（LCP 归因，
+见 Operations Debugging → LCP）。
 - `app/routes/publishAction.tsx`: publish/unpublish Shopify locales.
 - `app/routes/_index/route.tsx` and `app/routes/app._index/route.tsx`: root entry
-and embedded `/app` redirect/landing behavior.
-- `app/routes/invite/route.tsx`: standalone invite page.
+and embedded `/app` redirect/landing behavior. `/` with `shop` goes to `/app`;
+without `shop` 302s to the App Store listing (no extra login form).
+- `app/routes/invite/route.tsx`: 302 to the same App Store listing (no email signup).
 
 
 
 ### Main Pages
 
-- `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（只展示进行中 /
+- `/app`: `app/routes/app._index/route.tsx` 重定向到 `/app/translate-v4-mvp`（`getTranslatePagePath()` 同指向 MVP）。
+- `/app/translate-v4-mvp`: `app/routes/app.translate-v4-mvp/route.tsx`（推荐任务 + 覆盖率摘要 + 任务队列；复用 v4 确认弹窗 / TaskQueue / 预估）。首页首屏：Setup Guide（BFS 4.2.2；批量翻译 / 术语表 / 第三方 Liquid；三项默认展开；首次建 Account 或卸载重装打标后展示；点 X 或三项勾完写 `setupGuideDismissedAt` 永久关闭）+ Ciwi Switcher 主题嵌入状态（BFS 4.2.3，`shopify.app.extensions()`）+ 覆盖率。无目标语言（`targetOptions` 空）时覆盖率卡展示添加语言空态，Start translation / Setup Guide 批量翻译跳 `/app/language`。
+- `/app/translate-v4-mvp-custom`: `app/routes/app.translate-v4-mvp-custom/route.tsx`（自定义语言/模块建任务）。
+- `/app/translate-v4`: `app/routes/app.translate-v4/route.tsx`（全量工作台保留；只展示进行中 /
 暂停 / 失败任务，见 `jobFilters.ts` `isCurrentV4Job`）。
 - `/app/translate-v4-history`: `app/routes/app.translate-v4-history/route.tsx`
-（终态任务历史；无导航入口，由 `TaskQueueSection.tsx` 的「历史」按钮跳入；复用
-`CompactJobCard` + `isHistoryV4Job` + `/api/translate-v4/task-action`）。
+（终态任务历史；无导航入口，由 `TaskQueueSection.tsx` 的「历史」按钮跳入；支持
+`?returnTo=` 回跳；复用 `CompactJobCard` + `isHistoryV4Job` + `/api/translate-v4/task-action`）。
 - `/app/language`: `app/routes/app.language/route.tsx`.
 - `/app/manage_translation`: `app/routes/app.manage_translation/route.tsx`.
 - `/app/manage_translation/<module>`: `app/routes/app.manage_translation_.*/route.tsx`.
@@ -219,7 +269,7 @@ and embedded `/app` redirect/landing behavior.
 - `/app/pricing`: `app/routes/app.pricing/route.tsx`.
 - `/app/shop-profile`: `app/routes/app.shop-profile/route.tsx`; nav is hidden in production.
 - `/app/onboarding`: `app/routes/app.onboarding/route.tsx`; 首次翻译新手引导（无导航入口，
-由 `/app` 条件重定向进入）。
+仍可显式访问 `/app/onboarding`）。
 - Treat an `app/routes/app.*` directory without a route file as inactive until a
 real `route.tsx` or route module is added.
 
@@ -231,6 +281,10 @@ real `route.tsx` or route module is added.
 `app/server/appBootstrap.server.ts`（plan / credits / locales 一次性引导数据，
 `app/routes/app.tsx` 与 Redux `userConfig` 共用）。
 - `/api/billing/active-subscription`: `app/routes/api.billing.active-subscription.ts`.
+- `/api/billing/credit-usage`: `app/routes/api.billing.credit-usage.ts`
+  （定价页「使用记录」弹窗：本店 `CreditUsage` 列表，`listCreditUsage.server.ts`）。
+- `/api/billing/migrate-credits-to-spark`: `app/routes/api.billing.migrate-credits-to-spark.ts`
+ （定价页迁剩余积分到 Spark：先加 Spark `purchasedTokens`，再加翻译 `usedCredits`；成败写 `BillingLog` 并异步飞书）。
 - `/api/shop-profile`: `app/routes/api.shop-profile.ts`.
 - `/api/support`: `app/routes/api.support.tsx`.
 - `/api/storefront/*`: `app/routes/api.storefront.$.ts`, the Shopify App Proxy API.
@@ -255,7 +309,7 @@ real `route.tsx` or route module is added.
 （单字段积分预估，展示用；`singleTranslateEstimate.server.ts`）。
 - `/api/translate-v4/image`: `app/routes/api.translate-v4.image.ts`.
 - `/api/translate-v4/currency`: `app/routes/api.translate-v4.currency.ts`.
-- `/api/translate-v4/glossary`, `liquid`, `pagefly`, `switcher`,
+- `/api/translate-v4/glossary`, `liquid`（列表 `POST intent=list`，body 认 `languageCode`/`language`；可选 `q`/`page`/`pageSize`；缺语言返回空列表）, `pagefly`, `switcher`,
 `target-locale`: feature-specific translate-v4 APIs.
 
 
@@ -269,7 +323,7 @@ real `route.tsx` or route module is added.
 Core files:
 
 - UI page: `app/routes/app.translate-v4/route.tsx`.
-- UI components: `app/routes/app.translate-v4/components/*`.
+- UI components: `app/routes/app.translate-v4/components/*`（确认弹窗积分/优惠共用 `CreditsConfirmPanel.tsx`，`CreateTaskConfirmModal` 与 `singleTranslateAction` 共用）。`CreateTaskCard` / `singleTranslateAction` 的 AI 模型共用 `AiModelInFlowSelect`（`InFlowSelect`），不要改回 Polaris `Select` / `Popover`（`AppSModal` 会裁切原生下拉、挡住 portal）。商户向单选一律 `InFlowSelect`。
 - UI constants/status/i18n: `constants.ts`, `v4I18n.ts`, `jobStageUtils.ts`,
 `v4JobNotice.ts`, `localeDisplay.ts`, `v4Styles.ts`（共享色板/卡片样式，
 `paymentModal` 等也在用）, `jobFilters.ts`（current / history 任务切分）,
@@ -283,12 +337,15 @@ default `k=1.6` / `TRANSLATE_ESTIMATE_CREDITS_PER_CHAR`),
 `app/routes/app.translate-v4/useCreateTaskEstimate.ts` (wired in
 `CreateTaskCard` / `route.tsx`). Uses shop scan `moduleStats.chars` +
 coverage untranslated ratio; `includeLiquid` 时再加上 `sumPendingLiquidChars`
-（`liquidRule.server.ts`，PENDING 自定义 Liquid 字符数）。不是 worker 实扣公式。
+（`liquidRule.server.ts`，PENDING 自定义 Liquid 字符数）。写入 Cosmos 的
+`estimatedCredits`（`estimatePersistedJobCredits`）同样按该 job 的 `target`
+加 Liquid 字符，供积分不足邮件 `required_credits`；不是 worker 实扣公式。
 精准预估（可选、可等待）：`CreateTaskConfirmModal` →
 `useDetailedCreateTaskEstimate` → `/api/translate-v4/estimate-detailed`，
 按语言×v4 module 分片拉字段、拆叶子、`tmMGetByValue` 去命中后按 miss 字符×k。
 - Pause/resume/cancel/delete: `app/routes/api.translate-v4.task-action.ts`.
-- Progress summaries: `app/server/translateV4/progress.server.ts`.
+- Progress summaries: `app/server/translateV4/progress.server.ts`
+（`listV4JobSummaryDocs` 带 `includeLiquid`；摘要 `modules` 经 `jobModulesWithLiquid` 拼虚拟 `CUSTOM_LIQUID`，不写回 Cosmos）。
 - Init activity UI (module `x/N` bar + i18n activity log): Redis fields
 `initModulesTotal` / `initModulesDone` / `initActiveModules` /
 `initCompletedModules` / `initPhase` written by `initWorker.ts`; rendered in
@@ -347,7 +404,7 @@ Common edits:
 `npm run check:auto-translate-modules --prefix worker`; filter validation is a
 separate concern.
 - Change create-task UX or request body: start in `app/lib/createTranslateV4Tasks.ts`,
-then `api.translate-v4.tasks.ts`.
+then `api.translate-v4.tasks.ts`. Remaining ≤ 0：客户端 `notifyIfCreateTaskBlockedByCredits` toast，不打开 `CreateTaskConfirmModal`；服务端 `evaluateCreateTaskQuotaGuard` 仍拦。
 - Billing return after buy-credits / subscribe from create confirm: draft in
   `app/utils/createTaskDraft.ts` (sessionStorage); return flag via
   `app/utils/billingReturn.ts`; restore + reopen confirm in
@@ -371,10 +428,17 @@ then `api.translate-v4.tasks.ts`.
 - Runtime ports: `packages/translation-core/src/runtime.ts`.
 - TM 读走批量：`translationMemory.ts` `tmMGet` / `tmMGetByValue`（`mgetAligned`
  按 index 对齐、500 一批、异常整批当 miss），`llmTranslate.ts` 的 digest / value /
- leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同步两份
- `MigratingRedis`**（`app/server/translateV4/redisDualClient.server.ts` 与
- `worker/src/services/redisDualClient.ts`）：sole mode 下 core 拿到的是原生
- ioredis，但双写兼容层是手写代理，缺方法会让 TM 静默整批 miss（只烧钱不报错）。
+ leaf 三处读点都用批量。**给 `TranslationCoreRedis` 加新方法时必须同时在
+ `MigratingRedis` / pipeline / multi 代理里实现**（单一来源
+ `packages/translation-core/src/redisDualClient.ts`，App/Worker 经
+ `@ciwi/translation-core/redis-dual-client` 引用，不再有两份副本）：正常路径只连
+ `RENDER_KV`（原生 ioredis）。若仍走历史双写代理 `MigratingRedis`，缺方法会让
+ TM 静默整批 miss（只烧钱不报错）。
+- **新增 core 子路径导出要改四处**，漏一处就会掉到 `.d.ts` 上（esbuild 剥掉类型 →
+ 运行时空模块 → rollup 报 `"x" is not exported by ...d.ts`）：
+ `packages/translation-core/package.json` 的 `exports`、根 `tsconfig.json` paths、
+ `worker/tsconfig.json` paths、**以及 `vite.config.ts` 的 `translationCoreAliases`**
+ （App 侧靠这份 alias 指向 `src/*.ts` 源码，不走 `.build`）。
 - App adapter: `app/server/translateV4/translationCoreRuntime.server.ts`.
 - Worker adapter: `worker/src/services/translationCoreRuntime.ts`.
 - EMAIL / packing-slip Liquid HTML: `packages/translation-core/src/liquidHtmlTranslate.ts`
@@ -458,8 +522,8 @@ and auto-translate; also runs scheduled shop-scan enqueue (target slot =
 `(currentSlot - 1) % slots`, i.e. 1h after the shop's auto slot), deploy
 wake/stale reset, empty auto-job cleanup, hourly v4 job retention cleanup
 (`cleanupOldJobs`，默认每小时 :40), shop_scan_jobs retention
-(`cleanupOldShopScanJobs`，默认每小时 :50), and subscription reconciliation
-schedules.
+(`cleanupOldShopScanJobs`，默认每小时 :50), subscription reconciliation
+schedules, and install-gift expiry scan (`expireInstallTrialJob`，默认 12h；每轮最多 200 店).
 - `worker/src/env.ts`: required env diagnostics.
 - `worker/src/shutdown.ts`: shared shutdown flag; `index.ts` releases jobs
 claimed by the current process on SIGTERM/SIGINT before exit.
@@ -523,7 +587,10 @@ metric reconciliation helpers kept aligned with `app/server/translateV4/*`.
 - `worker/src/services/tsfQuota.ts`: quota query/deduct adapter.
 - `worker/src/services/stagePool.ts`: stage concurrency (auto/manual slot pools).
 - `worker/src/services/finalizeJobAfterWriteback.ts`: post-writeback final status
-selection and Redis `items_count` refresh for completed jobs.
+selection and Redis `items_count` refresh for completed jobs. Benign Shopify
+writeback rejections (`too many translation keys`, field length validation on
+resource) are reconciled to `writebackDone` at finalize so jobs are not marked
+`WRITEBACK_ALL_FAILED` when every failure is a platform constraint (`writebackUserErrors.ts`).
 - `worker/src/services/recordJobUsageSnapshot.ts`: task-terminal usage snapshot
 into Turso `TranslateV4JobUsage` (time / tokens / units / chars; survives Cosmos
 job retention cleanup).
@@ -577,7 +644,8 @@ Admin 体量标签另用 `COSMOS_SHOP_DATABASE_ID`（默认 `shop`）、
 - Redis: **仅** `RENDER_KV`（Render Key Value / Valkey）。不要再配或连接
   `REDIS_URL` / `REDIS_URL_V4`（Azure 已弃用，见 Operations → Redis）。
 - Blob: `AZURE_BLOB_CONNECTION_STRING`, `AZURE_BLOB_TRANSLATION_CONTAINER`.
-- Turso: `TSF_TURSO_DATABASE_URL`, `TSF_TURSO_AUTH_TOKEN`.
+- Turso: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`（测/产由各 Render 服务各自配值；
+ 短期兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）。
 - LLM: `DEEPSEEK_API_KEY`, `DEEPSEEK_API_KEYS`, `DEEPSEEK_BASE_URL`,
 `DEEPSEEK_MODEL` (default `deepseek-chat`; known id whitelist includes
 `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-reasoner`),
@@ -635,8 +703,13 @@ Code: `worker/src/services/shopifyFetch.ts` `chunkResources`.
 `EMAIL_FALLBACK_SCAN_INTERVAL_MS`（默认 5min；邮件 worker 跨分区 DISTINCT 兜底
 间隔，平时走 Redis 标记快路径），
 `AUTO_EMPTY_JOB_CLEANUP_INTERVAL_MS`,
-`BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`, and
-`BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`.
+`BILLING_SUBSCRIPTION_RECONCILE_INTERVAL_MS`,
+`BILLING_SUBSCRIPTION_NEAR_DUE_RECONCILE_INTERVAL_MS`,
+`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`（默认 12h）/
+`INSTALL_TRIAL_EXPIRY_INITIAL_DELAY_MS`（默认 2min）/
+`INSTALL_TRIAL_EXPIRY_JITTER_MS`（默认 0–60s 启动抖动）/
+`INSTALL_TRIAL_EXPIRY_MAX_PER_RUN`（默认 200，剩的下轮继续）/
+`INSTALL_TRIAL_EXPIRY_DELAY_MS`（默认 50ms 店间间隔）。
 - Scheduled shop scan（计量复扫，与 auto 同一时区 / slots；目标槽
 `(currentSlot - 1) % slots`，即相对同店 auto 延后 1h）：
 `SHOP_SCAN_SCHEDULE_ENABLED` (default true),
@@ -671,6 +744,8 @@ via clock-aligned `Asia/Shanghai` `:45` (not process-local `:30`).
 Prisma/LibSQL 多行栈常被 Render 拆开且只有中间行带 `level=error`；digest
 会对残缺的 `Error occurred during query execution` 回拉同资源邻近日志，
 把 `SqliteError.message`（如 `capacity temporarily exceeded`）拼进飞书样本。
+发版噪音默认过滤：`AbortError`、Render SIGTERM 时的 `npm error *`、旧 hash
+`/assets/*` 的 `No route matches URL`（见 `IGNORE_MESSAGE_PATTERNS`）。
 - Email: `TENCENT_CLOUD_KEY_ID`, `TENCENT_CLOUD_KEY`, and template/recipient
 variables consumed by `workerEmail.ts` and TSF email helpers.
 
@@ -680,11 +755,16 @@ variables consumed by `workerEmail.ts` and TSF email helpers.
 
 Models:
 
-- `Account`: TSF credit pools: subscription, purchased, trial, used.
+- `Account`: TSF credit pools: subscription, purchased, trial, used；安装赠送带 `trialCreditsExpiresAt`。
 - `PlanCatalog`, `AppSubscription`, `BillingLog`, `AccountPeriodUsage`.
 - `TranslateV4JobUsage`: per v4 job usage snapshot (Worker writes on terminal status).
 - `CreditUsage`: per-deduction credit audit (`single` / `image` / `v4_job`);
   units are billable credits (not cash). `BillingLog` remains income-only.
+  定价页仅可将未被用量占用的购买积分 1:1 迁入 Spark：可迁 =
+  `purchasedCredits − max(0, usedCredits − subscriptionCredits − trialCredits)`，
+  成功后 `purchasedCredits -= amount`（不改 `usedCredits`），Spark
+  `purchasedTokens += amount`；流水 `CREDITS_MIGRATED_OUT` /
+  `CREDITS_MIGRATION_FAILED`（`app/server/billing/migrateCreditsToSpark.server.ts`）。
 
 Code:
 
@@ -693,6 +773,7 @@ Code:
 - `app/server/billing/quota/quotaRouter.server.ts`: quota query/deduct routing
   (`deductShopCredits` optional audit → `CreditUsage`).
 - `app/server/billing/quota/recordCreditUsage.server.ts`: App-side `CreditUsage` writer.
+- `app/server/billing/quota/listCreditUsage.server.ts`: App-side `CreditUsage` list for pricing modal.
 - `app/server/billing/quota/createTaskQuotaGuard.server.ts`: create-task guard.
 - `app/server/billing/quota/deductCredits.server.ts`: TSF credit deduction.
 - `app/server/billing/webhooks/handleBillingWebhook.server.ts`: TSF webhook handling
@@ -703,24 +784,42 @@ redact billing cleanup (local cancel always; Shopify `appSubscriptionCancel`
 best-effort only on SHOP_REDACT when token present; APP_UNINSTALLED skips
 outbound cancel). Reinstall path in `ensureAccount.server.ts` also clears
 leftover `AppSubscription` when restoring a soft-deleted Account.
-- `app/server/billing/uninstallSnapshot.server.ts`: pre-cleanup snapshot for
-uninstall Feishu (plan, interval, quota, size tier via
-`shopScan/shopSizeProfile.server.ts`).
+- `app/server/billing/uninstallSnapshot.server.ts`: shop billing snapshot +
+ Feishu text for uninstall / first-install / first-subscribe (plan, interval,
+ quota, size tier via `shopScan/shopSizeProfile.server.ts`).
+- `app/server/billing/lifecycleFeishuNotify.server.ts`: lifetime-first install
+ (`bound: true`) and lifetime-first `SUBSCRIPTION_ACTIVATED` (Turso count === 1)
+ to `FEISHU_WEBHOOK_URL_SUPPORT`; same group as uninstall.
 - `app/server/billing/email/billingEmail.server.ts`: purchase/subscribe/renewal emails.
 - `app/server/billing/email/welcomeEmail.server.ts`: first-install welcome email
-(`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init).
+(`bound: true` from `resolveBillingBinding` in `app/routes/app.tsx` loader init;
+ same `bound` gate also fires the first-install Feishu notify).
+- `app/server/billing/email/uninstallEmail.server.ts`: uninstall snapshot Feishu
+  (title `emoji 店铺卸载 · 分群`) + winback SES (templates `212617` / `212612`
+  / `212616`) + Feishu metadata (shop / recipient / segment / template / SES /
+  remaining credits / subject; no email body); skip (no email / no segment /
+  Redis NX duplicate) appends `挽回邮件：未发（原因）` on the snapshot message
+  (`7 天内已发过` for duplicate; SES 仍跳过，飞书照发且标题仍带分群). Scheduled from
+  `APP_UNINSTALLED` in `webhooks.tsx`.
+- 迁积分到 Spark：`SPARK_CREDIT_MIGRATION_ENABLED`（默认关；`true`/`1`/`on`/`yes` 才展示定价页按钮并放行 API）+ `SPARK_CREDIT_MIGRATION_URL` + `SPARK_CREDIT_MIGRATION_SECRET`
+  （HMAC，与 Spark `CREDIT_MIGRATION_SECRET` 相同）；飞书仍走 `FEISHU_WEBHOOK_URL_SUPPORT`。
 - 收件人/后台 token：`app/server/shop/fetchShopContact.server.ts`（Shopify
 GraphQL 拉店铺联系邮箱）与 `app/server/shop/offlineSessionToken.server.ts`
 （App 侧唯一的 offline token 读取口，Turso `Session`；storefront switcher /
 liquid collect 也走它）。卸载后取不到 token 属预期，调用方需静默降级。
 - `worker/src/services/billingSubscriptionReconcile.ts`: worker-only Shopify
 subscription reconciliation (writes Turso directly; does not call TSF Web).
+If it inserts the shop's first `SUBSCRIPTION_ACTIVATED` BillingLog, it sends
+the same first-subscribe Feishu notify (`lifecycleFeishuNotify.ts`).
 Syncs `AppSubscription.currentPeriodEnd/Start` from Shopify for MONTHLY and
 ANNUAL; for ANNUAL also grants monthly credits every 30 days (max 12 per
 Shopify year) derived from `currentPeriodEnd` (never from `createdAt`).
-- `worker/src/services/annualCreditCycle.ts` and
-`app/server/billing/subscription/annualCreditCycle.server.ts`: shared pure
-helpers for annual credit-cycle math.
+- `packages/translation-core/src/annualCreditCycle.ts`: **single source** of the
+annual credit-cycle pure math, imported by both sides as
+`@ciwi/translation-core/annual-credit-cycle` (App via
+`app/server/billing/index.server.ts` barrel, Worker via
+`billingSubscriptionReconcile.ts`). The old per-side copies were deleted; do not
+recreate them.
 - `worker/src/services/accountBalance.ts`: credit pool settle helpers for renewals.
 - `app/routes/webhooks.tsx`: Shopify webhook branching.
 - `app/routes/app.pricing/route.tsx`: pricing UI/actions. `action` 现在
@@ -764,6 +863,23 @@ Billing notes:
 Turso. TSF account initialization is now keyed by `Account`; the old
 `ShopBillingBinding` marker table has no runtime callers.
 - TSF quota remaining is derived from `subscriptionCredits + purchasedCredits + trialCredits - usedCredits`.
+  Install-gift expiry is **not** checked on quota reads. Worker scans due
+  accounts every 12h (`INSTALL_TRIAL_EXPIRY_INTERVAL_MS`, first delay 2min +
+  0–60s jitter; max 200 shops/run, 50ms inter-shop delay).
+  Deduct and subscription renewal still settle first so expired gift is not
+  spent. Leftover `trialCredits` are zeroed and `usedCredits` is reduced by
+  the gift already consumed (gift used first; paid pools not charged for
+  leftover).
+- 安装赠送：终身首次建 `Account` 写入 `trialCredits=200000`，
+  `trialCreditsExpiresAt = now+30d`；`BillingLog` `TRIAL_GRANTED` +
+  `referenceId=install_credits` 幂等。卸载重装不补发。存量 Launch Credits
+  （`expiresAt` 为空）不追回、不过期。App `grantInstallCredits.server.ts`，
+  Worker 新建 Account 时 `grantInstallCredits.ts`。  到期扫描
+  `expireInstallTrialJob.ts`（`scheduler.ts`，每轮 LIMIT 200）；单店结算
+  `expireInstallTrialCreditsIfDue`（App 扣费/续费、Worker `tsfDb` 扣费）。
+  到期写 `BillingLog` `TRIAL_EXPIRED` + `referenceId=install_credits`
+  （`creditsDelta` 为负 leftover；用完则为 0）。
+- 已停发首订 Launch Credits（Basic 4M / Pro 8M / Premium 16M）。
 - Worker 额度读写直连 Turso Account。
 - `AppSubscription.currentPeriodEnd` is always the Shopify next-charge time
 (MONTHLY ≈ +30d, ANNUAL ≈ +365d). `currentPeriodStart = end - intervalDays`.
@@ -776,7 +892,7 @@ not overwrite `currentPeriodEnd`. After 12 grants, wait for Shopify year renewal
 30-day window vs TSF `creditCycleIndex` watermark only (`maxGranted + 1`).
 Migrated shops with no TSF cycle logs (or a large gap vs the current window)
 are assumed already granted elsewhere; Worker writes `grantKind: migration_assumed` (`creditsDelta: 0`) as a baseline so the *next* window can
-fire normally. See `annualCreditCycle.ts` / `annualCreditCycle.server.ts`.
+fire normally. See `packages/translation-core/src/annualCreditCycle.ts`.
 - Worker runs a near-due reconciliation every 30 minutes (includes all ACTIVE
 ANNUAL shops for credit-cycle checks) and a full subscription reconciliation
 every 12 hours by default (both configurable) inside the worker process when
@@ -803,9 +919,12 @@ Currency changes often touch admin, App Proxy, and extension JS.
 
 ### Switcher And Storefront App Proxy
 
-- Admin page: `app/routes/app.switcher/route.tsx`.
+- Admin page: `app/routes/app.switcher/route.tsx`（Selector type / position 用 `InFlowSelect`，不要改回 Polaris `Select`）。
+- Contextual Save Bar (BFS 4.1.5): `app/hooks/useContextualSaveBar.ts` +
+  `app/lib/saveBarNavigation.ts`。dirty 时 `show`；Remix 离开 / 子页返回 /
+  Upgrade / manage 换语言与翻页先 `runAfterSaveBarLeave`；dirty 卸载不 `hide`。
 - Client helper: `app/routes/app.switcher/switcherClient.ts`.
-- UI component: `app/routes/app.switcher/components/switcherSettingCard.tsx`.
+- UI component: `app/routes/app.switcher/components/switcherSettingCard.tsx`（启用状态走 `shopify.app.extensions()`，与首页同一 hook）。
 - Server: `app/server/storefront/switcherAdmin.server.ts`,
 `switcherConfig.server.ts`, `switcherData.server.ts`, `auth.server.ts`,
 `response.server.ts`.
@@ -815,12 +934,14 @@ Currency changes often touch admin, App Proxy, and extension JS.
 - App Proxy: `app/routes/api.storefront.$.ts`.
 - Extension: `extensions/ciwi-switcher/blocks/ciwi_I18n_Switcher.liquid` and
 `extensions/ciwi-switcher/assets/ciwi-*.js`.
+- 店面不通过 REST Asset / GraphQL `themes { files }` 读写主题文件（BFS「Doesn't use Asset API」）。`read_themes` 只给 Translations API 的 `ONLINE_STORE_THEME_*`；不要加回 `write_themes` 或 `themeFilesUpsert`。
 - App Proxy 店面路径：Extension `ciwi-api.js` 固定 `STOREFRONT_APP_PROXY_BASE=/apps/ciwi`
  （对齐正式 `shopify.app.prod.toml` `subpath=ciwi`）。测试 App 为 `ciwi-test` 时
  需临时改扩展常量或单独分支后再 `deployTest`。
 - Constants: `app/lib/switcherConstants.ts`.
 - `ipOpen` is the live geolocation switch and is stored on Turso
-`SwitcherConfiguration`. The old `IpRedirection` table/model was dropped
+`SwitcherConfiguration`（所有套餐可开，无付费锁定）。
+The old `IpRedirection` table/model was dropped
 (`prisma/migrations/20260713000000_drop_ip_redirection`). Do not assume the
 removed `api.translate-v4.ip-redirections` / `custom_redirects` path or the
 Prisma model still exist; design a new owner before reviving region-specific
@@ -832,9 +953,12 @@ redirect records.
  Proxy `POST liquid/collect` → `liquidCollect.server.ts` 只写入
  `LiquidRule(status=PENDING, source=auto, afterTranslation="")`，**不在 Web
  进程跑 LLM**。店面只报「像源语」文本（无覆盖率/80% 占比门控）；入库前叠
- `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用值
- 过滤）。其它门控：全局 `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、
- shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
+ `looksTranslatable` + `translationRuleJudgment("liquid", …)`（与 init 共用通用值
+ 启发式；`looksLikeHtmlMarkupFragment`（HTML 属性碎片）与
+ `looksLikeAutoLiquidJunk`（评价组件/价格/SKU/年款/产品型号等）仅
+ `key === "liquid"` 时拦截，不拦手动/自动 Shopify 字段）。店面采集另跳过
+ `isPriceRelatedElement` 与评价 App 常见容器 class。其它门控：全局
+ `AUTO_LIQUID_COLLECT_ENABLED`（出事可关）、shop 白名单 `AUTO_LIQUID_SHOP_ALLOWLIST`（逗号分隔；**空=全店可写**；
  名单外仍收请求但不落库；Render 单行 `[auto-liquid] deny allowlist …`，
  Redis 日聚合 `tsf:auto_liquid:deny:req|texts|shops:{utcYmd}`（8d TTL）。
   服务端细日志默认开（`AUTO_LIQUID_DEBUG` 默认 true，可设 false）；店面
@@ -842,12 +966,22 @@ redirect records.
   `localStorage.ciwi_debug_auto_liquid=0` /
   `localStorage.ciwi_debug_liquid_translate=0`。
  主语言（Redis 缓存 1h）、去重、每日帽 `AUTO_LIQUID_DAILY_CAP`（默认 0=
- 不限；需背压时设正数如 100）、总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 50000）。
+ 不限；需背压时设正数如 100）、总量帽 `AUTO_LIQUID_TOTAL_CAP`（默认 60000）。
+ 触顶 skip（`reason=total_cap`）时异步飞书客服群（`FEISHU_WEBHOOK_URL_SUPPORT`）；
+ Redis `tsf:auto_liquid:cap_feishu:{shop}` SET NX 去重，计数回落到上限以下 DEL 后可再通知。
  店面扫描：`ciwi-ui.js` TreeWalker **分片 idle**（单片约 8ms yield），不因
- 时间预算整页放弃；触 `max_nodes` 仍上报已扫候选。店面 Switcher **全店采集上报**；
- 采集只写 PENDING，**不查额度**；真正扣费在后续 v4「自定义 Liquid」翻译阶段。
- `SwitcherConfiguration.autoLiquidCollect` 列保留且默认 `true`，保存时强制
- `true`，Switcher UI 开关已移除。
+ 时间预算整页放弃；扫描根 = `body` + **open shadowRoot** + **同源 iframe**
+ （含嵌套同源；跨域 iframe / closed shadow 不可访问则跳过）；触 `max_nodes`
+ 仍上报已扫候选；候选条数不设客户端上限，POST 按 100/片
+ （`AUTO_LIQUID_POST_CHUNK` / 服务端 `MAX_PER_REQUEST`）。采集启动门禁：
+ `customLiquidReplacePromise` 结束后再等 `max(第一次 countdown 补扫, 2s)`
+ （无 Liquid 规则的店也等 2s，用来抓晚注入第三方文案），再
+ `requestIdleCallback`（timeout 9s，无 4s 硬抢）。countdown 定点补扫仍是
+ 500ms / 1.5s，不跟采集共用同一根 2s 针。语言门：只采「像 `primaryLanguage`（Switcher 配置接口附带，
+ Shopify 主 locale，非商户手填）且不像当前目标语」；无 primary 则本轮不采。
+ 店面 Switcher **全店采集上报**；采集只写 PENDING，**不查额度**；真正扣费在
+ 后续 v4「自定义 Liquid」翻译阶段。`SwitcherConfiguration.autoLiquidCollect`
+ 列保留且默认 `true`，保存时强制 `true`，Switcher UI 开关已移除。
  2. **建任务**：勾选「自定义 Liquid」→ `job.includeLiquid=true`（不进 Shopify
  module 枚举）。
  3. **Worker**：init 读 PENDING → 虚拟 module `CUSTOM_LIQUID` init blob（行
@@ -855,12 +989,34 @@ redirect records.
  Turso `DONE`（**不** `registerTranslations`）。代码：
  `worker/src/services/customLiquid.ts`、`initWorker` / `writebackWorker`。
  4. **店面替换**：`parseLiquidTranslations` **只返回 `status=DONE` 且译文非空**；
- `CustomLiquidTextTranslate` + App Proxy `liquid/parse` 不变。空结果返回
- `ok({})` 供浏览器负缓存。
+ map 按原文长度降序（同长度 `createdAt` 新→旧）；`CustomLiquidTextTranslate`
+ 对 fuzzy 再按长度降序替换（文本/属性/HTML 共用）。首次全页替换按 **8ms idle 分片**
+ （`requestIdleCallback`；小页一片内走完不 yield）；countdown 单根增量仍整段同步。
+ 全页泵结束后再挂 countdown：首次全页替换后**立刻不扫**
+ countdown；500ms / 1.5s 再 `querySelectorAll('[class*="countdown-timer"]')`，
+ 补译并挂容器 Observer。15s `document.body` MutationObserver 发现中间插入的
+ countdown → `observeCountdownTimerRoot`（数字刷新继续忽略）。已观察根不再被
+ body / 1.5s 补扫二次 apply；容器 mutation 无原文、或去掉数字后文案指纹未变
+ （只改秒数）则跳过整管线。countdown 增量不打 `textFuzzyFast`。持续增量仅对该
+ selector（含 `characterData`，跟数字格刷新）。
+ 空结果返回 `ok({})` 供浏览器负缓存。
  5. **治理**：`worker/src/services/cleanupOldAutoLiquid.ts` 挂 `scheduler.ts`
  （默认每小时 :55），按 `updatedAt` 超 `AUTO_LIQUID_RETENTION_DAYS`（默认 90）
- 慢删 `source='auto'`（绝不碰 manual）。管理页
- `/app/manage_translation/custom_liquid` 展示 `status` / `source`。
+ 慢删 `source='auto'`（绝不碰 manual）；同 tick 再清 auto+PENDING junk：
+ 游标扫 PENDING，唯一判定 `isAutoLiquidCollectJunk`（与 claim/查询 junk 同一套
+ `looksLikeHtmlMarkupFragment` + `looksLikeAutoLiquidJunk`，**无** SQL LIKE
+ 预筛）。`looksLikeAutoLiquidJunk` 另拦品牌/平台/支付、评价人名、规格型号/优惠码、
+ 尺码码、语言切换标签（保留 FAQ/Price/Shop 等短 UI）；默认每 tick 最多删 5000 /
+ 扫 15 万行（
+ `AUTO_LIQUID_JUNK_CLEANUP_MAX_TOTAL_PER_TICK` /
+ `AUTO_LIQUID_JUNK_CLEANUP_MAX_SCAN_PER_TICK` /
+ `AUTO_LIQUID_JUNK_CLEANUP_BATCH_SIZE` / `AUTO_LIQUID_JUNK_CLEANUP_DELAY_MS`）。
+claim PENDING 时也会跳过并
+删除这类行，避免拿去翻译。管理页
+ `/app/manage_translation/custom_liquid` 按 metafield 风格编辑（顶栏语言筛选，
+ 不展示 status / source / 替换方式）；新建规则默认模糊替换。PageFly 管理入口
+ 已去掉，旧 URL 重定向到 custom_liquid；店面 `userPageFly/readTranslatedText`
+ 仍读 `PageFlyTranslation`，数据暂不迁移。
 
 - **店面读路径 Redis 缓存**（`app/server/storefront/cache.server.ts`）：
  `api.storefront.$.ts` 的 switcher / currency（`getCurrencyByShopName` +
@@ -906,6 +1062,11 @@ gets `302` from `authenticate.admin` on `/api/picture/upload`.
 
 - Main page: `app/routes/app.manage_translation/route.tsx`.
 - Resource pages: `app/routes/app.manage_translation_.*/route.tsx`.
+- Custom Liquid（metafield 风格）：`app/routes/app.manage_translation_.custom_liquid/route.tsx`；
+  顶栏搜索（模糊 contains）+ 语言/模块下拉，主区列表编辑（无侧栏）；
+  原文搜索走 `POST /api/translate-v4/liquid` `intent=list`（当前语言分页，空 q 为列表；输入后再带 q）；
+  不展示 status / source / 替换方式；新建默认模糊替换。
+  `/app/manage_translation/pagefly` 重定向到 custom_liquid（店面 PageFly 接口仍保留）。
 - Server helper: `app/server/manageTranslation/manageTranslationRoute.server.ts`.
 - Manage save paths use TSF/Shopify helpers such as
 `app/server/shopify/translations.server.ts`.
@@ -915,6 +1076,10 @@ gets `302` from `authenticate.admin` on `/api/picture/upload`.
 - 页面共享行为：`app/utils/manageSave.ts`、`manageTranslationState.ts`、
 `manageTranslationErrors.ts`（保存提交 / 脏值状态 / 错误归一）。改一个 manage 页
 的保存或报错前，先看这三个是否已经有实现。
+- Contextual Save Bar (BFS 4.1.5)：资源编辑页用
+`useContextualSaveBar("save-bar", confirmData.length > 0)`；换语言 / 换模块 /
+翻页 / 返回走 `runAfterSaveBarLeave`（`app/lib/saveBarNavigation.ts`），不要在
+`leaveConfirmation` 之后立刻 `hide`。
 - Shopify translation helper: `app/server/shopify/translations.server.ts`.
 
 These pages are not the same UX as translation v4 jobs. Preserve existing
@@ -928,20 +1093,18 @@ Historical manage-translation migration guidance:
 - When modifying save/delete behavior, preserve the existing response shape used
 by page actions and surface Shopify `userErrors` as partial failures.
 - Manual single-field translate uses shared `SingleTranslateAction` (modal with
-AI model `Select` + optional prompt + credit estimate) →
+AI model in-flow list + optional prompt + credit estimate) →
 `SingleTextTranslate` → `/api/translate-v4/single` (`aiModel`, default
 `deepseek-v4-flash`). Estimate: `POST /api/translate-v4/single-estimate` builds
 the real system prompt (glossary + shop profile + custom prompt) via
 `estimateSingleTranslateLlmTokens`, then ceil(tokens × model multiplier)
 (DeepSeek default 1, GPT/Google default 1.5).
-- 单字段额度不足：打开弹窗时先预估 + 读剩余额度，`shortfallCredits > 0` 直接转到
-共享补额度弹窗（`app/components/singleTranslateAction.tsx` →
-`openCreditsPurchaseModal({ kind: "single_translate", … })`）；翻译失败后的
-额度类报错统一走 `app/hooks/useSingleTranslateQuotaGate.tsx` +
-`app/lib/singleTranslateQuotaFeedback.ts`（`v4.create.noCreditsPricing` → 补额度
-弹窗，`noCreditsTrial` → `CreateTaskQuotaGateModal` trial 模式，其余落
-`v4.error.singleQuotaInsufficient`）。20 多个 manage 页共用这一套，不要在单页
-自己拼额度文案。
+- 单字段额度不足：点 Translate 先读剩余额度；remaining ≤ 0 时 toast
+  `v4.create.insufficientCredits`，不打开翻译弹窗。弹窗仅在有额度时出现（Required /
+  Available + 模型/提示词，无试用/买积分推销）。失败后的额度类报错同样 toast，走
+  `app/hooks/useSingleTranslateQuotaGate.tsx` +
+  `app/lib/singleTranslateQuotaFeedback.ts`。20 多个 manage 页共用这一套，不要在单页
+  自己拼额度文案。服务端 `evaluateCreateTaskQuotaGuard` 仍拦 remaining ≤ 0。
 
 Image translation, PageFly, and some summary/count behavior may still be
 separate from the save path.
@@ -964,6 +1127,14 @@ throttle status.
 create-task 编排成一条「店铺理解 → 推荐 → 试用/建首个任务」路径。全部数据复用现有
 能力，任一数据源失败都降级，不阻塞继续；可跳过，跳过/完成后不再打断。
 
+BFS 4.2.2 首页 Setup Guide 在 `/app/translate-v4-mvp`，与本全页引导
+相互独立。三项：批量翻译、术语表、第三方 App（主题 embed + Custom Liquid）。默认不渲染；
+仅终身首次建 Account（`bound: true`）或卸载后重装（Account `deletedAt` 恢复）写入/重置
+的 `ShopOnboarding` 才出现。有过 v4 任务只勾「批量翻译」，不卸卡；点 X 或三项都勾完
+都写 `setupGuideDismissedAt` 永久关闭（重装会清空）。三项默认展开。
+展开区为说明 + 未完成子步骤蓝链接（右侧 P0 留空）；批量翻译 / Liquid 链接进
+`/app/translate-v4-mvp-custom`；推荐卡片「立即翻译」仍走一键确认弹窗。
+
 Core files:
 
 - Route (loader 聚合 + action 状态流转): `app/routes/app.onboarding/route.tsx`。
@@ -981,10 +1152,10 @@ Core files:
   `app/routes/api.onboarding.fast-coverage.ts`（Preparing 真进度：最重要 1 语 ×
   Products/Collection/Navigation/Pages/Shop 五个模块，逐 label POST；只写 Redis
   module 明细，**不**写 Turso 语言级汇总，避免污染权威覆盖率）。
-- 入口重定向: `app/routes/app._index/route.tsx` 调 `shouldRedirectToOnboarding`
-  决定跳 `/app/onboarding` 还是默认 `/app/translate-v4`；并在重定向前
-  `enqueueShopScan(install)`（幂等，尽早入队）。onboarding loader / `app.tsx` 也会
-  再入队一次（幂等）。
+- 入口重定向: `app/routes/app._index/route.tsx` 当前直接跳
+  `/app/translate-v4-mvp`；首次引导不再自动拦截 `/app`，仍可显式访问
+  `/app/onboarding`。install shop scan 继续由 `app.tsx` / onboarding loader
+  幂等入队。
 - Model: `ShopOnboarding`（每店一行，独立于 `Account.isNew`）。
 
 Data reuse（不重复建设）:
@@ -1019,11 +1190,16 @@ Common edits:
 Language:
 
 - Page: `app/routes/app.language/route.tsx`.
+- Publish 列表开关只跟 Shopify `shopLocale.published`（桌面/移动一致）；域名 `alternateLocales` 只在 `publishModal` 里改。`publishAction` 分别回传 `shopLocaleUpdate` / `webPresenceUpdate` 成败，部分失败弹窗不关。
+- Translate：列表 Translate 先打开 `CreateTaskCard` 选范围（含 `includeLiquid`）；Translate Now 关掉该弹窗。剩余积分 ≤ 0 时 toast（`v4.create.insufficientCredits`）拦住、不打开确认弹窗；额度足够再打开与 custom 同一套 `CreateTaskConfirmModal`（粗估 / Precise estimate，积分区走 `CreditsConfirmPanel`）。服务端 `evaluateCreateTaskQuotaGuard` 仍拦 remaining ≤ 0。`CreateTaskCard` 模型选择走文档流列表（见 Translation V4 组件说明）。
+- Sidebar: `/app/language` 是可见 NavMenu 项；`rel="home"` 为 `/app/translate-v4-mvp`（`app/lib/appNav.ts`，BFS 4.1.4）。
 - Client: `app/routes/app.language/languageClient.ts`.
 - Server: `app/server/translateV4/targetLocale.server.ts`,
 `shopLocales.server.ts`, `languageStatus.server.ts`（语言页 status 0..4，
-由 `/api/translate-v4/target-locale` 调用）。
-- Models: `ShopTranslationSettings`, `ShopTargetLocale`（含语言级覆盖率汇总
+由 `/api/translate-v4/target-locale` 调用）、
+`autoTranslateSettings.server.ts`（整店自动更新对齐时刻 + 间隔 + 模块；不含 liquid）。
+- Models: `ShopTranslationSettings`（含 `autoTranslateHour` /
+ `autoTranslateIntervalHours` / `autoTranslateModules`）、`ShopTargetLocale`（含语言级覆盖率汇总
   `coverageTranslated` / `coverageTotal` / `coveragePercent` /
   `coverageUpdatedAt` / `coverageSource`；权威在 Turso，与 autoTranslate 同表）。
 - Coverage 写入：`app/server/translateV4/coverageStore.server.ts`（App refresh）、
@@ -1034,10 +1210,12 @@ Language:
   `cacheEmpty` 触发语言页后台 refresh。
 - 线上 Redis→Turso 回填：`scripts/backfill-locale-coverage-from-redis.mjs`
   （默认 dry-run；`--write` 写入；`--shop=` / `--only-missing`）。
+- 自动更新 hour/modules 回填：`scripts/backfill-auto-translate-settings.mjs`
+  （默认 dry-run；`--write`；null hour→hash 槽位；null modules→默认 auto 模块集）。
 
 Glossary:
 
-- Page: `app/routes/app.glossary/route.tsx`.
+- Page: `app/routes/app.glossary/route.tsx`（Create/Edit Apply for 用 `InFlowSelect`）。
 - Server/API: `app/server/translateV4/glossary.server.ts`,
 `app/routes/api.translate-v4.glossary.ts`.
 - Worker injection: `worker/src/services/translationCoreRuntime.ts` loads rows
@@ -1156,7 +1334,8 @@ units, source chars); written by Worker at job terminal states.
 written on deduct (App) or quota flush (Worker).
 - `SupportConversation`, `SupportMessage`: support chat.
 - `ShopOnboarding`: 首次翻译新手引导状态（status/skipped/completed/试用/建首任务来源、
- 推荐语言与模块快照、积分与耗时预估、来源 scan id）；独立于 `Account.isNew`。
+ 推荐语言与模块快照、积分与耗时预估、来源 scan id）；`setupGuideDismissedAt` 在首页
+ Setup Guide 点 X 或三项勾完时写入（永久关闭；卸载重装清空）。独立于 `Account.isNew`。
 - `UserPicture`: product/shop image translation metadata and translated image
 URLs used by admin pages and storefront App Proxy reads.
 
@@ -1193,6 +1372,10 @@ artifacts and should be cleaned up. No runtime code depends on them.
 - UI/render: `assets/ciwi-ui.js`, `ciwi-main.js`, `ciwi-page.js`.
 - Storage: `assets/ciwi-storage.js`.
 - Styling: `assets/switcher.css`.
+- Boot（`ciwi-main.js` `ciwiOnload`）：DCL 后**不** `await` 配置/IP。
+  A 立刻：Custom Liquid 替换、有汇率缓存则换价、IP/浏览器语言请求发出（跳转不挡 UI）。
+  B 主题首屏后（双 `rAF`）：Switcher 控件；主题预览仍立刻画。
+  C idle：图片翻译、采集、配置/货币后台刷新。语言同步靠 `lang` / `pageshow` / `popstate`，不轮询。
 
 Check deploy configs when changing extensions:
 
@@ -1211,7 +1394,8 @@ corresponding script without asking for confirmation:
 
 | User says                                             | Action                                                                                        |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| "提个pr" / "提pr" / "创建PR" / "push and create PR"        | Run `npm run push:pr`（或 `npm run push:pr -- --message "说明"`）                                  |
+| "提个pr" / "提pr" / "创建PR" / "push and create PR"        | 按 diff 写中文标题/commit/摘要 → `npm run push:pr -- --title … --message-file … --body-file …` |
+| "rebase" / "压一下提交" / "rebase pr"                      | 按 `origin/master...HEAD` diff 写中文 → `npm run rebase:pr -- --title … --message-file … --body-file …` |
 | "合入PR然后发布测试环境" / "合入pr发布测试" / "merge and deploy test" | Run `npm run merge:deploy:test`                                                               |
 | "发布测试环境" / "deploy test" (单独发布，不合入PR)                 | 触发 `tsf-deploy.yml` workflow on master，参数 `render_service_test=true, render_worker_test=true` |
 | "审计店面多语言" / "storefront locale audit"                 | Cursor browser 发现语言并切 locale → `node scripts/storefront-locale-audit.mjs` 落盘（见 Scripts） |
@@ -1232,9 +1416,14 @@ For "合入PR然后发布测试环境", the script will:
 
 | User asks about                  | First read                                            | Then read                                                                                               |
 | -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| NavMenu / 子页高亮（BFS 4.1.4）  | `app/lib/appNav.ts`                                   | `app/routes/app.tsx` NavMenu                                                                            |
+| 上下文保存栏离开拦截（BFS 4.1.5） | `app/hooks/useContextualSaveBar.ts`                   | `app/lib/saveBarNavigation.ts`、`app.switcher/route.tsx`、`AppSubpageTitleBar`                           |
+| 主题扩展状态 / BFS 4.2.3          | `app/lib/themeAppExtensions.ts`                       | mvp `ThemeExtensionStatusCard`、switcher `switcherSettingCard`、`shopify.app.extensions()`；打开主题编辑器用 `openSwitcherThemeEditor`（`_top`），不要用 Polaris `Button url`（会把 iframe 带到不可嵌入的 Admin） |
+| 首页 Setup Guide（BFS 4.2.2）     | `app/lib/setupGuide.ts`                               | mvp `SetupGuideCard`、`shouldRenderSetupGuide`（默认不渲染；首次 Account 或卸载重装打标；点 X / 三项齐写 `setupGuideDismissedAt`）、`app/server/setupGuide.server.ts`；推荐卡片「立即翻译」仍一键确认；无目标语言时批量翻译入口跳 `/app/language` |
 | Translation v4 UI                | `app/routes/app.translate-v4/route.tsx`               | `components/*`, `v4I18n.ts`, locales                                                                    |
 | Create task failure              | `app/lib/createTranslateV4Tasks.ts`                   | `api.translate-v4.tasks.ts`, quota guard, Cosmos/Redis                                                  |
-| Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslate.server.ts`, translation-core `syncTranslate.ts` / `llmTranslate.ts`, quota guard       |
+| Language 页 Translate 确认      | `app/routes/app.language/route.tsx`                 | `CreateTaskConfirmModal` / `CreditsConfirmPanel` / `useCreateTaskEstimate`                               |
+| Single-field translation         | `api.translate-v4.single.ts`                          | `singleTranslateAction.tsx` + `CreditsConfirmPanel`，`singleTranslate.server.ts` |
 | Stuck task/progress              | `progress.server.ts`                                  | worker scheduler/init/translate/writeback, Redis/Cosmos scripts                                         |
 | Pause/resume/cancel bug          | `api.translate-v4.task-action.ts`                     | `resumeStatus.ts`, worker control logic                                                                 |
 | Post-writeback completion/counts | `worker/src/services/finalizeJobAfterWriteback.ts`    | `worker/src/services/itemsCount.ts`, `app/server/translateV4/itemsCount.server.ts`, Redis `items_count` |
@@ -1243,22 +1432,28 @@ For "合入PR然后发布测试环境", the script will:
 | Quota mismatch                   | `quotaRouter.server.ts`                               | `webhooks.tsx`, TSF billing webhooks, worker `tsfQuota.ts`                                              |
 | Subscription/purchase bug        | `app/routes/app.pricing/route.tsx`                    | `webhooks.tsx`, `app/server/billing/*`                                                                  |
 | 补额度弹窗 / Shopify 回跳        | `app/utils/creditsPurchaseModal.ts`                   | `app/components/paymentModal.tsx`, `app/routes/app.tsx`, `app/utils/billingReturn.ts`, `app/lib/shopifyAppHandle.server.ts` |
+| 迁移积分到 Spark                 | `app/server/billing/migrateCreditsToSpark.server.ts`  | `SPARK_CREDIT_MIGRATION_ENABLED`（默认关）、`api.billing.migrate-credits-to-spark.ts`、定价页 `AcountInfoCard`、Spark `/api/internal/credit-migration` |
 | 任务历史页                       | `app/routes/app.translate-v4-history/route.tsx`       | `app/routes/app.translate-v4/jobFilters.ts`, `components/TaskQueueSection.tsx`, `progress.server.ts`     |
 | Currency switcher bug            | `app/server/currency/currency.server.ts`              | `api.storefront.$.ts`, extension `ciwi-api.js`                                                          |
 | App Proxy 401/404                | `api.storefront.$.ts`                                 | `server/storefront/auth.server.ts`, extension caller                                                    |
 | 店面数据不更新 / Turso 502       | `app/server/storefront/cache.server.ts`               | `app/config/libsqlFetch.server.ts`, `api.storefront.$.ts`, 写入方的 `invalidateStorefrontCache` 调用     |
 | Manage Translation resource page | `app/routes/app.manage_translation_.<type>/route.tsx` | `manageTranslationRoute.server.ts`, `pictureClient.ts`                                                  |
+| `/app/...&icon=data:image` 404   | `app/lib/sanitizeEmbeddedAppPath.ts`                  | `app/routes/app.$.tsx`, `app/root.tsx` ErrorBoundary                                                    |
 | Picture translation/storage      | `app/server/picture/picture.server.ts`                | `api.picture.*`, `api.translate-v4.image`, `UserPicture`, App Proxy picture branches                    |
 | Glossary                         | `app/routes/app.glossary/route.tsx`                   | `glossary.server.ts`, Worker `tsfDb.loadGlossaryRowsFromTsf` via `translationCoreRuntime.ts`            |
 | Shop profile / AI profile        | `app/routes/app.shop-profile/route.tsx`               | `server/shopScan/*`, `shopProfileContext.server.ts` / `shopProfilePrompt.server.ts`, worker shop scan   |
 | Support chat / notifications     | `app/components/SupportChatWidget.tsx`                | `api.support.tsx`, `supportStore.server.ts`, Feishu/SES helpers                                         |
+| 安装 / 首次订阅 / 卸载飞书       | `app/server/billing/lifecycleFeishuNotify.server.ts`  | `uninstallSnapshot.server.ts`, `app.tsx` loader, `handleBillingWebhook.server.ts`, worker `lifecycleFeishuNotify.ts` |
+| 卸载挽回邮件                     | `app/server/billing/email/uninstallEmail.server.ts`   | `webhooks.tsx` `APP_UNINSTALLED`、腾讯云模板 `212617`/`212612`/`212616`、飞书按分群发元数据（不含邮件正文） |
 | First-time onboarding            | `app/routes/app.onboarding/route.tsx`                 | `app/server/onboarding/onboarding.server.ts`, `app/routes/app._index/route.tsx`, `ShopOnboarding`      |
-| Auto translate                   | `worker/src/services/autoTranslate.ts`                | `autoScanSchedule.ts`, `ShopTargetLocale`, module catalog                                               |
+| Auto translate                   | `worker/src/services/autoTranslate.ts`                | `planEntitlements`（未配置默认 24h；可选：Free/Basic 仅 24；Pro 12/24；Premium 1/12/24；槽位 `(cur−align)%interval` + 冷却=间隔）、`autoScanSchedule.ts`、`ShopTargetLocale`、`ShopTranslationSettings.autoTranslateHour/IntervalHours/Modules`、module catalog |
+| 套餐能力闸（语/模块/Liquid）     | `app/lib/planEntitlements.ts` + `app/server/billing/planEntitlements.server.ts` | `api.translate-v4.tasks`、`CreateTaskCard`、Worker `planEntitlements.ts` |
+| 语言页自动更新设置               | `app/server/translateV4/autoTranslateSettings.server.ts` | `api.translate-v4.target-locale` `setAutoSettings`（hour+intervalHours+modules）、`app.language/route.tsx` |
 | Scheduled shop scan              | `worker/src/services/scheduledShopScan.ts`            | `autoScanSchedule.ts`, `shopScanCosmos.ts`, `shopScanWorker.ts`                                         |
 | Public storefront locale audit   | `scripts/storefront-locale-audit.mjs`                 | Cursor browser locale discovery; local tree under `scripts/tmp/storefront-audit/`                       |
 | Translation core/filter rule     | `packages/translation-core/src/*`                     | App and Worker runtime adapters, focused builds                                                         |
 | i18n copy                        | `public/locales/en/translation.json`                  | `public/locales/zh-CN/translation.json`, other locales                                                  |
-| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml`             |
+| Shopify auth/API version         | `app/lib/shopifyAdminApiVersion.ts`（硬编码 `2026-07`）    | `app/shopify.server.ts`（`@shopify/shopify-app-remix` 5 / `@shopify/shopify-api` 14，需 Node ≥22）、`worker/src/services/shopifyAdminApiVersion.ts`、`shopify.app*.toml` |
 | Deploy config                    | `shopify.app*.toml`                                   | `Dockerfile`, Render/GitHub Actions config                                                              |
 
 
@@ -1266,22 +1461,40 @@ For "合入PR然后发布测试环境", the script will:
 
 ## Scripts
 
+诊断脚本默认叠 `.env.test` → `.env.worker.test` → `.env`（`scripts/lib/loadEnv.mjs`）；
+查产需 `--env=.env.prod`；写产另需 `--confirm-prod`（见
+`.cursor/rules/env-prod-safety.mdc`）。
+
 Package-backed root scripts:
 
 - `scripts/translate.js`: `npm run translate`, i18n helper.
-- `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`.
+- `scripts/turso-migrate.cjs`: `npm run turso:migrate:test|prod`。
+ `test` 读 `.env`+`.env.test`，`prod` 读 `.env`+`.env.prod`；文件内同一对
+ `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（短期兼容 `TSF_TURSO_*` 与该
+ target 的旧 `TURSO_{TEST|PROD}_*`）。
+- `scripts/cursor-push-pr.mjs`: `npm run push:pr` — 按传入的中文标题/commit/正文
+  提交（跳过敏感文件）→ push → 创建或更新仍打开的 PR；`--message-file` /
+  `--body-file` 避免换行被吃掉；成功输出 `PR_URL:`。
+- `scripts/cursor-rebase-pr.mjs`: `npm run rebase:pr` — 相对 master soft-reset
+  压成一条中文 commit → `--force-with-lease` → 改/建 PR；成功输出 `PR_URL:`。
+- `scripts/merge-deploy-test.mjs`: `npm run merge:deploy:test` — 合入当前分支 PR 并触发
+TSF Web Test + Worker Test 部署；成功输出 `MERGED_PR_URL:` 与 `DEPLOY_RUN_URL:`。
 
-Operational root scripts:
+Operational root scripts（查任务 / 队列 / 日志 / 运维，保留）：
 
+- `scripts/lib/loadEnv.mjs`: 诊断脚本共用 env 叠载 + Turso / Redis / Cosmos 解析。
+- `scripts/lib/autoScanSchedule.mjs`: helper used by auto-scan scheduling
+scripts.
 - `scripts/inspect-v4-tasks.mjs`: inspect v4 tasks in Cosmos.
 - `scripts/reset-onboarding.mjs`: 把「指定 shop」重置为可重新看到首次翻译新手引导的状态
  （删 Turso `ShopOnboarding` + Cosmos 该店 v4 任务 + `TranslateV4JobUsage` +
  `ShopTargetLocale` + `ShopTranslationSettings` + Redis `tsf:items_count:{shop}:*` +
  Cosmos `shop_scan_jobs`（避免 install 因历史 COMPLETED 被 `skipped_existing`）；可选
- `--billing` 连带清 `Account/AppSubscription/BillingLog/AccountPeriodUsage` 让 `isNew=true`）。
- 默认 dry-run，`--write` 才落库；必须 `--shop=`；`--env=`（默认 `.env`）；Turso 目标按
- `--target`/`TURSO_TARGET` 解析并回退到实际存在的 `TURSO_{TEST,PROD}_*` / `TSF_TURSO_*` 凭据；
- Redis **只连** `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
+ `--billing` 先 best-effort 调 Shopify `appSubscriptionCancel`（需 offline Session；
+ ACTIVE/PENDING 才调），再清 `Account/AppSubscription/BillingLog/AccountPeriodUsage` 让 `isNew=true`）。
+ 默认 dry-run，`--write` 才落库；必须 `--shop=`； `--env=`（默认 `.env`）；Turso 认 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`
+ （兼容 `TSF_TURSO_*` / `TURSO_TEST_*` / `TURSO_PROD_*`）；Redis **只连**
+ `RENDER_KV`，按该店 locale **精确 DEL**（不用 KEYS/SCAN）；不删 Blob
  `latest-scan.json`；只打印脱敏 host。
  示例：`node scripts/reset-onboarding.mjs --shop=xxx.myshopify.com --env=.env.test --write`。
 - `scripts/check-task.mjs`: inspect one task and related Redis state.
@@ -1289,25 +1502,29 @@ Operational root scripts:
 - `scripts/auto-tasks-72h-trend.mjs`: auto-translate trend report over the
 recent 72-hour window.
 - `scripts/next-auto-slot-shops.mjs`: preview shops in next auto-translate scan slot.
-- `scripts/smoke-shop-counts.mjs`: focused shop/item count smoke check.
+- `scripts/lcp-trend.mjs`: 首屏 LCP 归因趋势（只读）。从 Render 运行日志抓
+ `[perf][lcp]` 单行，聚合 LCP / FCP / TTFB 的 p50/p75/p90，并按冷热缓存、LCP 元素、
+ 路由、网络档位分组。`--hours=` / `--route=/app` / `--service=srv-xxx` /
+ `--env=.env.prod` / `--json`；需要 `RENDER_API_KEY`。
 - `scripts/backfill-locale-coverage-from-redis.mjs`: Redis `items_count` →
   Turso `ShopTargetLocale.coverage*`（默认 dry-run；`--write` 写线上；
   支持 `--shop=` / `--only-missing`；MOVED 重连重试；Redis 源用 `RENDER_KV`）。
-- `scripts/migrate-redis-azure-to-render.mjs`: **历史** Azure → Render KV 回填脚本
-  （迁移已完成；日常运维不要再依赖 `REDIS_URL*`）。
-- `scripts/smoke-user-picture-read.mjs`, `smoke-user-picture-urls.mjs`: focused
-UserPicture read/URL checks.
-- `scripts/smoke-find-juicer.mjs`: focused storefront/shop lookup smoke check.
+- `scripts/backfill-auto-translate-settings.mjs`: 回填
+ `ShopTranslationSettings.autoTranslateHour` / `autoTranslateModules`
+ （默认 dry-run；`--write`；null hour→`shopSlotIndex`；null modules→默认
+ auto v2 模块集，不含 liquid）。`autoTranslateIntervalHours` 未回填时默认
+ 24h（不写库；Pro/Premium 仍可选更短）。
 - `scripts/storefront-locale-audit.mjs`: public storefront multi-locale product
 field audit (competitor research). Paginates `/products.json` (or
 `/{locale}/products.json`), writes a local tree mirroring v4 blob layout under
 `scripts/tmp/storefront-audit/{shopHost}/{runId}/` (`init/PRODUCT/chunk-*.json`,
 `scrape/{locale}/PRODUCT/resources/{base64url}.json`, `diff/summary.json`,
 `report.md`), and computes obviously-untranslated ratios vs primary.
+- `scripts/switcher-perf-measure.mjs`: 店面 Switcher 性能采集 / 对比（Chrome CDP）。
+  `--label before|after --runs 5` 落盘 `scripts/tmp/switcher-perf/`；`--compare`
+  出 p50/p90。测非主语言页才能看到 Liquid 替换 / 采集；默认关 liquid debug。
 - `scripts/eventReport.ts`: imported by app routes/components; this is runtime
 client reporting code, not a throwaway script.
-- `scripts/lib/autoScanSchedule.mjs`: helper used by auto-scan scheduling
-scripts.
 
 Storefront locale audit playbook (trigger: 「审计店面多语言」):
 
@@ -1330,25 +1547,18 @@ Storefront locale audit playbook (trigger: 「审计店面多语言」):
    the auto-generated Chinese `report.md` in the run folder.
 5. Artifacts stay under ignored `scripts/tmp/`; do not commit them.
 
-Agent / deploy helper scripts:
-
-- `scripts/cursor-push-pr.mjs`: `npm run push:pr` — commit（跳过敏感文件）→ push → 创建 PR；
-成功输出 `PR_URL:`。供 Cursor Agent 在「提个pr」时直接调用。
-- `scripts/merge-deploy-test.mjs`: `npm run merge:deploy:test` — 合入当前分支 PR 并触发
-TSF Web Test + Worker Test 部署；成功输出 `MERGED_PR_URL:` 与 `DEPLOY_RUN_URL:`。
-
 Worker scripts to keep:
 
 - `worker/scripts/check-auto-translate-modules.mjs`: package-backed module
-catalog check.
-- `worker/scripts/cleanup-stale-hints.mjs`: package-backed cleanup command.
-- `worker/scripts/probe-hint-queues.mjs`, `probe-job-redis.mjs`,
-`probe-job-progress.mjs`, `probe-job-status-counts.mjs`, `probe-prod-jobs.mjs`,
-`probe-auto-batch.mjs`: queue/job probes.
-- `worker/scripts/diag-stuck-job.mjs`, `diag-failed-jobs.mjs`, and other
-`probe-*.mjs`: worker diagnostics.
+catalog check（`npm run check:auto-translate-modules --prefix worker`）。
+- `worker/scripts/cleanup-stale-hints.mjs`: package-backed cleanup
+（`npm run cleanup:stale-hints[--apply] --prefix worker`）。
+- `worker/scripts/probe-hint-queues.mjs`（`npm run probe:hint-queues --prefix worker`）、
+`probe-job-redis.mjs`、`probe-job-progress.mjs`、`probe-job-status-counts.mjs`、
+`probe-prod-jobs.mjs`、`probe-auto-batch.mjs`: queue/job probes.
+- `worker/scripts/diag-stuck-job.mjs`, `diag-failed-jobs.mjs`: worker diagnostics.
 - `worker/scripts/resume-job.mjs` and `resume-orphaned-processing.mjs`:
-operational recovery tools.
+operational recovery tools（写产需 `--confirm-prod`）。
 - `worker/scripts/auto-tasks-24h-trend.mjs`: auto-translate volume report.
 - `worker/scripts/v4-auto-translate-modules.json`: module catalog fixture/data.
 - `worker/src/scripts/exportTranslationReport.ts`: TypeScript source for the
@@ -1356,8 +1566,10 @@ translation quality report command; compiled output lives in `worker/dist/script
 
 Temporary script policy:
 
-- `scripts/tmp/`, `worker/scripts/tmp/`, and `worker/scripts/out/` are ignored
-and should not contain committed files.
+- `scripts/tmp/`、`scripts/out/`、`worker/scripts/tmp/`、`worker/scripts/out/` 已
+gitignore，勿提交。
+- 已删除、勿恢复：一次性 `smoke-*`、历史 `migrate-redis-azure-to-render.mjs`、
+以及失效的 `npm run i18n:key`（单 key 机翻已停用；用 `npm run translate`）。
 - Prefer one-off scripts outside the repo, or delete them immediately after the
 investigation. If a one-off becomes useful twice, promote it into the
 operational list above with a clear name and dry-run behavior when it writes.
@@ -1401,7 +1613,9 @@ node --experimental-vm-modules -e "
 
 
 **Prod access:** Turso prod credentials are in `.env.prod` as
-`TSF_TURSO_DATABASE_URL` / `TSF_TURSO_AUTH_TOKEN`. You can also read them
+`TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`（与 App/Worker 同名；测/产靠不同
+env 文件或 Render 服务区分）。短期仍兼容旧名 `TSF_TURSO_*` /
+`TURSO_TEST_*` / `TURSO_PROD_*`。You can also read them
 from Render env vars (see Render section below).
 
 ### Cosmos DB (Translation V4 Jobs)
@@ -1455,21 +1669,16 @@ translation memory cache.
 - App、Worker、运维脚本、Agent 诊断：**只连** `RENDER_KV`。
 - **不要**再使用 `REDIS_URL` / `REDIS_URL_V4`（Azure Cache 已弃用；本地 `.env*` 里若仍残留可忽略或删除）。
 - 不要打印 URL/密码；只打印脱敏 host。
-- **新增 Redis 用法前先查 `RedisLike` 支持哪些命令**（`worker/src/services/redisDualClient.ts`
-  与 `app/server/translateV4/redisDualClient.server.ts`）。`getRedis()` 的返回类型标成
-  `IORedis`，但双写模式下实际是手写代理 `MigratingRedis`：类型检查会放过
-  `sadd`/`smembers`/`srem` 之类未实现的命令，运行时才崩。目前代理只有
-  get/mget/set/del/hset/hget/hgetall/hdel/expire/lpush/rpush/lpop/ltrim/ping/pipeline/multi
-  ——需要集合语义时用 Hash 代替 Set（见 `translate:v4:email:pending:*`），
-  或先把命令补进两份代理。
+- App / Worker：`RENDER_KV` 已配置则**只连它**；不再需要 `REDIS_DUAL_WRITE` /
+  `REDIS_CUTOVER`。未配 `RENDER_KV` 时才回退 `REDIS_URL*`（本地脚本应急）。
+- 集合语义用 Hash（见 `translate:v4:email:pending:*`），不要依赖已废弃双写代理的 Set 命令。
 - Render 服务内用 **Internal** URL（通常 `redis://…`）；本机 / Agent `.env*` 用 **External**
   `rediss://…`（需 Dashboard 放行 Inbound IP）。
 - 交互 CLI：Dashboard **Valkey CLI Command**，或服务同区 Shell 里
   `redis-cli -u "$RENDER_KV"`。
 
 历史说明：曾用 `REDIS_DUAL_WRITE` / `REDIS_CUTOVER` + Azure `REDIS_URL*` 做双写切流；
-迁移已完成。代码里若仍有 `redisDualClient` 兼容分支，运行时应处于 sole
-（`RENDER_KV` 已设、不再创建 Azure client）。新脚本与文档一律按 sole / 仅 `RENDER_KV` 写。
+迁移已完成，这两个开关可从环境变量删除（残留时仅打 deprecate 警告）。
 
 **Ping Render KV from local `.env` / `.env.test` (masks host only; never echo secrets):**
 
@@ -1511,6 +1720,7 @@ node worker/scripts/probe-hint-queues.mjs
 | `translate:v4:auto_scan:last_success_at` | String: last successful auto-scan completion |
 | `tsf:shop_scan:hints` | List: shop-scan wake hints `{scanId,shopName}` (Cosmos poll is fallback) |
 | `tsf:items_count:{shop}:{locale}` | Hash: module → `{total,translated,updatedAt}` (TTL 7d; language summary in Turso) |
+| `tsf:uninstall-email:{shop}` | String: uninstall **SES** send lock (`SET NX`, TTL 7d；duplicate 仍发卸载飞书) |
 | `tm:v5:{shop}:{target}:{model}:{digest}` | String: field-digest translation memory (TTL default 30d) |
 | `tm:v5:val:{source}:{target}:{model}:{id}` | String: value-level TM; id = digest or CRC-32 (TTL default 30d) |
 | `translate:v4:keystat:{label}` | Hash: LLM API-key snapshot (TTL 24h) |
@@ -1653,6 +1863,38 @@ const { logs } = await res.json();
 
 
 
+### LCP / 首屏性能归因
+
+嵌入式首页（`/app`、`/app/translate-v4`）的 LCP 有完整归因链，**不要再靠猜**：
+
+1. 采集：`app/utils/lcpDiagnostics.ts`（`app/root.tsx` 里 `observeLcpDiagnostics()`
+ 挂一次）。用 `PerformanceObserver('largest-contentful-paint')` + navigation /
+ paint / resource timing，在**首次交互 / 页面隐藏 / 12s 兜底**三者最早发生时
+ `sendBeacon` 发 `/log`（`event=lcp_diagnostics`，`context.reportReason` 标明时机）。
+ 一个文档只发一次。Shopify App Bridge 的 `webVitals.onReport` 也走同一通道
+ （`event=shopify_web_vitals`）。
+2. 落盘：`app/routes/log.tsx` 输出 `[perf][lcp] {json}` 单行 + 原有 `[client-log]` 全量行。
+3. 聚合：`node scripts/lcp-trend.mjs --hours=72 --route=/app`。
+ 分位数 + 冷热缓存 / LCP 元素 / 路由 / 网络档位分组。
+
+字段判读：
+
+- `coldLoad`：由 `scriptCachedCount < scriptCount/2` 推出。**首次安装冷加载和回访
+ 热加载的 LCP 能差 3 倍**，混在一起看分位数会得出错误结论。
+- `element`：LCP 元素的短选择器（标签 + class + nth-child）。首屏卡片带
+  `.v4-enter` / `.v4-enter-d1` / `.v4-lift`，据此能定位到具体卡片。
+  **有意不采文本内容** —— manage_translation 等页面的 LCP 元素可能是商户商品文案。
+- `/app` 与 `/app/translate-v4`：鉴权 + Shopify 语言列表只在父级 `app.tsx` loader
+  跑一次；子页经 `useRouteLoaderData("routes/app")` 读 `shopLocales`，避免同文档
+  双鉴权把 TTFB 抬到 ~2s。标题区 `PageHeaderBar` 固定尺寸并预留积分 pill 宽度。
+- `ttfbMs` vs `fcpMs` vs `lcpMs`：TTFB 高 → 服务端 loader（鉴权 / Shopify GraphQL）；
+  FCP 与 TTFB 差距大 → 阻塞 CSS/JS；LCP 明显晚于 FCP → 骨架屏换真实内容太晚
+  （对照 `context.resources.apiTimings` 里首屏接口的 `responseEnd`）。
+- `effectiveType` / `rttMs`：排除「其实是商户网络慢」。
+
+`app/utils/perf.ts` 的 `markPerfStart` / `logReactProfilerRender` 是另一条**按需**
+链路，只在 `?perf=1` 或 `localStorage.CIWI_PERF_DEBUG=1` 时上报，用于本地细查渲染。
+
 ### Combined Diagnostic Cheat Sheet
 
 
@@ -1665,6 +1907,7 @@ const { logs } = await res.json();
 | Currency/switcher not working        | Turso: `SwitcherConfiguration`, `Currency` tables              |
 | App 500 / worker crash               | Render deploy logs → check for missing env vars                |
 | Auto-translate not running           | `probe-hint-queues.mjs` auto queues + `auto_scan:last_at`      |
+| 首屏 LCP 慢                          | `scripts/lcp-trend.mjs` → `[perf][lcp]` 归因（见上一节）        |
 
 
 
@@ -1694,6 +1937,11 @@ logging uses beacon-style client logging instead of route `fetcher.submit`.
 - `pricing` AbortError: Remix fetcher replacement or route changes can produce
 expected aborts. Global client error reporting should ignore AbortError-like
 noise, and exposure logging should prefer `reportClientLog(..., { beacon: true })` over competing fetcher submits.
+- `/app/manage_translation&icon=data:image/png;base64,...` 404: Shopify Admin /
+  App Bridge can append the 32×32 nav icon with `&` and no `?`, so Remix treats
+  it as pathname. Recover via `sanitizeEmbeddedAppPath` (`app.$.tsx` redirect +
+  root ErrorBoundary `location.replace`). Do not add a dedicated route for the
+  junk URL. `entry.server` is too late (routing already ran).
 
 
 

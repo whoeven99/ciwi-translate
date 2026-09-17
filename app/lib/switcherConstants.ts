@@ -3,6 +3,8 @@ export type SwitcherConfigWriteInput = {
   languageSelector: boolean;
   currencySelector: boolean;
   ipOpen: boolean;
+  browserLanguageOpen: boolean;
+  marketCurrencyOpen: boolean;
   includedFlag: boolean;
   fontColor: string;
   backgroundColor: string;
@@ -25,6 +27,8 @@ export const SWITCHER_UI_DEFAULTS: SwitcherConfigWriteInput = {
   languageSelector: true,
   currencySelector: true,
   ipOpen: false,
+  browserLanguageOpen: true,
+  marketCurrencyOpen: true,
   fontColor: "#303030",
   backgroundColor: "#ffffff",
   buttonColor: "#ffffff",

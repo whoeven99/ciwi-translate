@@ -10,6 +10,8 @@ export type WidgetConfigResponse = {
   languageSelector: boolean;
   currencySelector: boolean;
   ipOpen: boolean;
+  browserLanguageOpen: boolean;
+  marketCurrencyOpen: boolean;
   includedFlag: boolean;
   fontColor: string;
   backgroundColor: string;
@@ -39,6 +41,14 @@ function normalizeWriteInput(
     languageSelector: bool(input.languageSelector, SWITCHER_UI_DEFAULTS.languageSelector),
     currencySelector: bool(input.currencySelector, SWITCHER_UI_DEFAULTS.currencySelector),
     ipOpen: bool(input.ipOpen, SWITCHER_UI_DEFAULTS.ipOpen),
+    browserLanguageOpen: bool(
+      input.browserLanguageOpen,
+      SWITCHER_UI_DEFAULTS.browserLanguageOpen,
+    ),
+    marketCurrencyOpen: bool(
+      input.marketCurrencyOpen,
+      SWITCHER_UI_DEFAULTS.marketCurrencyOpen,
+    ),
     includedFlag: bool(input.includedFlag, SWITCHER_UI_DEFAULTS.includedFlag),
     fontColor: str(input.fontColor, SWITCHER_UI_DEFAULTS.fontColor),
     backgroundColor: str(input.backgroundColor, SWITCHER_UI_DEFAULTS.backgroundColor),
@@ -62,6 +72,8 @@ function toWidgetConfigResponse(
     languageSelector: boolean;
     currencySelector: boolean;
     ipOpen: boolean;
+    browserLanguageOpen: boolean;
+    marketCurrencyOpen: boolean;
     includedFlag: boolean;
     fontColor: string;
     backgroundColor: string;
@@ -79,6 +91,8 @@ function toWidgetConfigResponse(
     languageSelector: config.languageSelector,
     currencySelector: config.currencySelector,
     ipOpen: config.ipOpen,
+    browserLanguageOpen: config.browserLanguageOpen,
+    marketCurrencyOpen: config.marketCurrencyOpen,
     includedFlag: config.includedFlag,
     fontColor: config.fontColor,
     backgroundColor: config.backgroundColor,

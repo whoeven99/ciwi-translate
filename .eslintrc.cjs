@@ -23,7 +23,7 @@ module.exports = {
                 name: "antd",
                 importNames: ["Select"],
                 message:
-                  "Use Polaris Select / chips / Combobox on translate-v4. Ant Select + card CSS has broken dropdown layout before.",
+                  "Use InFlowSelect / chips / Combobox on translate-v4. Do not use Ant Select or Polaris Select inside AppSModal.",
               },
             ],
           },

@@ -24,18 +24,6 @@ export function isSingleTranslateQuotaError(
   return (SINGLE_TRANSLATE_QUOTA_ERROR_KEYS as readonly string[]).includes(key);
 }
 
-export function resolveSingleTranslateQuotaGateMode(
-  errorMsg: string,
-  isNew: boolean | null,
-): "trial" | "pricing" | null {
-  if (!isSingleTranslateQuotaError(errorMsg)) return null;
-
-  if (errorMsg === "v4.create.noCreditsTrial") return "trial";
-  if (errorMsg === "v4.create.noCreditsPricing") return "pricing";
-  void isNew;
-  return null;
-}
-
 export function resolveSingleTranslateErrorMessage(
   t: TFunction,
   errorMsg: string | null | undefined,

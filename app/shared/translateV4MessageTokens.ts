@@ -77,6 +77,27 @@ export function isV4CancelledMessage(message: string | null | undefined): boolea
   return LEGACY_CANCELLED_MESSAGES.includes(normalized);
 }
 
+/**
+ * 额度不足的旧自由文本（小写后子串匹配）。
+ *
+ * 必须与 `worker/src/services/userFacingMessages.ts` 的 `QUOTA_INSUFFICIENT_PATTERNS`
+ * 逐项一致。Worker 是这些文案的写入方，并据此决定发「额度不足未完成」邮件；App 据此
+ * 决定任务卡是否给补额度入口。两边少一项就会出现「收到额度不足邮件、卡上却没有补额度
+ * 按钮」。改动时同时改两处，顺序保持一致以便肉眼 diff。
+ */
+export const QUOTA_INSUFFICIENT_PATTERNS = [
+  "额度不足",
+  "积分不足",
+  "额度已用完",
+  "insufficient credits",
+  "credits are insufficient",
+  "out of credits",
+  "translation credits have been used up",
+  "translation word credits have been exhausted",
+  "not enough translation credits",
+  "out of translation credits",
+] as const;
+
 export function isV4QuotaInsufficientMessage(
   message: string | null | undefined,
 ): boolean {
@@ -89,14 +110,8 @@ export function isV4QuotaInsufficientMessage(
     return true;
   }
   const normalized = trimmed.toLowerCase();
-  return (
-    normalized.includes("额度不足") ||
-    normalized.includes("积分不足") ||
-    normalized.includes("额度已用完") ||
-    normalized.includes("translation credits have been used up") ||
-    normalized.includes("translation word credits have been exhausted") ||
-    normalized.includes("not enough translation credits") ||
-    normalized.includes("out of translation credits")
+  return QUOTA_INSUFFICIENT_PATTERNS.some((pattern) =>
+    normalized.includes(pattern),
   );
 }
 

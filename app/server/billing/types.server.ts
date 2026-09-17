@@ -29,10 +29,16 @@ export type BillingInterval =
 /** 计费流水事件类型。 */
 export const BILLING_LOG_EVENT = {
   TRIAL_GRANTED: "TRIAL_GRANTED",
+  /** 安装赠送到期结算（creditsDelta = -leftover；用完则为 0） */
+  TRIAL_EXPIRED: "TRIAL_EXPIRED",
   SUBSCRIPTION_ACTIVATED: "SUBSCRIPTION_ACTIVATED",
   SUBSCRIPTION_RENEWED: "SUBSCRIPTION_RENEWED",
   SUBSCRIPTION_CANCELLED: "SUBSCRIPTION_CANCELLED",
   TOKEN_PACK_PURCHASED: "TOKEN_PACK_PURCHASED",
+  /** 迁出到 Spark（usedCredits += amount；creditsDelta 为负） */
+  CREDITS_MIGRATED_OUT: "CREDITS_MIGRATED_OUT",
+  /** 迁出失败（余额不变；creditsDelta=0） */
+  CREDITS_MIGRATION_FAILED: "CREDITS_MIGRATION_FAILED",
 } as const;
 export type BillingLogEvent =
   (typeof BILLING_LOG_EVENT)[keyof typeof BILLING_LOG_EVENT];

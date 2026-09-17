@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Modal,
   Input,
   Space,
   InputRef,
@@ -10,8 +9,8 @@ import {
   Empty,
 } from "antd";
 import type { CollapseProps } from "antd";
-import Button from "~/ui/components/AppButton";
 import { SearchOutlined } from "@ant-design/icons";
+import { AppSModal } from "~/ui/components/AppSModal";
 import SelectedTag from "../../../components/selectedTag";
 import { LanguagesDataType } from "~/routes/app.language/route";
 import { useDispatch, useSelector } from "react-redux";
@@ -578,42 +577,25 @@ const AddLanguageModal: React.FC<AddLanguageModalProps> = ({
   );
 
   return (
-    <Modal
-      title={t("Select Languages")}
-      width={1000}
+    <AppSModal
       open={isVisible}
-      onCancel={handleCloseModal}
-      footer={[
-        <div
-          key={"footer_buttons"}
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            width: "100%",
-            gap: "12px", // 使用 gap 替代 marginRight
-          }}
-        >
-          <Button
-            key={"manage_cancel_button"}
-            onClick={handleCloseModal}
-            style={{ marginRight: "10px" }}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            key={"manage_confirm_button"}
-            type="primary"
-            disabled={confirmButtonDisable || allSelectedKeys.length === 0}
-            loading={confirmButtonDisable}
-          >
-            {t("Add")}
-          </Button>
-        </div>,
+      heading={t("Select Languages")}
+      onClose={handleCloseModal}
+      size="large-100"
+      primaryAction={{
+        content: t("Add"),
+        onAction: handleConfirm,
+        disabled: confirmButtonDisable || allSelectedKeys.length === 0,
+        loading: confirmButtonDisable,
+      }}
+      secondaryActions={[
+        {
+          content: t("Cancel"),
+          onAction: handleCloseModal,
+        },
       ]}
-      styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }} // 这里设置最大高度和滚动
     >
+      <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
       <Input
         ref={searchRef}
         placeholder={t("Search languages...")}
@@ -659,7 +641,8 @@ const AddLanguageModal: React.FC<AddLanguageModalProps> = ({
           description={t("Language not found")}
         />
       )}
-    </Modal>
+      </div>
+    </AppSModal>
   );
 };
 

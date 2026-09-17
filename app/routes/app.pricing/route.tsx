@@ -1,25 +1,25 @@
-import { TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import {
   Space,
   Row,
   Col,
-  Card,
   Typography,
   Alert,
   Flex,
   Switch,
   Table,
   Collapse,
-  Modal,
 } from "antd";
 import Button from "~/ui/components/AppButton";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CollapseProps } from "antd";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import type { ShouldRevalidateFunction } from "@remix-run/react";
 import { authenticate } from "~/shopify.server";
-import { useFetcher, useLocation } from "@remix-run/react";
+import { useFetcher, useLoaderData, useLocation } from "@remix-run/react";
+import { isSparkCreditMigrationEnabled } from "~/server/billing/sparkCreditMigrationClient.server";
 import type { OptionType } from "~/components/paymentModal";
 import { CheckOutlined } from "@ant-design/icons";
 import "./style.css";
@@ -27,20 +27,15 @@ import {
   mutationAppPurchaseOneTimeCreate,
   mutationAppSubscriptionCreate,
 } from "~/api/admin";
-import type { Dispatch } from "@reduxjs/toolkit";
 import { useDispatch, useSelector } from "react-redux";
-import {
-  setChars,
-  setIsNew,
-  setPlan,
-  setTotalChars,
-  setUpdateTime,
-} from "~/store/modules/userConfig";
-import type { AppBootstrapData } from "~/server/appBootstrap.server";
+import { refreshBillingBootstrap } from "~/utils/billingBootstrap";
 import useReport from "scripts/eventReport";
 import { globalStore } from "~/globalStore";
 import AcountInfoCard from "./components/acountInfoCard";
 import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import AppStatusBadge from "~/ui/components/AppStatusBadge";
 import {
   type ClientLogTrace,
@@ -54,50 +49,6 @@ import {
 } from "~/utils/billingReturn";
 import { redirectToBillingConfirmation } from "~/utils/billingConfirmation.client";
 import { buildShopifyEmbeddedAppReturnUrl } from "~/lib/shopifyAppHandle.server";
-
-async function refreshBillingBootstrap(
-  dispatch: Dispatch,
-  previousTotalChars?: number,
-): Promise<void> {
-  const retryDelaysMs = [0, 600, 1200, 2000, 3000];
-
-  for (const delayMs of retryDelaysMs) {
-    if (delayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-
-    try {
-      const res = await fetch("/api/app-bootstrap");
-      const data = (await res.json()) as {
-        ok?: boolean;
-        bootstrap?: AppBootstrapData;
-      };
-      if (!data.ok || !data.bootstrap) continue;
-
-      const bootstrap = data.bootstrap;
-      dispatch(setPlan({ plan: bootstrap.plan }));
-      dispatch(setChars({ chars: bootstrap.chars }));
-      dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
-      if (bootstrap.updateTime) {
-        dispatch(setUpdateTime({ updateTime: bootstrap.updateTime }));
-      } else {
-        dispatch(setUpdateTime({ updateTime: "" }));
-      }
-      if (bootstrap.isNew !== null && bootstrap.isNew !== undefined) {
-        dispatch(setIsNew({ isNew: bootstrap.isNew }));
-      }
-
-      if (
-        previousTotalChars === undefined ||
-        bootstrap.totalChars !== previousTotalChars
-      ) {
-        return;
-      }
-    } catch {
-      // webhook 入账可能略滞后，继续重试
-    }
-  }
-}
 
 const { Title, Text, Link } = Typography;
 
@@ -124,7 +75,24 @@ const isBillingTestMode = (): boolean =>
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
-  return null;
+  return { sparkCreditMigrationEnabled: isSparkCreditMigrationEnabled() };
+};
+
+/**
+ * 订阅 / 买积分会立刻顶层跳转 Shopify 确认页；跳过本页 loader 重验，
+ * 避免 authenticate.admin 再跑一轮拖住 fetcher → idle 才跳转。
+ */
+export const shouldRevalidate: ShouldRevalidateFunction = ({
+  formMethod,
+  formData,
+  defaultShouldRevalidate,
+}) => {
+  if (formMethod?.toUpperCase() === "POST" && formData) {
+    if (formData.get("payForPlan") || formData.get("payInfo")) {
+      return false;
+    }
+  }
+  return defaultShouldRevalidate;
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -133,9 +101,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin } = adminAuthResult;
 
   const formData = await request.formData();
-  const payInfo = JSON.parse(formData.get("payInfo") as string);
-  const payForPlan = JSON.parse(formData.get("payForPlan") as string);
-  const cancelId = JSON.parse(formData.get("cancelId") as string);
+  const rawPayInfo = formData.get("payInfo");
+  const rawPayForPlan = formData.get("payForPlan");
+  const rawCancelId = formData.get("cancelId");
+  const payInfo =
+    typeof rawPayInfo === "string" && rawPayInfo
+      ? JSON.parse(rawPayInfo)
+      : null;
+  const payForPlan =
+    typeof rawPayForPlan === "string" && rawPayForPlan
+      ? JSON.parse(rawPayForPlan)
+      : null;
+  const cancelId =
+    typeof rawCancelId === "string" && rawCancelId
+      ? JSON.parse(rawCancelId)
+      : null;
   const requestedReturnPath = sanitizeBillingReturnPath(
     formData.get("returnPath")?.toString(),
   );
@@ -295,6 +275,8 @@ const Index = () => {
   const { t, i18n } = useTranslation();
   const dispatch = useDispatch();
   const location = useLocation();
+  const homeBackAction = useAppHomeBackAction();
+  const { sparkCreditMigrationEnabled = false } = useLoaderData<typeof loader>() ?? {};
 
   const getPlanDisplayLabel = (planName: string | null | undefined) => {
     switch (planName) {
@@ -311,25 +293,45 @@ const Index = () => {
     }
   };
 
-  const { plan, updateTime, chars, totalChars, isNew } = useSelector(
-    (state: any) => state.userConfig,
-  );
+  const {
+    plan,
+    updateTime,
+    chars,
+    totalChars,
+    trialCredits,
+    purchasedCredits,
+    migratablePurchasedCredits,
+    isNew,
+  } = useSelector((state: any) => state.userConfig);
 
   const { reportClick, report } = useReport();
-  const currentBillingReturnPath = useMemo(() => {
+  const billingReturnBasePath = useMemo(() => {
     const requestedReturnPath = new URLSearchParams(location.search).get(
       "returnPath",
     );
     if (requestedReturnPath) {
       return sanitizeBillingReturnPath(requestedReturnPath);
     }
-    const currentPath = `${location.pathname}${location.search}${location.hash}`;
-    return buildBillingReturnPath(currentPath, {
-      kind: "credits",
-      previousTotalChars:
-        typeof totalChars === "number" ? totalChars : undefined,
-    });
-  }, [location.hash, location.pathname, location.search, totalChars]);
+    return `${location.pathname}${location.search}${location.hash}`;
+  }, [location.hash, location.pathname, location.search]);
+  const creditsBillingReturnPath = useMemo(
+    () =>
+      buildBillingReturnPath(billingReturnBasePath, {
+        kind: "credits",
+        previousTotalChars:
+          typeof totalChars === "number" ? totalChars : undefined,
+      }),
+    [billingReturnBasePath, totalChars],
+  );
+  const planBillingReturnPath = useMemo(
+    () =>
+      buildBillingReturnPath(billingReturnBasePath, {
+        kind: "plan",
+        previousTotalChars:
+          typeof totalChars === "number" ? totalChars : undefined,
+      }),
+    [billingReturnBasePath, totalChars],
+  );
 
   //价格选项数组
   const creditOptions: OptionType[] = useMemo(
@@ -456,6 +458,8 @@ const Index = () => {
   const payPlanSubmittingRef = useRef(false);
   const payCreditsAwaitingResponseRef = useRef(false);
   const payPlanAwaitingResponseRef = useRef(false);
+  const payCreditsRedirectedRef = useRef(false);
+  const payPlanRedirectedRef = useRef(false);
 
   useEffect(() => {
     setIsLoading(false);
@@ -499,6 +503,17 @@ const Index = () => {
   }, [i18n.resolvedLanguage, plan?.type, updateTime]);
 
   useEffect(() => {
+    const confirmationUrl = payFetcher.data?.response?.confirmationUrl as
+      | string
+      | undefined;
+    const succeeded = Boolean(payFetcher.data?.success && confirmationUrl);
+
+    // 有 confirmationUrl 立刻跳，不等 fetcher idle（省掉 loader 重验等待）。
+    if (succeeded && confirmationUrl && !payCreditsRedirectedRef.current) {
+      payCreditsRedirectedRef.current = true;
+      redirectToBillingConfirmation(confirmationUrl);
+    }
+
     if (payFetcher.state === "submitting" || payFetcher.state === "loading") {
       payCreditsAwaitingResponseRef.current = true;
       return;
@@ -519,10 +534,6 @@ const Index = () => {
     }
 
     payCreditsAwaitingResponseRef.current = false;
-    const confirmationUrl = payFetcher.data?.response?.confirmationUrl as
-      | string
-      | undefined;
-    const succeeded = Boolean(payFetcher.data?.success && confirmationUrl);
 
     if (payCreditsTraceRef.current) {
       finishClientLogTrace(payCreditsTraceRef.current, {
@@ -539,13 +550,21 @@ const Index = () => {
 
     payCreditsSubmittingRef.current = false;
     setBuyButtonLoading(false);
-
-    if (succeeded && confirmationUrl) {
-      redirectToBillingConfirmation(confirmationUrl);
-    }
   }, [payFetcher.state, payFetcher.data]);
 
   useEffect(() => {
+    const confirmationUrl = payForPlanFetcher.data?.response?.confirmationUrl as
+      | string
+      | undefined;
+    const succeeded = Boolean(
+      payForPlanFetcher.data?.success && confirmationUrl,
+    );
+
+    if (succeeded && confirmationUrl && !payPlanRedirectedRef.current) {
+      payPlanRedirectedRef.current = true;
+      redirectToBillingConfirmation(confirmationUrl);
+    }
+
     if (
       payForPlanFetcher.state === "submitting" ||
       payForPlanFetcher.state === "loading"
@@ -569,12 +588,6 @@ const Index = () => {
     }
 
     payPlanAwaitingResponseRef.current = false;
-    const confirmationUrl = payForPlanFetcher.data?.response?.confirmationUrl as
-      | string
-      | undefined;
-    const succeeded = Boolean(
-      payForPlanFetcher.data?.success && confirmationUrl,
-    );
 
     if (payPlanTraceRef.current) {
       finishClientLogTrace(payPlanTraceRef.current, {
@@ -591,10 +604,6 @@ const Index = () => {
 
     payPlanSubmittingRef.current = false;
     setPayForPlanButtonLoading("");
-
-    if (succeeded && confirmationUrl) {
-      redirectToBillingConfirmation(confirmationUrl);
-    }
   }, [payForPlanFetcher.state, payForPlanFetcher.data]);
 
   useEffect(() => {
@@ -665,6 +674,7 @@ const Index = () => {
           t("Glossary ({{count}} entries)", { count: 50 }),
           t("pro_features1"),
           t("pro_features2"),
+          t("pro_features9"),
           t("pro_features3"),
           t("pro_features4"),
           t("pro_features5"),
@@ -773,8 +783,35 @@ const Index = () => {
       {
         key: 7,
         features: t("Automatic translation updates"),
-        free: "",
+        free: t("support"),
         basic: t("support"),
+        pro: t("support"),
+        premium: t("support"),
+        type: "text",
+      },
+      {
+        key: "7b",
+        features: t("pricing.compare.autoInterval"),
+        free: t("pricing.compare.interval24h"),
+        basic: t("pricing.compare.interval24h"),
+        pro: t("pricing.compare.intervalFrom12h"),
+        premium: t("pricing.compare.intervalFrom1h"),
+        type: "text",
+      },
+      {
+        key: "7c",
+        features: t("pricing.compare.targetsPerTask"),
+        free: t("pricing.compare.targetsOne"),
+        basic: t("pricing.compare.targetsUnlimited"),
+        pro: t("pricing.compare.targetsUnlimited"),
+        premium: t("pricing.compare.targetsUnlimited"),
+        type: "text",
+      },
+      {
+        key: "7d",
+        features: t("pricing.compare.metafieldLiquid"),
+        free: t("pricing.compare.notSupported"),
+        basic: t("pricing.compare.notSupported"),
         pro: t("support"),
         premium: t("support"),
         type: "text",
@@ -800,8 +837,8 @@ const Index = () => {
       {
         key: 10,
         features: t("Third-party app translation"),
-        free: "",
-        basic: t("support"),
+        free: t("pricing.compare.notSupported"),
+        basic: t("pricing.compare.notSupported"),
         pro: t("support"),
         premium: t("support"),
         type: "text",
@@ -915,18 +952,26 @@ const Index = () => {
     return 6;
   }, [plans.length]);
 
+  const comparisonFeatureColWidth = 168;
+  const comparisonPlanColWidth = 220;
+  const comparisonTableScrollX =
+    comparisonFeatureColWidth + comparisonPlanColWidth * 4;
+
   const columns = [
     {
       title: t("Features"),
       dataIndex: "features",
       key: "features",
-      width: "20%",
+      width: comparisonFeatureColWidth,
+      fixed: "left" as const,
+      className: "pricing-comparison-table__feature",
     },
     {
       title: getPlanDisplayLabel("Free"),
       dataIndex: "free",
       key: "free",
-      width: "20%",
+      width: comparisonPlanColWidth,
+      className: "pricing-comparison-table__plan",
       render: (_: any, record: any) => {
         switch (true) {
           case record.type === "credits":
@@ -942,7 +987,8 @@ const Index = () => {
       title: getPlanDisplayLabel("Basic"),
       dataIndex: "basic",
       key: "basic",
-      width: "20%",
+      width: comparisonPlanColWidth,
+      className: "pricing-comparison-table__plan",
       render: (_: any, record: any) => {
         switch (true) {
           case record.type === "credits":
@@ -958,7 +1004,8 @@ const Index = () => {
       title: getPlanDisplayLabel("Pro"),
       dataIndex: "pro",
       key: "pro",
-      width: "20%",
+      width: comparisonPlanColWidth,
+      className: "pricing-comparison-table__plan",
       render: (_: any, record: any) => {
         switch (true) {
           case record.type === "credits":
@@ -974,7 +1021,8 @@ const Index = () => {
       title: getPlanDisplayLabel("Premium"),
       dataIndex: "premium",
       key: "premium",
-      width: "20%",
+      width: comparisonPlanColWidth,
+      className: "pricing-comparison-table__plan",
       render: (_: any, record: any) => {
         switch (true) {
           case record.type === "credits":
@@ -1053,6 +1101,7 @@ const Index = () => {
   const handlePayForCredits = () => {
     setBuyButtonLoading(true);
     payCreditsSubmittingRef.current = true;
+    payCreditsRedirectedRef.current = false;
     payCreditsAwaitingResponseRef.current = false;
     const selectedOption = creditOptions.find(
       (item) => item.key === selectedOptionKey,
@@ -1078,7 +1127,7 @@ const Index = () => {
     };
     const formData = new FormData();
     formData.append("payInfo", JSON.stringify(payInfo));
-    formData.append("returnPath", currentBillingReturnPath);
+    formData.append("returnPath", creditsBillingReturnPath);
     payFetcher.submit(formData, {
       method: "POST",
     });
@@ -1096,6 +1145,7 @@ const Index = () => {
     setPayForPlanButtonLoading(id);
     payPlanSubmittingRef.current = true;
     payPlanAwaitingResponseRef.current = false;
+    payPlanRedirectedRef.current = false;
     payPlanTraceRef.current = startClientLogTrace({
       event: "pricing_buy_plan",
       action: "buy_plan",
@@ -1110,7 +1160,7 @@ const Index = () => {
     payForPlanFetcher.submit(
       {
         payForPlan: JSON.stringify({ ...plan, yearly, trialDays }),
-        returnPath: currentBillingReturnPath,
+        returnPath: planBillingReturnPath,
       },
       { method: "POST" },
     );
@@ -1119,34 +1169,46 @@ const Index = () => {
 
   return (
     <Page>
-      <TitleBar title={t("Pricing")} />
+      <AppSubpageTitleBar title={t("Pricing")} />
       <div className="pricing-page">
         <div className="pricing-page__inner">
           <Space direction="vertical" size="large" style={{ display: "flex" }}>
             <AppPageHeader
               title={t("Pricing")}
-              extra={
+              backAction={homeBackAction}
+              titleMeta={
                 plan.type ? (
-                  <div className="pricing-page__plan-meta">
-                    <div className="app-status-cluster">
-                      <AppStatusBadge tone="info">
-                        {getPlanDisplayLabel(plan.type)}
-                      </AppStatusBadge>
-                    </div>
-                    {localNextPaymentText ? (
-                      <Text className="pricing-page__next-payment" type="secondary">
-                        {t("Next payment")}: {localNextPaymentText}
-                      </Text>
-                    ) : null}
-                  </div>
-                ) : null
+                  <AppStatusBadge tone="info">
+                    {getPlanDisplayLabel(plan.type)}
+                  </AppStatusBadge>
+                ) : undefined
+              }
+              description={
+                localNextPaymentText ? (
+                  <Text className="pricing-page__next-payment" type="secondary">
+                    {t("Next payment")}: {localNextPaymentText}
+                  </Text>
+                ) : undefined
               }
             />
 
             <AcountInfoCard
               loading={isLoading || creditsRefreshing}
               translation_balance={totalChars - chars || 0}
+              trialCredits={typeof trialCredits === "number" ? trialCredits : 0}
+              purchasedCredits={
+                typeof purchasedCredits === "number" ? purchasedCredits : 0
+              }
+              migratablePurchasedCredits={
+                typeof migratablePurchasedCredits === "number"
+                  ? migratablePurchasedCredits
+                  : 0
+              }
+              sparkCreditMigrationEnabled={sparkCreditMigrationEnabled}
               onBuyCredits={handleOpenAddCreditsModal}
+              onMigrateSuccess={() => {
+                void refreshBillingBootstrap(dispatch);
+              }}
             />
 
             {isQuotaExceeded && (
@@ -1161,7 +1223,12 @@ const Index = () => {
                 <div className="pricing-section__title-wrap">
                   <h2 className="pricing-section__title">{t("Plans")}</h2>
                 </div>
-                <Flex align="center" gap={8} wrap="wrap">
+                <Flex
+                  className="pricing-section__billing-toggle"
+                  align="center"
+                  gap={8}
+                  wrap="wrap"
+                >
                   <Text type="secondary">{t("Monthly")}</Text>
                   <Switch checked={yearly} onChange={handleSetYearlyReport} />
                   <Text strong>{t("Yearly")}</Text>
@@ -1183,7 +1250,7 @@ const Index = () => {
                       width: "100%",
                     }}
                   >
-                    <Card
+                    <div
                       className={`pricing-plan-card ${
                         item.disabled
                           ? "pricing-plan-card--current"
@@ -1200,16 +1267,8 @@ const Index = () => {
                         flexDirection: "column",
                         position: "relative",
                         minWidth: "220px",
+                        padding: "20px",
                       }}
-                      styles={{
-                        body: {
-                          flex: 1,
-                          display: "flex",
-                          flexDirection: "column",
-                          padding: "20px",
-                        },
-                      }}
-                      loading={!plan.id}
                     >
                       <div
                         style={{
@@ -1270,7 +1329,6 @@ const Index = () => {
                         }
                         block
                         disabled={item.disabled || selectedPayPlanOption}
-                        style={{ marginBottom: "20px" }}
                         onClick={() =>
                           handlePayForPlan({
                             plan: item,
@@ -1291,7 +1349,6 @@ const Index = () => {
                           type="default"
                           block
                           disabled={item.disabled || selectedPayPlanOption}
-                          style={{ marginBottom: "20px" }}
                           onClick={() =>
                             handlePayForPlan({
                               plan: item,
@@ -1320,14 +1377,14 @@ const Index = () => {
                           </div>
                         ))}
                       </div>
-                    </Card>
+                    </div>
                   </Col>
                 ))}
               </Row>
               <div className="pricing-plan-downgrade">
                 {plan.type === "Free" ? (
                   <Text type="secondary">
-                    {t("You are currently on the free plan.")}
+                    {t("pricing.freePlanNote")}
                   </Text>
                 ) : (
                   <Text type="secondary">
@@ -1350,15 +1407,21 @@ const Index = () => {
                   <h2 className="pricing-section__title">
                     {t("Compare plans")}
                   </h2>
+                  <p className="pricing-comparison-scroll-hint">
+                    {t("pricing.compare.scrollHint")}
+                  </p>
                 </div>
               </div>
-              <Table
-                className="pricing-comparison-table"
-                dataSource={tableData}
-                columns={columns}
-                rowKey={(record) => String(record.key)}
-                pagination={false}
-              />
+              <div className="pricing-comparison-table-wrap">
+                <Table
+                  className="pricing-comparison-table"
+                  dataSource={tableData}
+                  columns={columns}
+                  rowKey={(record) => String(record.key)}
+                  pagination={false}
+                  scroll={{ x: comparisonTableScrollX }}
+                />
+              </div>
             </section>
             <section className="pricing-section pricing-section--compact">
               <div className="pricing-section__header">
@@ -1376,13 +1439,23 @@ const Index = () => {
           </Space>
         </div>
       </div>
-      <Modal
-        title={t("Buy Credits")}
+      <AppSModal
         open={addCreditsModalOpen}
-        width={900}
-        centered
-        onCancel={() => setAddCreditsModalOpen(false)}
-        footer={null}
+        heading={t("Buy Credits")}
+        onClose={() => setAddCreditsModalOpen(false)}
+        size="large"
+        primaryAction={{
+          content: t("Buy now"),
+          onAction: handlePayForCredits,
+          disabled: !selectedOptionKey,
+          loading: buyButtonLoading,
+        }}
+        secondaryActions={[
+          {
+            content: t("Cancel"),
+            onAction: () => setAddCreditsModalOpen(false),
+          },
+        ]}
       >
         <Space direction="vertical" size="small" style={{ width: "100%" }}>
           <div
@@ -1407,43 +1480,68 @@ const Index = () => {
             </Text>
           </div>
           <Row gutter={[16, 16]}>
-            {creditOptions.map((option) => (
-              <Col key={option.key} xs={12} sm={12} md={6} lg={6} xl={6}>
-                <Card
-                  hoverable
-                  style={{
-                    textAlign: "center",
-                    borderColor: "transparent",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    height: "150px",
-                    background:
-                      JSON.stringify(selectedOptionKey) ===
-                      JSON.stringify(option.key)
+            {creditOptions.map((option) => {
+              const selected =
+                JSON.stringify(selectedOptionKey) ===
+                JSON.stringify(option.key);
+              return (
+                <Col key={option.key} xs={12} sm={12} md={6} lg={6} xl={6}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOption(option.key)}
+                    style={{
+                      width: "100%",
+                      textAlign: "center",
+                      border: selected
+                        ? "1px solid var(--p-color-border-emphasis, var(--app-color-border))"
+                        : "1px solid var(--app-color-border-secondary)",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      alignItems: "center",
+                      height: "150px",
+                      background: selected
                         ? "var(--app-color-surface-selected)"
                         : "var(--app-color-surface)",
-                    boxShadow: "var(--app-shadow-card)",
-                  }}
-                  onClick={() => setSelectedOption(option.key)}
-                >
-                  <Text
-                    style={{
-                      fontSize: "16px",
-                      fontWeight: 500,
-                      display: "block",
-                      marginBottom: "8px",
+                      boxShadow: "var(--app-shadow-card)",
                     }}
                   >
-                    {option.Credits.toLocaleString()} {t("Credits")}
-                  </Text>
-                  {(plan.type === "Premium" ||
-                    plan.type === "Pro" ||
-                    plan.type === "Basic") &&
-                  !plan?.isInFreePlanTime ? (
-                    <>
+                    <Text
+                      style={{
+                        fontSize: "16px",
+                        fontWeight: 500,
+                        display: "block",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      {option.Credits.toLocaleString()} {t("Credits")}
+                    </Text>
+                    {(plan.type === "Premium" ||
+                      plan.type === "Pro" ||
+                      plan.type === "Basic") &&
+                    !plan?.isInFreePlanTime ? (
+                      <>
+                        <Title
+                          level={3}
+                          style={{
+                            margin: 0,
+                            color: "var(--app-color-text)",
+                            fontWeight: 700,
+                          }}
+                        >
+                          ${option.price.currentPrice.toFixed(2)}
+                        </Title>
+                        <Text
+                          delete
+                          type="secondary"
+                          style={{ fontSize: "14px" }}
+                        >
+                          ${option.price.comparedPrice.toFixed(2)}
+                        </Text>
+                      </>
+                    ) : (
                       <Title
                         level={3}
                         style={{
@@ -1454,81 +1552,46 @@ const Index = () => {
                       >
                         ${option.price.currentPrice.toFixed(2)}
                       </Title>
-                      <Text
-                        delete
-                        type="secondary"
-                        style={{ fontSize: "14px" }}
-                      >
-                        ${option.price.comparedPrice.toFixed(2)}
-                      </Text>
-                    </>
-                  ) : (
-                    <Title
-                      level={3}
-                      style={{
-                        margin: 0,
-                        color: "var(--app-color-text)",
-                        fontWeight: 700,
-                      }}
-                    >
-                      ${option.price.currentPrice.toFixed(2)}
-                    </Title>
-                  )}
-                </Card>
-              </Col>
-            ))}
+                    )}
+                  </button>
+                </Col>
+              );
+            })}
           </Row>
-          <Flex align="center" justify="center">
-            <Space direction="vertical" align="center">
-              <Text type="secondary" style={{ margin: "16px 0 8px 0" }}>
-                {t("Total pay")}: $
-                {selectedOptionKey
-                  ? creditOptions
-                      .find((item) => item.key === selectedOptionKey)
-                      ?.price.currentPrice.toFixed(2)
-                  : "0.00"}
-              </Text>
-              <Button
-                type="primary"
-                size="large"
-                disabled={!selectedOptionKey}
-                loading={buyButtonLoading}
-                onClick={handlePayForCredits}
-              >
-                {t("Buy now")}
-              </Button>
-            </Space>
-          </Flex>
+          <Text type="secondary" style={{ margin: "16px 0 0 0", display: "block", textAlign: "center" }}>
+            {t("Total pay")}: $
+            {selectedOptionKey
+              ? creditOptions
+                  .find((item) => item.key === selectedOptionKey)
+                  ?.price.currentPrice.toFixed(2)
+              : "0.00"}
+          </Text>
         </Space>
-      </Modal>
-      <Modal
-        title={t("Cancel paid plan?")}
+      </AppSModal>
+      <AppSModal
         open={cancelPlanWarnModal}
-        centered
-        onCancel={() => setCancelPlanWarnModal(false)}
-        footer={
-          <Flex align="end" justify="end" gap={10}>
-            <Button
-              loading={planCancelFetcher.state == "submitting"}
-              onClick={handleCancelPlan}
-            >
-              {t("Switch to free plan")}
-            </Button>
-            <Button
-              type="primary"
-              onClick={() => setCancelPlanWarnModal(false)}
-            >
-              {t("Keep paid plan")}
-            </Button>
-          </Flex>
-        }
+        heading={t("Cancel paid plan?")}
+        onClose={() => setCancelPlanWarnModal(false)}
+        size="small"
+        primaryAction={{
+          content: t("Keep paid plan"),
+          onAction: () => setCancelPlanWarnModal(false),
+        }}
+        secondaryActions={[
+          {
+            content: t("Switch to free plan"),
+            onAction: handleCancelPlan,
+            loading: planCancelFetcher.state == "submitting",
+            tone: "critical",
+          },
+        ]}
       >
         <Text>
           {t(
             "Moving to the free plan will turn off key features. Are you sure you want to switch?",
           )}
         </Text>
-      </Modal>
+      </AppSModal>
     </Page>
   );
 };

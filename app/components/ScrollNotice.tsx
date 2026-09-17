@@ -1,42 +1,49 @@
-import React, { useRef } from "react";
 import { Typography } from "antd";
 
 const { Text } = Typography;
 
 interface ScrollNoticeProps {
   text: string;
-  height?: number; // 容器高度，默认值 40
-  backgroundColor?: string; // 背景色
+  /** Optional minimum height; content can grow and wrap. */
+  height?: number;
+  backgroundColor?: string;
   className?: string;
 }
 
 const ScrollNotice: React.FC<ScrollNoticeProps> = ({
   text,
-  height = 40,
-  backgroundColor = "#EFEFEF",
+  height,
+  backgroundColor = "var(--app-color-surface-secondary)",
   className,
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-
   return (
     <div
-      ref={containerRef}
       style={{
-        height: `${height}px`,
-        lineHeight: `${height}px`,
+        minHeight: height ? `${height}px` : undefined,
         position: "relative",
         backgroundColor,
         width: "100%",
         display: "flex",
-        borderRadius: "5px",
+        borderRadius: "var(--app-radius-sm)",
         justifyContent: "center",
         alignItems: "center",
-        marginBottom: "1px",
-        WebkitBoxOrient: "vertical",
+        marginBottom: "var(--app-space-300)",
+        padding: "var(--app-space-200) var(--app-space-400)",
+        boxSizing: "border-box",
       }}
       className={className}
     >
-      <Text style={{ textAlign: "center", color: "#878787" }}>{text}</Text>
+      <Text
+        style={{
+          textAlign: "center",
+          color: "var(--app-color-text-secondary)",
+          whiteSpace: "normal",
+          overflowWrap: "break-word",
+          lineHeight: "20px",
+        }}
+      >
+        {text}
+      </Text>
     </div>
   );
 };

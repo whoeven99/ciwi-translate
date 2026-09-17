@@ -7,10 +7,11 @@
  *   - 可选 --check-cooldown：Cosmos 查最近 TsFrontend-Auto 批次，排除仍在冷却的店
  *   - 可选 --require-token：要求 Session 有 offline accessToken
  *
- * 用法（ciwi-translate 根目录，凭据 .env.prod）：
- *   npm run migration:next-auto-slot
+ * 用法（默认测环境；查产加 --target=prod 或 --env-file=.env.prod）：
+ *   node scripts/next-auto-slot-shops.mjs
  *   node scripts/next-auto-slot-shops.mjs --check-cooldown
- *   node scripts/next-auto-slot-shops.mjs --scan-at=2026-07-07T08:00:00.000Z   # 指定某次扫描时刻试算
+ *   node scripts/next-auto-slot-shops.mjs --target=prod --check-cooldown
+ *   node scripts/next-auto-slot-shops.mjs --scan-at=2026-07-07T08:00:00.000Z
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -81,18 +82,28 @@ function loadExcludedShops() {
   return excluded;
 }
 
-function resolveTursoConfig(env, target) {
-  const isProd = target === "prod";
-  const url = isProd
-    ? env.TURSO_PROD_DATABASE_URL || env.TURSO_DATABASE_URL
-    : env.TURSO_TEST_DATABASE_URL || env.TURSO_DATABASE_URL;
-  const authToken = isProd
-    ? env.TURSO_PROD_AUTH_TOKEN || env.TURSO_AUTH_TOKEN
-    : env.TURSO_TEST_AUTH_TOKEN || env.TURSO_AUTH_TOKEN;
-  if (!url?.startsWith("libsql://") || !authToken) {
-    throw new Error("缺少 Turso URL / AUTH_TOKEN（见 .env.prod）");
+function resolveTursoConfig(env) {
+  const candidates = [
+    ["TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"],
+    ["TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN"],
+    ["TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN"],
+    ["TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN"],
+  ];
+  for (const [urlKey, tokenKey] of candidates) {
+    const url = (env[urlKey] || "").trim();
+    const authToken = (env[tokenKey] || "").trim();
+    if (url?.startsWith("libsql://") && authToken) {
+      if (urlKey !== "TURSO_DATABASE_URL") {
+        console.warn(
+          `[next-auto-slot] 使用兼容键 ${urlKey}；请改为 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN`,
+        );
+      }
+      return { url, authToken, urlKey };
+    }
   }
-  return { url, authToken };
+  throw new Error(
+    "缺少 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN（默认 .env.test；产环境 --target=prod）",
+  );
 }
 
 function resolveCosmosConfig(env) {
@@ -197,9 +208,9 @@ async function enrichWithCooldown(candidates, cosmos, cooldownMs, scanAtMs, conc
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const target = String(args.target || "prod").toLowerCase();
+  const target = String(args.target || "test").toLowerCase();
   if (!["prod", "test"].includes(target)) {
-    throw new Error("--target 仅支持 prod 或 test");
+    throw new Error("--target 仅支持 prod 或 test（用于选择默认 env 文件）");
   }
 
   const envFileArg = typeof args["env-file"] === "string" ? args["env-file"] : "";
@@ -207,14 +218,21 @@ async function main() {
     ? path.isAbsolute(envFileArg)
       ? envFileArg
       : path.join(ROOT, envFileArg)
-    : path.join(ROOT, ".env.prod");
+    : path.join(ROOT, target === "test" ? ".env.test" : ".env.prod");
   const env = {
     ...loadDotEnv(path.join(ROOT, ".env")),
+    ...loadDotEnv(
+      path.join(
+        ROOT,
+        target === "test" ? ".env.worker.test" : ".env.worker.prod",
+      ),
+    ),
     ...loadDotEnv(envFile),
     ...process.env,
   };
 
-  // schedule 辅助函数默认读 process.env；把 .env.prod 里的 AUTO_TRANSLATE_* 同步进去
+  // schedule 辅助函数默认读 process.env；把 env 文件里的 AUTO_TRANSLATE_* 同步进去
+  console.log(`[next-auto-slot] target=${target} envFile=${path.basename(envFile)}`);
   for (const key of [
     "AUTO_TRANSLATE_INTERVAL_MS",
     "AUTO_TRANSLATE_SHARDING",
@@ -252,7 +270,7 @@ async function main() {
 
   const targetSlot = sharding ? currentSlotIndex(nextScanAt, slotsPerDay, tz) : null;
 
-  const turso = createClient(resolveTursoConfig(env, target));
+  const turso = createClient(resolveTursoConfig(env));
   const excluded = excludeShopTxt ? loadExcludedShops() : new Set();
 
   try {
@@ -289,7 +307,7 @@ async function main() {
     const minutesUntil = Math.max(0, Math.round(msUntil / 60_000));
 
     console.log("=== 下一轮 auto 扫描 · 本槽位店铺 ===");
-    console.log(`Turso:           ${new URL(resolveTursoConfig(env, target).url).host} (${target})`);
+    console.log(`Turso:           ${new URL(resolveTursoConfig(env).url).host}`);
     console.log(`调度时区:        ${tz}`);
     console.log(`下一轮扫描:      ${formatInTz(nextScanAt, tz)} (${nextScanAt.toISOString()})`);
     console.log(`距现在:          约 ${minutesUntil} 分钟`);

@@ -1,0 +1,10 @@
+.manage-field-row-leading .ant-checkbox {
+  top: 0;
+}
+
+.manage-field-row-leading .ant-checkbox-wrapper {
+  margin: 0;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}

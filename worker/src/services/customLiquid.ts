@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { looksLikeAutoLiquidJunk, looksLikeHtmlMarkupFragment } from "@ciwi/translation-core/translation-filter";
 import { tsfExecute, hasTsfDbCredentials } from "./tsfDb.js";
 import { getRedis } from "./redisV4.js";
 import type { TranslationV4Job } from "./cosmosV4.js";
@@ -28,6 +29,11 @@ async function sremAutoLiquidKnown(
 /** Virtual module: Turso LiquidRule pipeline (not a Shopify resource type). */
 export const CUSTOM_LIQUID_MODULE = "CUSTOM_LIQUID";
 
+/** HTML 属性碎片 + 评价/价格/SKU 等 auto-liquid junk（与 App 入库过滤对齐）。 */
+export function isAutoLiquidCollectJunk(text: string): boolean {
+  return looksLikeHtmlMarkupFragment(text) || looksLikeAutoLiquidJunk(text);
+}
+
 export type PendingLiquidRule = {
   id: string;
   beforeTranslation: string;
@@ -49,9 +55,32 @@ function fieldDigest(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex").slice(0, 32);
 }
 
+function totalCountKey(shop: string): string {
+  return `tsf:auto_liquid:total:${shop}`;
+}
+
+/** Drop per-shop auto-row count cache so the next collect reseeds from Turso. */
+export async function invalidateAutoLiquidTotal(shop: string): Promise<void> {
+  if (!shop) return;
+  try {
+    await getRedis().del(totalCountKey(shop));
+  } catch {
+    // ignore
+  }
+}
+
+export async function forgetAutoLiquidKnown(
+  shop: string,
+  locale: string,
+  beforeTranslation: string,
+): Promise<void> {
+  await sremAutoLiquidKnown(shop, locale, digestOf(beforeTranslation));
+}
+
 /**
  * Claim PENDING LiquidRule rows for this job → TRANSLATING + jobId.
  * Returns claimed rows for init blob writing.
+ * HTML/Liquid attribute fragments are skipped (auto rows deleted, not translated).
  */
 export async function claimPendingLiquidRules(args: {
   shop: string;
@@ -63,21 +92,55 @@ export async function claimPendingLiquidRules(args: {
   const limit = Math.max(1, Math.min(args.limit ?? 5000, 20_000));
 
   const pending = await tsfExecute({
-    sql: `SELECT id, beforeTranslation FROM LiquidRule
+    sql: `SELECT id, beforeTranslation, source FROM LiquidRule
           WHERE shop = ? AND languageCode = ? AND status = 'PENDING'
           ORDER BY createdAt ASC
           LIMIT ?`,
     args: [args.shop, args.languageCode, limit],
   });
 
-  const rows: PendingLiquidRule[] = pending.rows.map((r) => ({
-    id: String(r.id),
-    beforeTranslation: String(r.beforeTranslation ?? ""),
-  })).filter((r) => r.id && r.beforeTranslation);
+  const keep: PendingLiquidRule[] = [];
+  const junkAuto: PendingLiquidRule[] = [];
+  for (const r of pending.rows) {
+    const id = String(r.id ?? "");
+    const beforeTranslation = String(r.beforeTranslation ?? "");
+    if (!id || !beforeTranslation) continue;
+    if (isAutoLiquidCollectJunk(beforeTranslation)) {
+      if (String(r.source ?? "") === "auto") {
+        junkAuto.push({ id, beforeTranslation });
+      }
+      continue;
+    }
+    keep.push({ id, beforeTranslation });
+  }
 
-  if (!rows.length) return [];
+  if (junkAuto.length) {
+    const shopsToInvalidate = new Set<string>();
+    for (const row of junkAuto) {
+      try {
+        const del = await tsfExecute({
+          sql: `DELETE FROM LiquidRule WHERE id = ? AND shop = ? AND source = 'auto' AND status = 'PENDING'`,
+          args: [row.id, args.shop],
+        });
+        if ((del.rowsAffected ?? 0) > 0) {
+          shopsToInvalidate.add(args.shop);
+          await forgetAutoLiquidKnown(args.shop, args.languageCode, row.beforeTranslation);
+        }
+      } catch {
+        // 单行失败不阻断 claim
+      }
+    }
+    for (const shop of shopsToInvalidate) {
+      await invalidateAutoLiquidTotal(shop);
+    }
+    console.log(
+      `[customLiquid] dropped junk auto PENDING shop=${args.shop} locale=${args.languageCode} n=${junkAuto.length}`,
+    );
+  }
 
-  const ids = rows.map((r) => r.id);
+  if (!keep.length) return [];
+
+  const ids = keep.map((r) => r.id);
   const placeholders = ids.map(() => "?").join(",");
   await tsfExecute({
     sql: `UPDATE LiquidRule

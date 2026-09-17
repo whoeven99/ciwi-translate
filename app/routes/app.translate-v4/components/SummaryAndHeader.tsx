@@ -388,53 +388,74 @@ export function PageHeaderBar({
   const { t } = useTranslation();
   const planLabel = formatV4PlanType(planType, t);
 
+  // 固定首屏标题区尺寸：积分 pill 从 "—" → 大数字时不挤布局，让 h1 尽早成为稳定 LCP。
   return (
-    <AppPageHeader
-      style={{ marginBottom: 18 }}
-      title={t("v4.title")}
-      extra={
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            flexWrap: "wrap",
-            justifyContent: "flex-end",
-            minWidth: 0,
-          }}
-        >
-          <AppStatusBadge tone="info">{planLabel}</AppStatusBadge>
+    <div
+      style={{
+        marginBottom: 18,
+        minHeight: 52,
+        boxSizing: "border-box",
+      }}
+    >
+      <AppPageHeader
+        style={{ marginBottom: 0, minHeight: 48, alignItems: "center" }}
+        title={t("v4.title")}
+        extra={
           <div
             style={{
               display: "flex",
               alignItems: "center",
               gap: 8,
               flexWrap: "wrap",
+              justifyContent: "flex-end",
               minWidth: 0,
-              padding: "8px 12px",
-              borderRadius: 999,
-              background: v4Colors.cardBg,
-              border: `1px solid ${v4Colors.cardBorder}`,
-              color: v4Colors.textMuted,
             }}
           >
-            <span style={{ fontSize: 12, color: v4Colors.textMuted, lineHeight: 1.35, overflowWrap: "anywhere" }}>
-              {t("v4.availableCredits")}
-            </span>
-            <span
+            <AppStatusBadge tone="info">{planLabel}</AppStatusBadge>
+            <div
               style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: v4Colors.success,
-                letterSpacing: "-0.01em",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "nowrap",
+                minWidth: 168,
+                minHeight: 36,
+                padding: "8px 12px",
+                borderRadius: 999,
+                background: v4Colors.cardBg,
+                border: `1px solid ${v4Colors.cardBorder}`,
+                color: v4Colors.textMuted,
+                boxSizing: "border-box",
               }}
             >
-              {credits != null ? `${formatCredits(credits)}` : "—"}
-            </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: v4Colors.textMuted,
+                  lineHeight: 1.35,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {t("v4.availableCredits")}
+              </span>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: v4Colors.success,
+                  letterSpacing: "-0.01em",
+                  fontVariantNumeric: "tabular-nums",
+                  minWidth: 64,
+                  textAlign: "right",
+                }}
+              >
+                {credits != null ? `${formatCredits(credits)}` : "—"}
+              </span>
+            </div>
           </div>
-        </div>
-      }
-    />
+        }
+      />
+    </div>
   );
 }
 

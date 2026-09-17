@@ -8,6 +8,7 @@ import {
   Link,
   Outlet,
   useLoaderData,
+  useLocation,
   useRouteError,
 } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
@@ -24,22 +25,27 @@ import {
 } from "~/server/appBootstrap.server";
 import { resolveBillingBinding } from "~/server/billing/index.server";
 import { scheduleTsfWelcomeEmail } from "~/server/billing/email/welcomeEmail.server";
+import { scheduleFirstInstallFeishuNotify } from "~/server/billing/lifecycleFeishuNotify.server";
 import { enqueueShopScan } from "~/server/shopScan/trigger.server";
-import { loadShopLocalesForTranslation } from "~/server/translateV4/shopLocales.server";
-import { Profiler, Suspense, lazy, useEffect, useState } from "react";
+import { markSetupGuideEligible } from "~/server/setupGuide.server";
+import {
+  loadShopLocalesForTranslation,
+  type LoadedShopLocales,
+} from "~/server/translateV4/shopLocales.server";
+import { ensureShopV4Settings } from "~/server/translateV4/migration.server";
+import { syncShopTargetLocalesFromShopify } from "~/server/translateV4/targetLocale.server";
+import { Profiler, Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useIdleReady } from "~/hooks/useIdleReady";
 
 import { ConfigProvider } from "antd";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import type { Dispatch } from "@reduxjs/toolkit";
 import {
-  setChars,
   setIsNew,
   setPlan,
-  setSource,
   setShop,
-  setTotalChars,
+  setSource,
   setUpdateTime,
   setUserConfigIsLoading,
 } from "~/store/modules/userConfig";
@@ -58,6 +64,18 @@ import {
   OPEN_CREDITS_PURCHASE_MODAL_EVENT,
   type CreditsPurchaseModalContext,
 } from "~/utils/creditsPurchaseModal";
+import {
+  applyAppBootstrapCredits,
+  refreshBillingBootstrap,
+} from "~/utils/billingBootstrap";
+import { resumePausedTaskAfterBilling } from "~/utils/resumeTaskAfterBilling";
+import {
+  parseBillingReturn,
+  stripBillingReturnParams,
+} from "~/utils/billingReturn";
+import { message } from "~/ui/message";
+import { APP_NAV_HOME, APP_NAV_ITEMS } from "~/lib/appNav";
+import { installBlurPolarisSelectOnChange } from "~/lib/blurPolarisSelectOnChange";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -76,6 +94,17 @@ type AppBootstrapLocales = {
     primary: boolean;
     published: boolean;
   }>;
+};
+
+/** 嵌套页（translate-v4）复用的语言列表，避免子 loader 再鉴权/再打 Shopify。 */
+export type AppShellShopLocales = {
+  primaryLocale: string;
+  localeOptions: LoadedShopLocales["localeOptions"];
+};
+
+const EMPTY_SHOP_LOCALES: AppShellShopLocales = {
+  primaryLocale: "en",
+  localeOptions: [],
 };
 
 const logGraphQLErrorDetail = (context: string, error: unknown) => {
@@ -140,12 +169,18 @@ async function runAppInitialization({
   const initLog = "[app:init]";
   try {
     console.info(`${initLog} start shop=${shop}`);
-    // 确保 TSF 账户存在；新 TSF 用户只建账户，不在安装时发放试用额度。
+    // 确保 TSF 账户存在；终身首次建账户发放 20 万安装赠送（30 天到期）。
     const binding = await resolveBillingBinding(shop);
     console.info(
-      `${initLog} billing-resolved shop=${shop} bound=${binding.bound} persisted=${binding.persisted}`,
+      `${initLog} billing-resolved shop=${shop} bound=${binding.bound} restored=${binding.restored} persisted=${binding.persisted}`,
     );
     scheduleTsfWelcomeEmail(binding, shop, "app-loader-init");
+    scheduleFirstInstallFeishuNotify(binding, shop);
+    if (binding.bound) {
+      void markSetupGuideEligible(shop).catch((err) => {
+        console.error(`${initLog} setup-guide mark failed:`, err);
+      });
+    }
 
     // 安装/首次进 App：计量扫描（源语言总量 + 已发布语言覆盖率），幂等、best-effort。
     void enqueueShopScan({ shop, trigger: "install" }).then((result) => {
@@ -169,22 +204,32 @@ async function loadAppBootstrapLocales({
 }: {
   shop: string;
   accessToken?: string;
-}): Promise<AppBootstrapLocales> {
+}): Promise<{
+  bootstrap: AppBootstrapLocales;
+  shopLocales: AppShellShopLocales;
+  loaded: LoadedShopLocales | null;
+}> {
   let source = { code: "", name: "" };
   let targets: AppBootstrapLocales["targets"] = [];
+  let shopLocales = EMPTY_SHOP_LOCALES;
+  let loaded: LoadedShopLocales | null = null;
 
   try {
     if (accessToken) {
-      const loaded = await loadShopLocalesForTranslation({ shop, accessToken });
+      loaded = await loadShopLocalesForTranslation({ shop, accessToken });
       const mapped = bootstrapLocalesFromLoaded(loaded);
       source = mapped.source;
       targets = mapped.targets;
+      shopLocales = {
+        primaryLocale: loaded.primaryLocale,
+        localeOptions: loaded.localeOptions,
+      };
     }
   } catch (error) {
     logGraphQLErrorDetail("Error app bootstrap languages", error);
   }
 
-  return { source, targets };
+  return { bootstrap: { source, targets }, shopLocales, loaded };
 }
 
 function applyBootstrapToStore(
@@ -195,8 +240,7 @@ function applyBootstrapToStore(
   if (bootstrap.updateTime) {
     dispatch(setUpdateTime({ updateTime: bootstrap.updateTime }));
   }
-  dispatch(setChars({ chars: bootstrap.chars }));
-  dispatch(setTotalChars({ totalChars: bootstrap.totalChars }));
+  applyAppBootstrapCredits(dispatch, bootstrap);
   if (bootstrap.isNew !== null) {
     dispatch(setIsNew({ isNew: bootstrap.isNew }));
   }
@@ -209,11 +253,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const authMs = Date.now() - reqStart;
   const { shop, accessToken } = adminAuthResult.session;
   const localeStart = Date.now();
-  const bootstrap = await loadAppBootstrapLocales({
+  const { bootstrap, shopLocales, loaded } = await loadAppBootstrapLocales({
     shop,
     accessToken: accessToken as string | undefined,
   });
   const localeMs = Date.now() - localeStart;
+
+  // 语言同步 / v4 settings 不参与壳层渲染；放在父级一次完成，子页不再重复鉴权后执行。
+  if (loaded) {
+    void syncShopTargetLocalesFromShopify(
+      shop,
+      loaded.rows,
+      loaded.primaryLocale,
+    ).catch((syncErr) => {
+      console.error("[app] syncShopTargetLocales failed:", syncErr);
+    });
+    void ensureShopV4Settings(shop, loaded.primaryLocale).catch((err) => {
+      console.error("[app] ensureShopV4Settings failed:", err);
+    });
+  }
 
   void runAppInitialization({
     shop,
@@ -226,6 +284,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         authMs,
         localeMs,
         totalMs: Date.now() - reqStart,
+        localeCount: shopLocales.localeOptions.length,
       })}`,
     );
   }
@@ -234,6 +293,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     apiKey: process.env.SHOPIFY_API_KEY || "",
     bootstrap,
+    shopLocales,
     showShopProfilePage: !isProductionNodeEnv(),
     perfDebug,
   });
@@ -471,12 +531,17 @@ export default function App() {
 
   const { t } = useTranslation();
   const dispatch = useDispatch();
+  const location = useLocation();
+  const totalChars = useSelector((state: any) => state.userConfig.totalChars);
+  const billingReturnHandledRef = useRef(false);
 
   useEffect(() => {
     if (isPerfDebugEnabled()) {
       setPerfDebugEnabled(true);
     }
   }, []);
+
+  useEffect(() => installBlurPolarisSelectOnChange(), []);
 
   useEffect(() => {
     setIsClient(true);
@@ -553,6 +618,46 @@ export default function App() {
     };
   }, [isClient]);
 
+  useEffect(() => {
+    if (!isClient) return;
+
+    const billingReturn = parseBillingReturn(location.search);
+    if (!billingReturn) return;
+    if (billingReturnHandledRef.current) return;
+    billingReturnHandledRef.current = true;
+
+    const cleanedPath = stripBillingReturnParams(
+      `${location.pathname}${location.search}${location.hash}`,
+    );
+    window.history.replaceState({}, "", cleanedPath);
+
+    if (billingReturn.kind !== "credits" && billingReturn.kind !== "plan") {
+      return;
+    }
+
+    void (async () => {
+      await refreshBillingBootstrap(
+        dispatch,
+        billingReturn.previousTotalChars ?? totalChars,
+      );
+      const resumeResult = await resumePausedTaskAfterBilling(shop);
+      if (resumeResult === "resumed") {
+        message.success(t("v4.billing.taskResumedAfterPurchase"));
+      } else if (resumeResult === "failed") {
+        message.warning(t("v4.billing.taskResumeAfterPurchaseFailed"));
+      }
+    })();
+  }, [
+    dispatch,
+    isClient,
+    location.hash,
+    location.pathname,
+    location.search,
+    shop,
+    totalChars,
+    t,
+  ]);
+
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
       <ConfigProvider
@@ -574,24 +679,20 @@ export default function App() {
           }}
         >
           <NavMenu>
-            <Link to="/app" rel="home">
+            <Link to={APP_NAV_HOME} rel="home">
               {t("v4.title")}
             </Link>
-            {isClient && (
-              <>
-                <Link to="/app/language">{t("Language")}</Link>
-                <Link to="/app/manage_translation">
-                  {t("Manage Translation")}
-                </Link>
-                <Link to="/app/currency">{t("Currency")}</Link>
-                <Link to="/app/switcher">{t("Switcher")}</Link>
-                <Link to="/app/glossary">{t("Glossary")}</Link>
-                {showShopProfilePage ? (
-                  <Link to="/app/shop-profile">{t("Shop Profile")}</Link>
-                ) : null}
-                <Link to="/app/pricing">{t("Pricing")}</Link>
-              </>
-            )}
+            <Link to={APP_NAV_ITEMS.language}>{t("Language")}</Link>
+            <Link to={APP_NAV_ITEMS.manageTranslation}>
+              {t("Manage Translation")}
+            </Link>
+            <Link to={APP_NAV_ITEMS.currency}>{t("Currency")}</Link>
+            <Link to={APP_NAV_ITEMS.switcher}>{t("Switcher")}</Link>
+            <Link to={APP_NAV_ITEMS.glossary}>{t("Glossary")}</Link>
+            {showShopProfilePage ? (
+              <Link to={APP_NAV_ITEMS.shopProfile}>{t("Shop Profile")}</Link>
+            ) : null}
+            <Link to={APP_NAV_ITEMS.pricing}>{t("Pricing")}</Link>
           </NavMenu>
           <Outlet />
         </Profiler>

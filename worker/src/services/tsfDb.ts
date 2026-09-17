@@ -1,4 +1,6 @@
 import { createClient, type Client, type InStatement, type ResultSet } from "@libsql/client/web";
+import { randomUUID } from "node:crypto";
+import { settleExpiredInstallTrialCredits } from "./accountBalance.js";
 
 /** Turso 网关瞬时错误（502/503/504）短退避重试次数，与 shopifyFetch 默认一致。 */
 const TSF_DB_5XX_MAX_RETRIES = Math.max(
@@ -10,11 +12,14 @@ const TSF_DB_5XX_RETRY_STATUSES = new Set([502, 503, 504]);
 /**
  * 连接 TSF Turso 库，读取自动翻译配置、Session token、Glossary 等。
  *
- * 环境变量（在 Render worker 服务上配置）：
- *   TSF_TURSO_DATABASE_URL   libsql://xxx.turso.io
- *   TSF_TURSO_AUTH_TOKEN     eyJhbGci...
+ * 环境变量（本地 `.env` / Render Worker Environment）：
+ *   TURSO_DATABASE_URL   libsql://xxx.turso.io
+ *   TURSO_AUTH_TOKEN     eyJhbGci...
+ *
+ * 短期兼容：TSF_TURSO_* → TURSO_TEST_* → TURSO_PROD_*
  */
 let client: Client | null = null;
+let deprecationLogged = false;
 
 function normalizeEnv(value: string | undefined): string {
   let v = (value ?? "").trim();
@@ -24,19 +29,51 @@ function normalizeEnv(value: string | undefined): string {
   return v;
 }
 
+const PRIMARY_URL_KEY = "TURSO_DATABASE_URL";
+const PRIMARY_TOKEN_KEY = "TURSO_AUTH_TOKEN";
+
+const LEGACY_TURSO_PAIRS = [
+  ["TSF_TURSO_DATABASE_URL", "TSF_TURSO_AUTH_TOKEN"],
+  ["TURSO_TEST_DATABASE_URL", "TURSO_TEST_AUTH_TOKEN"],
+  ["TURSO_PROD_DATABASE_URL", "TURSO_PROD_AUTH_TOKEN"],
+] as const;
+
+function readTursoPair(): { url: string; authToken: string; urlKey: string } {
+  const primaryUrl = normalizeEnv(process.env[PRIMARY_URL_KEY]);
+  const primaryToken = normalizeEnv(process.env[PRIMARY_TOKEN_KEY]);
+  if (primaryUrl.startsWith("libsql://") && primaryToken) {
+    return { url: primaryUrl, authToken: primaryToken, urlKey: PRIMARY_URL_KEY };
+  }
+
+  for (const [urlKey, tokenKey] of LEGACY_TURSO_PAIRS) {
+    const url = normalizeEnv(process.env[urlKey]);
+    const authToken = normalizeEnv(process.env[tokenKey]);
+    if (url.startsWith("libsql://") && authToken) {
+      if (!deprecationLogged) {
+        deprecationLogged = true;
+        console.warn(
+          `[tsfDb] 使用兼容键 ${urlKey}；请改为 ${PRIMARY_URL_KEY} / ${PRIMARY_TOKEN_KEY}`,
+        );
+      }
+      return { url, authToken, urlKey };
+    }
+  }
+
+  return { url: primaryUrl, authToken: primaryToken, urlKey: PRIMARY_URL_KEY };
+}
+
 export function hasTsfDbCredentials(): boolean {
-  const url = normalizeEnv(process.env.TSF_TURSO_DATABASE_URL);
-  const authToken = normalizeEnv(process.env.TSF_TURSO_AUTH_TOKEN);
+  const { url, authToken } = readTursoPair();
   return url.startsWith("libsql://") && Boolean(authToken);
 }
 
 export function getTsfDb(): Client {
   if (client) return client;
-  const url = normalizeEnv(process.env.TSF_TURSO_DATABASE_URL);
-  const authToken = normalizeEnv(process.env.TSF_TURSO_AUTH_TOKEN);
+  const { url, authToken, urlKey } = readTursoPair();
   if (!url.startsWith("libsql://") || !authToken) {
     throw new Error(
-      "TSF Turso 未配置：请设置 TSF_TURSO_DATABASE_URL（libsql://...）与 TSF_TURSO_AUTH_TOKEN",
+      `TSF Turso 未配置：请设置 ${PRIMARY_URL_KEY}（libsql://...）与 ${PRIMARY_TOKEN_KEY}` +
+        `（当前未命中可用键，含兼容 ${urlKey}）`,
     );
   }
   client = createClient({ url, authToken });
@@ -119,13 +156,50 @@ export type AutoTranslateShop = {
   shop: string;
   primaryLocale: string;
   targets: string[];
+  /** 0–23；null=沿用 hash 分槽 */
+  autoTranslateHour: number | null;
+  /** 1/12/24；null=套餐最短 */
+  autoTranslateIntervalHours: number | null;
+  /** 原始 JSON / string；null=沿用默认 AUTO_TRANSLATE_V4_MODULES */
+  autoTranslateModules: unknown;
 };
+
+function parseNullableHour(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 23) return null;
+  return n;
+}
+
+function parseNullableIntervalHours(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(n) || ![1, 12, 24].includes(n)) return null;
+  return n;
+}
+
+function parseModulesJson(raw: unknown): unknown {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return raw;
+}
 
 /** 自动扫描用：开了自动翻译的店。 */
 export async function listAutoTranslateShops(): Promise<AutoTranslateShop[]> {
   // 按语言精确取：该语言开了自动翻译（ShopTargetLocale）
   const rs = await tsfExecute(
-    `SELECT s.shop AS shop, s.primaryLocale AS primaryLocale, t.locale AS target
+    `SELECT s.shop AS shop,
+            s.primaryLocale AS primaryLocale,
+            s.autoTranslateHour AS autoTranslateHour,
+            s.autoTranslateIntervalHours AS autoTranslateIntervalHours,
+            s.autoTranslateModules AS autoTranslateModules,
+            t.locale AS target
      FROM ShopTranslationSettings s
      JOIN ShopTargetLocale t ON t.shop = s.shop
      WHERE t.autoTranslate = 1`,
@@ -135,7 +209,16 @@ export async function listAutoTranslateShops(): Promise<AutoTranslateShop[]> {
     const shop = String(r.shop);
     const primaryLocale = String(r.primaryLocale);
     const target = String(r.target);
-    const entry = byShop.get(shop) ?? { shop, primaryLocale, targets: [] };
+    const entry = byShop.get(shop) ?? {
+      shop,
+      primaryLocale,
+      targets: [],
+      autoTranslateHour: parseNullableHour(r.autoTranslateHour),
+      autoTranslateIntervalHours: parseNullableIntervalHours(
+        r.autoTranslateIntervalHours,
+      ),
+      autoTranslateModules: parseModulesJson(r.autoTranslateModules),
+    };
     entry.targets.push(target);
     byShop.set(shop, entry);
   }
@@ -204,6 +287,96 @@ export async function getOfflineAccessTokenFromTsf(shop: string): Promise<string
   return token ? String(token) : null;
 }
 
+/** 到期写库结算：试用优先抵 used，剩余试用清零。必写 TRIAL_EXPIRED。可重复调用。 */
+export async function expireInstallTrialCreditsIfDue(
+  shop: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!hasTsfDbCredentials()) return false;
+  const nowIso = now.toISOString();
+  const rs = await tsfExecute({
+    sql: `SELECT trialCredits, usedCredits, trialCreditsExpiresAt, deletedAt
+          FROM Account WHERE shop = ? LIMIT 1`,
+    args: [shop],
+  });
+  const row = rs.rows[0];
+  if (!row || row.deletedAt != null) return false;
+
+  const expiresRaw = row.trialCreditsExpiresAt;
+  const expiresAt =
+    expiresRaw == null || expiresRaw === ""
+      ? null
+      : expiresRaw instanceof Date
+        ? expiresRaw
+        : new Date(String(expiresRaw));
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) return false;
+
+  const trialCredits = Number(row.trialCredits ?? 0);
+  const usedCredits = Number(row.usedCredits ?? 0);
+  const settled = settleExpiredInstallTrialCredits(
+    {
+      trialCredits,
+      usedCredits,
+      trialCreditsExpiresAt: expiresAt,
+    },
+    now,
+  );
+  if (!settled.settled) return false;
+
+  const updated = await tsfExecute({
+    sql: `UPDATE Account
+          SET usedCredits = ?,
+              trialCredits = 0,
+              updatedAt = ?
+          WHERE shop = ?
+            AND deletedAt IS NULL
+            AND trialCredits = ?
+            AND usedCredits = ?
+            AND trialCreditsExpiresAt IS NOT NULL
+            AND trialCreditsExpiresAt <= ?`,
+    args: [
+      settled.usedCredits,
+      nowIso,
+      shop,
+      trialCredits,
+      usedCredits,
+      nowIso,
+    ],
+  });
+  if (Number(updated.rowsAffected ?? 0) <= 0) return false;
+
+  const prior = await tsfExecute({
+    sql: `SELECT id FROM BillingLog
+          WHERE shop = ? AND eventType = 'TRIAL_EXPIRED' AND referenceId = ?
+          LIMIT 1`,
+    args: [shop, "install_credits"],
+  });
+  if (!prior.rows[0]) {
+    await tsfExecute({
+      sql: `INSERT INTO BillingLog (
+              id, shop, eventType, planKey, referenceId, creditsDelta, usedCredits, metadata, createdAt
+            ) VALUES (?, ?, 'TRIAL_EXPIRED', NULL, ?, ?, ?, ?, ?)`,
+      args: [
+        randomUUID(),
+        shop,
+        "install_credits",
+        -settled.leftover,
+        settled.usedCredits,
+        JSON.stringify({
+          grantKind: "install_credits_expired",
+          leftover: settled.leftover,
+          consumed: settled.consumed,
+          trialCreditsExpiresAt: expiresAt?.toISOString() ?? null,
+          source: "worker",
+        }),
+        nowIso,
+      ],
+    });
+  }
+
+  return true;
+}
+
 /** 读 tsf 账户剩余额度（三池之和 - 已用）。无账户返回 null。 */
 export async function getTsfAccountRemaining(shop: string): Promise<number | null> {
   if (!hasTsfDbCredentials()) return null;
@@ -239,6 +412,7 @@ export async function deductTsfAccountCredits(
   amount: number,
 ): Promise<number | null> {
   if (!hasTsfDbCredentials()) return null;
+  await expireInstallTrialCreditsIfDue(shop);
   const amt = Math.max(0, Math.ceil(amount));
   if (amt > 0) {
     const res = await tsfExecute({

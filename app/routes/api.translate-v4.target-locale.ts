@@ -7,6 +7,10 @@ import { authenticate } from "~/shopify.server";
 import {
   setAutoTranslate,
 } from "~/server/translateV4/targetLocale.server";
+import {
+  getAutoTranslateShopSettings,
+  setAutoTranslateShopSettings,
+} from "~/server/translateV4/autoTranslateSettings.server";
 import { listLanguageStatusFromV4 } from "~/server/translateV4/languageStatus.server";
 import {
   buildTranslateV4Error,
@@ -14,16 +18,25 @@ import {
 } from "~/utils/translateV4Errors";
 
 /**
- * GET /api/translate-v4/target-locale —— 列出本店每语言状态。
- * 返回形状对齐 Java GetLanguageList：{ success, response: [{ target, status, autoTranslate }] }
+ * GET /api/translate-v4/target-locale —— 列出本店每语言状态 + 整店 auto 设置。
+ * 返回形状对齐 Java GetLanguageList：{ success, response, autoSettings }
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   try {
-    const rows = await listLanguageStatusFromV4(session.shop);
+    const [rows, autoSettings] = await Promise.all([
+      listLanguageStatusFromV4(session.shop),
+      getAutoTranslateShopSettings(session.shop),
+    ]);
     return json({
       success: true,
       response: rows,
+      autoSettings: {
+        hour: autoSettings.hour,
+        intervalHours: autoSettings.intervalHours,
+        allowedIntervalHours: [...autoSettings.allowedIntervalHours],
+        modules: autoSettings.modules,
+      },
     });
   } catch (err) {
     console.error("[target-locale] list failed:", err);
@@ -43,8 +56,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 /**
- * POST /api/translate-v4/target-locale —— 语言页按语言自动翻译开关。
- * body: { intent: "setAuto", locale, autoTranslate }
+ * POST /api/translate-v4/target-locale
+ * - { intent: "setAuto", locale, autoTranslate }
+ * - { intent: "setAutoSettings", hour, intervalHours, modules }
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -52,6 +66,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     intent?: string;
     locale?: string;
     autoTranslate?: boolean;
+    hour?: number;
+    intervalHours?: number;
+    modules?: string[];
   };
 
   try {
@@ -72,6 +89,46 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       await setAutoTranslate(session.shop, body.locale, Boolean(body.autoTranslate));
       return json({ success: true, response: { locale: body.locale, autoTranslate: !!body.autoTranslate } });
     }
+
+    if (body.intent === "setAutoSettings") {
+      try {
+        const saved = await setAutoTranslateShopSettings(session.shop, {
+          hour: Number(body.hour),
+          intervalHours: Number(body.intervalHours),
+          modules: Array.isArray(body.modules) ? body.modules : [],
+        });
+        return json({
+          success: true,
+          response: {
+            hour: saved.hour,
+            intervalHours: saved.intervalHours,
+            allowedIntervalHours: [...saved.allowedIntervalHours],
+            modules: saved.modules,
+          },
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          msg === "INVALID_AUTO_TRANSLATE_HOUR" ||
+          msg === "INVALID_AUTO_TRANSLATE_MODULES" ||
+          msg === "INVALID_AUTO_TRANSLATE_INTERVAL"
+        ) {
+          const appError = buildTranslateV4Error(
+            TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_AUTO_SETTINGS_INVALID,
+          );
+          return json(
+            {
+              success: false,
+              errorCode: appError.errorCode,
+              errorMsg: appError.errorMsg,
+            },
+            { status: appError.status },
+          );
+        }
+        throw err;
+      }
+    }
+
     const appError = buildTranslateV4Error(
       TRANSLATE_V4_ERROR_KEYS.UNKNOWN_ACTION,
     );

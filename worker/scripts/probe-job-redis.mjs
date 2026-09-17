@@ -1,53 +1,42 @@
 /**
- * Probe prod job Cosmos + Redis progress by id prefix.
- * Usage: RENDER_API_KEY=... node scripts/probe-job-redis.mjs 8554fef3
+ * Probe job Cosmos + Redis progress by id prefix.
+ * 默认测环境本地 env；可用 --env=.env.prod。
+ * Usage: node worker/scripts/probe-job-redis.mjs <idPrefix> [--env=.env.test]
  */
 import { CosmosClient } from "@azure/cosmos";
 import IORedis from "ioredis";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  loadStackedEnv,
+  resolveCosmos,
+  resolveRedisUrl,
+} from "../../scripts/lib/loadEnv.mjs";
 
-const token = process.env.RENDER_API_KEY?.trim();
-const prefix = process.argv[2];
-if (!token || !prefix) {
-  console.error("Usage: RENDER_API_KEY=... node scripts/probe-job-redis.mjs <idPrefix>");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, "../..");
+const prefix = process.argv.slice(2).find((a) => !a.startsWith("--"));
+if (!prefix) {
+  console.error(
+    "Usage: node worker/scripts/probe-job-redis.mjs <idPrefix> [--env=.env.test]",
+  );
   process.exit(1);
 }
 
-async function renderGet(path) {
-  const res = await fetch(`https://api.render.com/v1${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Render ${path}: ${res.status} ${await res.text()}`);
-  return res.json();
-}
-
-function envFromRows(rows, serviceId) {
-  const env = {};
-  for (const row of rows) {
-    if (row?.envVar?.key) env[row.envVar.key] = row.envVar.value;
-  }
-  return env;
-}
-
-const [tsfEnvRows, workerEnvRows] = await Promise.all([
-  renderGet("/services/srv-csp2931u0jms738sfmc0/env-vars?limit=100"),
-  renderGet("/services/srv-d8sqas4vikkc73f5nbog/env-vars?limit=100"),
-]);
-const tsfEnv = envFromRows(tsfEnvRows);
-const workerEnv = envFromRows(workerEnvRows);
-
-const endpoint = tsfEnv.COSMOS_ENDPOINT_V4?.trim() || workerEnv.COSMOS_ENDPOINT?.trim();
-const cosmosKey = tsfEnv.COSMOS_KEY_V4?.trim() || workerEnv.COSMOS_KEY?.trim();
-const db = tsfEnv.COSMOS_TRANSLATION_DATABASE_ID_V4?.trim() || "translation";
-const containerId =
-  tsfEnv.COSMOS_TRANSLATION_V4_JOBS_CONTAINER_V4?.trim() || "translation_v4_jobs";
-
-if (!endpoint || !cosmosKey) {
-  console.error("Missing prod Cosmos credentials from Render env");
+const { env } = loadStackedEnv({ root });
+const cosmos = resolveCosmos(env);
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("缺少 Cosmos 凭据");
   process.exit(1);
 }
 
-const client = new CosmosClient({ endpoint, key: cosmosKey });
-const container = client.database(db).container(containerId);
+const client = new CosmosClient({
+  endpoint: cosmos.endpoint,
+  key: cosmos.key,
+});
+const container = client
+  .database(cosmos.databaseId)
+  .container(cosmos.containerId);
 const { resources } = await container.items
   .query({
     query:
@@ -83,23 +72,21 @@ console.log(
   ),
 );
 
-const redisUrl =
-  tsfEnv.REDIS_URL_V4?.trim() ||
-  tsfEnv.REDIS_URL?.trim() ||
-  workerEnv.REDIS_URL?.trim();
+const { url: redisUrl, source } = resolveRedisUrl(env);
 if (!redisUrl) {
-  console.warn("No REDIS_URL — skip Redis");
+  console.warn("No RENDER_KV / REDIS_URL — skip Redis");
   process.exit(0);
 }
 
-const redis = new IORedis(redisUrl, { maxRetriesPerRequest: 1, lazyConnect: true });
+const redis = new IORedis(redisUrl, {
+  maxRetriesPerRequest: 1,
+  lazyConnect: true,
+});
 await redis.connect();
 const prog = await redis.hgetall(`translate:v4:progress:${job.id}`);
-const ctrl = await redis.hgetall(`translate:v4:control:${job.id}`);
-console.log("\n=== Redis progress ===");
+const ctrl = await redis.get(`translate:v4:control:${job.id}`);
+console.log(`\n=== Redis progress (source=${source}) ===`);
 console.log(prog);
-if (Object.keys(ctrl).length) {
-  console.log("\n=== Redis control ===");
-  console.log(ctrl);
-}
+console.log("\n=== Redis control ===");
+console.log(ctrl);
 await redis.quit();

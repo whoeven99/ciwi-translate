@@ -3,24 +3,99 @@
  * 简单 localStorage TTL 封装
  */
 
-export function setWithTTL(key, value, ttlMs = 1000 * 60 * 60) {
+const CIWI_STORAGE_PREFIX = "ciwi:v2";
+
+function normalizeStorageScope(scope) {
+  return String(scope || "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveStorageKey(key, scope) {
+  const normalizedScope = normalizeStorageScope(scope);
+  if (!normalizedScope) return key;
+  return `${CIWI_STORAGE_PREFIX}:${normalizedScope}:${key}`;
+}
+
+function getLocalStorage() {
+  if (typeof localStorage === "undefined") return null;
+  return localStorage;
+}
+
+export function getStorageItem(key, options = {}) {
+  const storage = getLocalStorage();
+  if (!storage) return null;
+
+  const { scope, legacyKeys = [] } = options;
+  const scopedKey = resolveStorageKey(key, scope);
+
+  try {
+    const scopedValue = storage.getItem(scopedKey);
+    if (scopedValue != null) {
+      return scopedValue;
+    }
+
+    const keysToMigrate = Array.from(new Set([key, ...legacyKeys]));
+    for (const legacyKey of keysToMigrate) {
+      const legacyValue = storage.getItem(legacyKey);
+      if (legacyValue == null) continue;
+      try {
+        storage.setItem(scopedKey, legacyValue);
+      } catch {}
+      return legacyValue;
+    }
+  } catch (e) {
+    console.warn("getStorageItem failed", e);
+  }
+
+  return null;
+}
+
+export function setStorageItem(key, value, options = {}) {
+  const storage = getLocalStorage();
+  if (!storage) return;
+
+  try {
+    storage.setItem(resolveStorageKey(key, options.scope), value);
+  } catch (e) {
+    console.warn("setStorageItem failed", e);
+  }
+}
+
+export function removeStorageItem(key, options = {}) {
+  const storage = getLocalStorage();
+  if (!storage) return;
+
+  const { scope, legacyKeys = [] } = options;
+
+  try {
+    storage.removeItem(resolveStorageKey(key, scope));
+    Array.from(new Set(legacyKeys)).forEach((legacyKey) => {
+      storage.removeItem(legacyKey);
+    });
+  } catch (e) {
+    console.warn("removeStorageItem failed", e);
+  }
+}
+
+export function setWithTTL(key, value, ttlMs = 1000 * 60 * 60, options = {}) {
   if (!value?.success) return;
   const payload = { ts: Date.now(), ttl: ttlMs, data: value };
   try {
-    localStorage.setItem(key, JSON.stringify(payload));
+    setStorageItem(key, JSON.stringify(payload), options);
   } catch (e) {
     console.warn("setWithTTL failed", e);
   }
 }
 
-export function getWithTTL(key) {
+export function getWithTTL(key, options = {}) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = getStorageItem(key, options);
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (!obj || typeof obj !== "object") return null;
     if (Date.now() - obj.ts > (obj.ttl || 0)) {
-      localStorage.removeItem(key);
+      removeStorageItem(key, options);
       return null;
     }
     return obj.data;
@@ -65,6 +140,8 @@ export async function useCacheThenRefresh(
     refetchWhenCachedEmpty = false,
     skipRefreshWhenEmpty = false,
     emptyTtlMs,
+    storageScope,
+    legacyKeys = [],
   } = options;
 
   const ttlFor = (data) => {
@@ -78,11 +155,12 @@ export async function useCacheThenRefresh(
     return ttlMs;
   };
 
-  const cached = getWithTTL(key);
+  const storageOptions = { scope: storageScope, legacyKeys };
+  const cached = getWithTTL(key, storageOptions);
   if (!cached) {
     const fresh = await fetcher();
     if (fresh !== null && fresh !== undefined) {
-      setWithTTL(key, fresh, ttlFor(fresh));
+      setWithTTL(key, fresh, ttlFor(fresh), storageOptions);
     }
     return fresh;
   }
@@ -94,7 +172,7 @@ export async function useCacheThenRefresh(
   if (refetchWhenCachedEmpty && isCachedEmptyArray) {
     const fresh = await fetcher();
     if (fresh !== null && fresh !== undefined) {
-      setWithTTL(key, fresh, ttlFor(fresh));
+      setWithTTL(key, fresh, ttlFor(fresh), storageOptions);
     }
     return fresh;
   }
@@ -105,7 +183,7 @@ export async function useCacheThenRefresh(
       .then(fetcher)
       .then((fresh) => {
         if (fresh !== null && fresh !== undefined) {
-          setWithTTL(key, fresh, ttlFor(fresh));
+          setWithTTL(key, fresh, ttlFor(fresh), storageOptions);
         }
       })
       .catch((error) => {

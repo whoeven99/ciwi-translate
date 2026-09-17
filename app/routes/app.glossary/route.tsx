@@ -1,13 +1,10 @@
-import { TitleBar } from "@shopify/app-bridge-react";
 import { Page } from "@shopify/polaris";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { authenticate } from "~/shopify.server";
 import { ActionFunctionArgs, json, LoaderFunctionArgs } from "@remix-run/node";
 import {
-  Card,
   Checkbox,
   Flex,
-  Modal,
   Pagination,
   Popconfirm,
   Skeleton,
@@ -17,7 +14,13 @@ import {
   Typography,
 } from "antd";
 import Button from "~/ui/components/AppButton";
+import { AppSModal } from "~/ui/components/AppSModal";
+import AppMobileListCard from "~/ui/components/AppMobileListCard";
 import AppSectionCard from "~/ui/components/AppSectionCard";
+import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import { queryShopLanguages } from "~/api/admin";
 import {
@@ -48,7 +51,7 @@ import {
   getTranslateV4ErrorMessage,
   TRANSLATE_V4_ERROR_KEYS,
 } from "~/utils/translateV4Errors";
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export interface GLossaryDataType {
   key: number;
@@ -269,6 +272,7 @@ const Index = () => {
   const deleteTraceRef = useRef<ClientLogTrace | null>(null);
   const handledDeleteResponseRef = useRef<any>(null);
   const { t } = useTranslation();
+  const homeBackAction = useAppHomeBackAction();
   const { reportClick, report } = useReport();
   useEffect(() => {
     loadingFetcher.submit(
@@ -610,19 +614,20 @@ const Index = () => {
 
   return (
     <Page>
-      <TitleBar title={t("Glossary")} />
+      <AppSubpageTitleBar title={t("Glossary")} />
       <ScrollNotice
         text={t(
           "Welcome to our app! If you have any questions, feel free to email us at support@ciwi.ai, and we will respond as soon as possible.",
         )}
       />
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-        <Title style={{ fontSize: "1.25rem", display: "inline" }}>
-          {t("Glossary")}
-        </Title>
-        <Text>
-          {t("Create translation rules for certain words and phrases")}
-        </Text>
+        <AppPageHeader
+          title={t("Glossary")}
+          backAction={homeBackAction}
+          description={t(
+            "Create translation rules for certain words and phrases",
+          )}
+        />
         {showGlossaryEmptyState ? (
           <AppSectionCard
             title={t("No glossary rules yet")}
@@ -671,7 +676,7 @@ const Index = () => {
                   </Button>
                 )}
                 {hasSelected
-                  ? `${t("Selected")}${selectedRowKeys.length}${t("items")}`
+                  ? `${t("Selected")} ${selectedRowKeys.length} ${t("items")}`
                   : null}
               </Flex>
               {planMapping[plan?.type as keyof typeof planMapping] === 0 ? (
@@ -709,96 +714,98 @@ const Index = () => {
               )}
             </Flex>
             {isMobile ? (
-              <>
-                <Card
-                  title={
-                    <Checkbox
-                      checked={allCurrentPageSelected && !loading}
-                      indeterminate={
-                        someCurrentPageSelected && !allCurrentPageSelected
-                      }
-                      onChange={(e) =>
-                        setSelectedRowKeys(
-                          e.target.checked
-                            ? [
-                                ...currentPageKeys,
-                                ...selectedRowKeys.filter(
-                                  (key) => !currentPageKeys.includes(key),
-                                ),
-                              ]
-                            : [
-                                ...selectedRowKeys.filter(
-                                  (key) => !currentPageKeys.includes(key),
-                                ),
-                              ],
-                        )
-                      }
-                    >
-                      {t("Glossary")}
-                    </Checkbox>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Checkbox
+                  checked={allCurrentPageSelected && !loading}
+                  indeterminate={
+                    someCurrentPageSelected && !allCurrentPageSelected
                   }
-                  loading={loading}
+                  onChange={(e) =>
+                    setSelectedRowKeys(
+                      e.target.checked
+                        ? [
+                            ...currentPageKeys,
+                            ...selectedRowKeys.filter(
+                              (key) => !currentPageKeys.includes(key),
+                            ),
+                          ]
+                        : [
+                            ...selectedRowKeys.filter(
+                              (key) => !currentPageKeys.includes(key),
+                            ),
+                          ],
+                    )
+                  }
                 >
-                  {pagedData.map((item: any) => (
-                    <Card.Grid key={item.key} style={{ width: "100%" }}>
-                      <Space
-                        direction="vertical"
-                        size="middle"
-                        style={{ width: "100%" }}
-                      >
-                        <Flex justify="space-between">
-                          <Checkbox
-                            checked={selectedRowKeys.includes(item.key)}
-                            onChange={(e: any) => {
-                              setSelectedRowKeys(
-                                e.target.checked
-                                  ? [...selectedRowKeys, item.key]
-                                  : selectedRowKeys.filter(
-                                      (key) => key !== item.key,
-                                    ),
-                              );
-                            }}
-                          >
-                            {t("Text")}{" "}
-                          </Checkbox>
-                          <Text>{item.sourceText}</Text>
-                        </Flex>
-                        <Flex justify="space-between">
-                          <Text>{t("Translation text")}</Text>
-                          <Text>{item.targetText}</Text>
-                        </Flex>
-                        <Flex justify="space-between">
-                          <Text>{t("Apply for")}</Text>
-                          <Text>{item.language || item.rangeCode || "-"}</Text>
-                        </Flex>
-                        <Flex justify="space-between">
-                          <Text>{t("Case")}</Text>
-                          {item.type ? (
-                            <Text>{t("Case-sensitive")}</Text>
-                          ) : (
-                            <Text>{t("Case-insensitive")}</Text>
-                          )}
-                        </Flex>
-                        <Flex justify="space-between">
-                          <Text>{t("Status")}</Text>
+                  {t("Glossary")}
+                </Checkbox>
+                {pagedData.map((item: any) => (
+                  <AppMobileListCard
+                    key={item.key}
+                    title={item.sourceText}
+                    rows={[
+                      {
+                        key: "target",
+                        label: t("Translation text"),
+                        value: <Text>{item.targetText}</Text>,
+                      },
+                      {
+                        key: "apply",
+                        label: t("Apply for"),
+                        value: (
+                          <Text>
+                            {item.language || item.rangeCode || "-"}
+                          </Text>
+                        ),
+                      },
+                      {
+                        key: "case",
+                        label: t("Case"),
+                        value: (
+                          <Text>
+                            {item.type
+                              ? t("Case-sensitive")
+                              : t("Case-insensitive")}
+                          </Text>
+                        ),
+                      },
+                      {
+                        key: "status",
+                        label: t("Status"),
+                        value: (
                           <Switch
                             checked={item?.status}
                             onClick={() => handleApplication(item.key)}
-                            loading={item.loading} // 使用每个项的 loading 状态
+                            loading={item.loading}
                           />
-                        </Flex>
+                        ),
+                      },
+                    ]}
+                    actions={
+                      <>
+                        <Checkbox
+                          checked={selectedRowKeys.includes(item.key)}
+                          onChange={(e: any) => {
+                            setSelectedRowKeys(
+                              e.target.checked
+                                ? [...selectedRowKeys, item.key]
+                                : selectedRowKeys.filter(
+                                    (key) => key !== item.key,
+                                  ),
+                            );
+                          }}
+                        />
                         <Button
-                          style={{ width: "100%" }}
                           onClick={() =>
                             handleIsModalOpen(t("Edit rules"), item.key)
                           }
                         >
                           {t("Edit")}
                         </Button>
-                      </Space>
-                    </Card.Grid>
-                  ))}
-                </Card>
+                      </>
+                    }
+                  />
+                ))}
                 <div
                   style={{
                     display: "flex",
@@ -815,7 +822,7 @@ const Index = () => {
                     onChange={(page) => setCurrentPage(page)}
                   />
                 </div>
-              </>
+              </div>
             ) : (
               <Table
                 rowSelection={rowSelection}
@@ -835,25 +842,24 @@ const Index = () => {
         shop={globalStore?.shop || ""}
         migrated={migrated}
       />
-      <Modal
-        title={upgradeModalContent?.title}
+      <AppSModal
         open={!!upgradeModalContent}
-        onCancel={() => setUpgradeModalContent(null)}
-        centered
-        width={700}
-        footer={
-          <Space>
-            <Button onClick={() => setUpgradeModalContent(null)}>
-              {t("v4.quotaGate.maybeLater")}
-            </Button>
-            <Button type="primary" onClick={() => navigate("/app/pricing")}>
-              {t("Upgrade plan")}
-            </Button>
-          </Space>
-        }
+        heading={upgradeModalContent?.title ?? ""}
+        onClose={() => setUpgradeModalContent(null)}
+        size="small"
+        primaryAction={{
+          content: t("Upgrade plan"),
+          onAction: () => navigate("/app/pricing"),
+        }}
+        secondaryActions={[
+          {
+            content: t("v4.quotaGate.maybeLater"),
+            onAction: () => setUpgradeModalContent(null),
+          },
+        ]}
       >
         <Text>{upgradeModalContent?.body}</Text>
-      </Modal>
+      </AppSModal>
     </Page>
   );
 };

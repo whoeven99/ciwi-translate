@@ -20,26 +20,57 @@ function mapLiquidDoToRow(item: Record<string, unknown>): LiquidTableRow {
   };
 }
 
-async function postTsfLiquid(body: Record<string, unknown>) {
+async function postTsfLiquid(
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+) {
   const res = await fetch("/api/translate-v4/liquid", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   return res.json();
 }
 
-export async function selectLiquidCompat(_args: {
-  migrated?: boolean;
-  shop?: string;
-}): Promise<{ success: boolean; response?: LiquidTableRow[]; errorMsg?: string }> {
-  const res = await fetch("/api/translate-v4/liquid");
-  const data = await res.json();
-  if (!data.success) return data;
-  const rows = (data.response ?? []).map((item: Record<string, unknown>) =>
-    mapLiquidDoToRow(item),
-  );
-  return { success: true, response: rows };
+export async function selectLiquidCompat(args: {
+  languageCode: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+  signal?: AbortSignal;
+}): Promise<{
+  success: boolean;
+  aborted?: boolean;
+  response?: LiquidTableRow[];
+  hasNext?: boolean;
+  errorMsg?: string;
+}> {
+  try {
+    const data = await postTsfLiquid(
+      {
+        intent: "list",
+        languageCode: args.languageCode,
+        language: args.languageCode,
+        ...(args.q ? { q: args.q } : {}),
+        page: args.page ?? 1,
+        pageSize: args.pageSize ?? 10,
+      },
+      args.signal,
+    );
+    if (!data.success) return data;
+    const payload = (data.response ?? {}) as {
+      rows?: Record<string, unknown>[];
+      hasNext?: boolean;
+    };
+    const rows = (payload.rows ?? []).map((item) => mapLiquidDoToRow(item));
+    return { success: true, response: rows, hasNext: Boolean(payload.hasNext) };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return { success: false, aborted: true };
+    }
+    throw err;
+  }
 }
 
 export async function insertLiquidCompat(args: {
@@ -48,7 +79,7 @@ export async function insertLiquidCompat(args: {
   shop?: string;
   sourceText: string;
   targetText: string;
-  replacementMethod: boolean;
+  replacementMethod?: boolean;
   languageCode: string;
 }) {
   if (args.id) {
@@ -57,15 +88,17 @@ export async function insertLiquidCompat(args: {
       id: args.id,
       sourceText: args.sourceText,
       targetText: args.targetText,
-      replacementMethod: args.replacementMethod,
       languageCode: args.languageCode,
+      ...(args.replacementMethod != null
+        ? { replacementMethod: args.replacementMethod }
+        : {}),
     });
   }
   return postTsfLiquid({
     intent: "insert",
     sourceText: args.sourceText,
     targetText: args.targetText,
-    replacementMethod: args.replacementMethod,
+    replacementMethod: args.replacementMethod ?? false,
     languageCode: args.languageCode,
   });
 }
@@ -76,12 +109,4 @@ export async function deleteLiquidCompat(args: {
   ids: string[];
 }) {
   return postTsfLiquid({ intent: "delete", ids: args.ids });
-}
-
-export async function toggleLiquidReplacementMethodCompat(args: {
-  migrated?: boolean;
-  shop?: string;
-  id: string;
-}) {
-  return postTsfLiquid({ intent: "toggleReplacementMethod", id: args.id });
 }

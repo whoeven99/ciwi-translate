@@ -6,6 +6,108 @@
   width: 100%;
 }
 
+.autoSettingsModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.autoSettingsModalHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--app-color-text-secondary);
+}
+
+.autoSettingsModalRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.autoSettingsModalRowLabel {
+  min-width: 0;
+}
+
+.autoSettingsModalLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-color-text);
+  line-height: 1.3;
+}
+
+.autoSettingsModalMeta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--app-color-text-secondary);
+  line-height: 1.3;
+}
+
+.autoSettingsModalSchedule {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.autoSettingsModalField {
+  min-width: 0;
+}
+
+.autoSettingsModalModules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.autoSettingsModalModulesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.autoModuleGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.autoModuleChip,
+.autoModuleChipSelected {
+  border-radius: 8px;
+  border: 1px solid var(--app-color-border-secondary);
+  background: var(--app-color-surface);
+  color: var(--app-color-text);
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 7px 8px;
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.autoModuleChipSelected {
+  border-color: var(--p-color-border-info, #005bd3);
+  background: var(--p-color-bg-surface-info, #eaf4ff);
+  color: var(--p-color-text-info, #005bd3);
+  font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .autoModuleGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .autoSettingsModalSchedule {
+    grid-template-columns: 1fr;
+  }
+}
+
 .languageSummaryRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -20,10 +122,28 @@
 }
 
 .languageToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-300);
+  width: 100%;
+  margin-bottom: var(--app-space-400);
   padding: 14px 16px;
   border-radius: 14px;
   background: rgba(84, 103, 255, 0.06);
   border: 1px solid var(--app-color-border-secondary);
+}
+
+@media (max-width: 768px) {
+  .languageToolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .languageToolbar :global(.ant-btn) {
+    width: 100%;
+  }
 }
 
 .languageMobileCard {

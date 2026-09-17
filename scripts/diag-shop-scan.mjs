@@ -1,42 +1,25 @@
-import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { CosmosClient } from "@azure/cosmos";
 import { BlobServiceClient } from "@azure/storage-blob";
+import { loadStackedEnv, resolveCosmos } from "./lib/loadEnv.mjs";
 
-function loadEnvFile(path) {
-  const out = {};
-  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    if (!line || line.startsWith("#")) continue;
-    const i = line.indexOf("=");
-    if (i < 0) continue;
-    const k = line.slice(0, i);
-    let v = line.slice(i + 1).trim();
-    if (
-      (v.startsWith('"') && v.endsWith('"')) ||
-      (v.startsWith("'") && v.endsWith("'"))
-    ) {
-      v = v.slice(1, -1);
-    }
-    out[k] = v;
-  }
-  return out;
-}
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const { env } = loadStackedEnv({ root });
+const cosmos = resolveCosmos(env);
 
-const env = {
-  ...loadEnvFile(".env"),
-  ...loadEnvFile(".env.test"),
-};
+const shop = process.argv.slice(2).find((a) => !a.startsWith("--")) || null;
 
-const shop = process.argv[2] || null;
-
-const cosmosEndpoint = env.COSMOS_ENDPOINT_V4?.trim();
-const cosmosKey = env.COSMOS_KEY_V4?.trim();
-if (!cosmosEndpoint || !cosmosKey) {
-  console.error("Missing COSMOS_ENDPOINT_V4 / COSMOS_KEY_V4");
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("缺少 Cosmos 凭据（默认 .env + .env.test + .env.worker.test）");
   process.exit(1);
 }
 
-const client = new CosmosClient({ endpoint: cosmosEndpoint, key: cosmosKey });
-const container = client.database("translation").container("shop_scan_jobs");
+const client = new CosmosClient({
+  endpoint: cosmos.endpoint,
+  key: cosmos.key,
+});
+const container = client.database(cosmos.databaseId).container("shop_scan_jobs");
 
 const query = shop
   ? {
@@ -62,23 +45,25 @@ if (!latest?.blobPrefix) {
 const blobConn = env.AZURE_BLOB_CONNECTION_STRING?.trim();
 if (!blobConn) {
   console.log("\n=== Blob ===");
-  console.log("AZURE_BLOB_CONNECTION_STRING not set in .env / .env.test — app cannot read profile-facts.json");
+  console.log(
+    "AZURE_BLOB_CONNECTION_STRING not set — cannot read profile-facts.json",
+  );
   process.exit(0);
 }
 
 const containerName =
   env.AZURE_BLOB_TRANSLATION_CONTAINER?.trim() || "translation-content";
-const blobContainer = BlobServiceClient.fromConnectionString(blobConn).getContainerClient(
-  containerName,
-);
+const blobContainer = BlobServiceClient.fromConnectionString(
+  blobConn,
+).getContainerClient(containerName);
 const prefix = latest.blobPrefix.endsWith("/")
   ? latest.blobPrefix
   : `${latest.blobPrefix}/`;
 
 async function readJson(name) {
-  const client = blobContainer.getBlockBlobClient(`${prefix}${name}`);
-  if (!(await client.exists())) return { exists: false, data: null };
-  const buf = await client.downloadToBuffer();
+  const blob = blobContainer.getBlockBlobClient(`${prefix}${name}`);
+  if (!(await blob.exists())) return { exists: false, data: null };
+  const buf = await blob.downloadToBuffer();
   return { exists: true, data: JSON.parse(buf.toString("utf8")) };
 }
 
@@ -93,19 +78,28 @@ if (!profileFacts.exists) {
   console.log("keys:", Object.keys(d ?? {}));
   console.log("has induction:", Boolean(d?.induction));
   console.log("has old ai:", Boolean(d?.ai));
-  console.log("understanding industry:", d?.induction?.understanding?.industry ?? null);
+  console.log(
+    "understanding industry:",
+    d?.induction?.understanding?.industry ?? null,
+  );
   const s = d?.induction?.strategy;
-  console.log("strategy:", s
-    ? {
-        brandTerms: s.brandTerms?.length ?? 0,
-        doNotTranslateTerms: s.doNotTranslateTerms?.length ?? 0,
-        preferredTerms: s.preferredTerms?.length ?? 0,
-        seoTerms: s.seoTerms?.length ?? 0,
-        moduleHints: s.moduleHints?.length ?? 0,
-      }
-    : null);
+  console.log(
+    "strategy:",
+    s
+      ? {
+          brandTerms: s.brandTerms?.length ?? 0,
+          doNotTranslateTerms: s.doNotTranslateTerms?.length ?? 0,
+          preferredTerms: s.preferredTerms?.length ?? 0,
+          seoTerms: s.seoTerms?.length ?? 0,
+          moduleHints: s.moduleHints?.length ?? 0,
+        }
+      : null,
+  );
   if (d?.induction?.ai?.step2) {
-    console.log("step2 raw preview:", String(d.induction.ai.step2.raw).slice(0, 500));
+    console.log(
+      "step2 raw preview:",
+      String(d.induction.ai.step2.raw).slice(0, 500),
+    );
   }
 }
 

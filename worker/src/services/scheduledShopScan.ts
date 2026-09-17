@@ -108,7 +108,7 @@ export async function runScheduledShopScan(
     return;
   }
   if (!hasTsfDbCredentials()) {
-    console.log("[scheduledShopScan] TSF Turso 未配置（TSF_TURSO_*），跳过");
+    console.log("[scheduledShopScan] TSF Turso 未配置（TURSO_DATABASE_URL / TURSO_AUTH_TOKEN），跳过");
     return;
   }
   if (

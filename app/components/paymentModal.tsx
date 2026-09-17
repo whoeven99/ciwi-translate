@@ -1,8 +1,6 @@
 import {
-  Button as PolarisButton,
   InlineStack,
   Link as PolarisLink,
-  Select as PolarisSelect,
   Text as PolarisText,
 } from "@shopify/polaris";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,11 +11,13 @@ import { useSelector } from "react-redux";
 import useReport from "../../scripts/eventReport";
 import "./styles.css";
 import { v4Colors } from "~/routes/app.translate-v4/v4Styles";
-import { V4ModalShell } from "~/components/V4ModalShell";
+import { AppSModal } from "~/ui/components/AppSModal";
+import { InFlowSelect } from "~/ui/components/InFlowSelect";
 import { buildPaymentOptions, type OptionType } from "./paymentModal.shared";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
 import type { CreditsPurchaseModalContext } from "~/utils/creditsPurchaseModal";
 import { redirectToBillingConfirmation } from "~/utils/billingConfirmation.client";
+import { saveResumeTaskDraft } from "~/utils/resumeTaskDraft";
 import { message } from "~/ui/message";
 
 interface PaymentModalProps {
@@ -35,6 +35,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [selectedKey, setSelectedKey] = useState<string>("option-1");
   const [buyButtonLoading, setBuyButtonLoading] = useState<boolean>(false);
   const paySubmittingRef = useRef(false);
+  const payRedirectedRef = useRef(false);
   const { t } = useTranslation();
   const payFetcher = useFetcher<{
     success?: boolean;
@@ -42,7 +43,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     response?: { confirmationUrl?: string };
   }>();
   const { reportClick } = useReport();
-  const { plan, totalChars } = useSelector((state: any) => state.userConfig);
+  const { plan, totalChars, shop } = useSelector((state: any) => state.userConfig);
   void variant;
 
   const options: OptionType[] = useMemo(() => buildPaymentOptions(plan), [plan]);
@@ -82,6 +83,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   );
 
   useEffect(() => {
+    const confirmationUrl = payFetcher.data?.response?.confirmationUrl;
+    if (
+      payFetcher.data?.success &&
+      confirmationUrl &&
+      !payRedirectedRef.current
+    ) {
+      payRedirectedRef.current = true;
+      redirectToBillingConfirmation(confirmationUrl);
+    }
+
     if (payFetcher.state === "submitting" || payFetcher.state === "loading") {
       return;
     }
@@ -92,9 +103,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
     if (!payFetcher.data) return;
 
-    const confirmationUrl = payFetcher.data.response?.confirmationUrl;
     if (payFetcher.data.success && confirmationUrl) {
-      redirectToBillingConfirmation(confirmationUrl);
       return;
     }
 
@@ -110,9 +119,20 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     setSelectedKey(recommendedOption.key);
   }, [visible, recommendedOption]);
 
+  const taskContext =
+    purchaseContext?.kind === "translate_v4_task" ? purchaseContext : null;
+  const createTaskContext =
+    purchaseContext?.kind === "create_task" ? purchaseContext : null;
+  const singleTranslateContext =
+    purchaseContext?.kind === "single_translate" ? purchaseContext : null;
+
   const onClick = () => {
     setBuyButtonLoading(true);
     paySubmittingRef.current = true;
+    payRedirectedRef.current = false;
+    if (taskContext?.taskId && typeof shop === "string" && shop.trim()) {
+      saveResumeTaskDraft(shop, taskContext.taskId);
+    }
     const payInfo = {
       name: selectedOption?.name,
       price: {
@@ -145,12 +165,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     // if (recommendOption) setSelectedOption(recommendOption);
   };
 
-  const taskContext =
-    purchaseContext?.kind === "translate_v4_task" ? purchaseContext : null;
-  const createTaskContext =
-    purchaseContext?.kind === "create_task" ? purchaseContext : null;
-  const singleTranslateContext =
-    purchaseContext?.kind === "single_translate" ? purchaseContext : null;
   const ctaLabel = taskContext || singleTranslateContext || createTaskContext
     ? t("paymentModal.cta.continue", {
         defaultValue: "Add credits and continue",
@@ -187,29 +201,29 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         : t("Choose a pack for this task.");
 
   return (
-    <V4ModalShell open={visible} onClose={onCancel} width={560}>
-      <div style={{ padding: "24px 24px 20px" }}>
-        <div
-          style={{
-            paddingBottom: 20,
-            marginBottom: 20,
-            borderBottom: `1px solid ${v4Colors.divider}`,
-          }}
-        >
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <PolarisText as="h2" variant="headingLg" fontWeight="bold">
-              {heading}
-            </PolarisText>
-            <div
-              style={{
-                marginTop: 10,
-              }}
-            >
-              <PolarisText as="p" variant="bodyMd" tone="subdued">
-                {headingDescription}
-              </PolarisText>
-            </div>
-          </div>
+    <AppSModal
+      open={visible}
+      heading={heading}
+      onClose={onCancel}
+      size="base"
+      primaryAction={{
+        content: ctaLabel,
+        onAction: onClick,
+        disabled: buyButtonLoading || !selectedKey,
+        loading: buyButtonLoading,
+      }}
+      secondaryActions={[
+        {
+          content: t("v4.quotaGate.maybeLater"),
+          onAction: onCancel,
+        },
+      ]}
+    >
+      <div>
+        <div style={{ marginBottom: 18 }}>
+          <PolarisText as="p" variant="bodyMd" tone="subdued">
+            {headingDescription}
+          </PolarisText>
         </div>
 
         {taskContext ? (
@@ -257,7 +271,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <TaskStat
                 label={t("Need to top up")}
                 value={formatCreditsValue(taskContext.shortfallCredits, t)}
-                tone="critical"
               />
             </div>
             {recommendedOption ? (
@@ -330,7 +343,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <TaskStat
                 label={t("Need to top up")}
                 value={formatCreditsValue(singleTranslateContext.shortfallCredits, t)}
-                tone="critical"
               />
             </div>
             {recommendedOption ? (
@@ -386,7 +398,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <TaskStat
                 label={t("Need to top up")}
                 value={formatCreditsValue(createTaskContext.shortfallCredits, t)}
-                tone="critical"
               />
             </div>
             {recommendedOption ? (
@@ -404,7 +415,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         ) : null}
 
         <div style={{ marginBottom: 24 }}>
-          <PolarisSelect
+          <InFlowSelect
             label={t("Credit pack")}
             labelHidden
             options={selectOptions}
@@ -457,61 +468,25 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ marginTop: 8 }}>
           <InlineStack gap="100" align="center">
             <PolarisText as="span" variant="bodyMd" tone="subdued">
               {t("Need help?")}
             </PolarisText>
             <PolarisLink onClick={handleContactSupport}>{t("Contact us")}</PolarisLink>
           </InlineStack>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ minWidth: 124 }}>
-              <PolarisButton fullWidth size="large" variant="secondary" onClick={onCancel}>
-                {t("v4.quotaGate.maybeLater")}
-              </PolarisButton>
-            </div>
-            <div style={{ minWidth: 180 }}>
-              <PolarisButton
-                fullWidth
-                size="large"
-                variant="primary"
-                onClick={onClick}
-                disabled={buyButtonLoading || !selectedKey}
-                loading={buyButtonLoading}
-              >
-                {ctaLabel}
-              </PolarisButton>
-            </div>
-          </div>
         </div>
       </div>
-    </V4ModalShell>
+    </AppSModal>
   );
 };
 
 function TaskStat({
   label,
   value,
-  tone = "default",
 }: {
   label: string;
   value: string;
-  tone?: "default" | "critical";
 }) {
   return (
     <div>
@@ -519,12 +494,7 @@ function TaskStat({
         {label}
       </PolarisText>
       <div style={{ marginTop: 4 }}>
-        <PolarisText
-          as="p"
-          variant="headingMd"
-          fontWeight="bold"
-          tone={tone === "critical" ? "critical" : undefined}
-        >
+        <PolarisText as="p" variant="headingMd" fontWeight="bold">
           {value}
         </PolarisText>
       </div>

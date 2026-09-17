@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { v4Colors } from "../v4Styles";
+import { v4ToneChip } from "../v4Styles";
 
 const autoMarkerBadgeStyle = {
   display: "inline-flex",
@@ -13,10 +13,10 @@ const autoMarkerBadgeStyle = {
   textAlign: "center",
   whiteSpace: "normal",
   overflowWrap: "anywhere",
-  color: v4Colors.success,
-  background: v4Colors.successBg,
+  color: v4ToneChip.success.color,
+  background: v4ToneChip.success.background,
   borderRadius: 999,
-  border: "1px solid #d9f7be",
+  border: "1px solid transparent",
 } as const;
 
 type BadgeProps = {

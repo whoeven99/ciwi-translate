@@ -42,7 +42,8 @@ async function readFromPrisma(
       status: "DONE",
       afterTranslation: { not: "" },
     },
-    orderBy: { createdAt: "asc" },
+    // 新规则在前；同长度时由下面的稳定按长度排序保留该次序。
+    orderBy: { createdAt: "desc" },
     select: {
       beforeTranslation: true,
       afterTranslation: true,
@@ -50,8 +51,13 @@ async function readFromPrisma(
     },
   });
 
+  // 模糊替换主序：原文长→短，避免短词（Cable）截断整句。
+  const ordered = [...rules].sort(
+    (a, b) => b.beforeTranslation.length - a.beforeTranslation.length,
+  );
+
   const map: LiquidMap = {};
-  for (const rule of rules) {
+  for (const rule of ordered) {
     if (isJsonObject(rule.beforeTranslation) || isJsonObject(rule.afterTranslation)) {
       continue;
     }

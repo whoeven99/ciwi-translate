@@ -3,7 +3,6 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { cleanupBillingOnUninstall } from "~/server/billing/subscription/cleanupOnUninstall.server";
 import {
-  formatUninstallFeishuMessage,
   snapshotShopForUninstall,
   type UninstallShopSnapshot,
 } from "~/server/billing/uninstallSnapshot.server";
@@ -11,7 +10,7 @@ import {
   handleTsfPurchaseWebhook,
   handleTsfSubscriptionWebhook,
 } from "~/server/billing/webhooks/handleBillingWebhook.server";
-import { sendFeishuTextMessage } from "~/server/feishu/sendFeishuTextMessage.server";
+import { scheduleUninstallWinbackEmail } from "~/server/billing/email/uninstallEmail.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { topic, shop, session, admin, payload } =
@@ -26,7 +25,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   switch (topic) {
     case "APP_UNINSTALLED": {
       // 无论如何必须返回 200，删除失败只记日志不阻断响应。
-      // 先快照（订阅/额度/大小）→ 清本地订阅 → 软删 Account / 删 Session → 用快照发飞书。
+      // 先快照（订阅/额度/大小）→ 清本地订阅 → 软删 Account / 删 Session
+      // → 异步发卸载飞书（未发挽回邮件时末行补原因）+ 挽回 SES。
       let snapshot: UninstallShopSnapshot | null = null;
       try {
         snapshot = await snapshotShopForUninstall(shop);
@@ -57,11 +57,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       } catch (e) {
         console.error("APP_UNINSTALLED: session delete failed", e);
       }
-      // 飞书通知（非阻断）；优先用清理前快照
-      const feishuText = snapshot
-        ? formatUninstallFeishuMessage(snapshot)
-        : `🛑 店铺卸载：${shop}`;
-      void sendFeishuTextMessage(feishuText);
+      // 快照飞书 + 挽回邮件都在 schedule 里发出（未发时在卸载飞书末行补原因），不挡 200。
+      scheduleUninstallWinbackEmail({
+        shop,
+        payload,
+        snapshot,
+      });
       return new Response(null, { status: 200 });
     }
 

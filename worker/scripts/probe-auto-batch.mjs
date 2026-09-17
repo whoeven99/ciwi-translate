@@ -1,47 +1,35 @@
 /**
  * Summarize auto-translate jobs created since a UTC timestamp.
- * Usage: node scripts/probe-auto-batch.mjs [sinceIso]
- * Default since: today 12:00 UTC (= 20:00 Asia/Shanghai)
+ * 默认测环境；生产：--env=.env.prod
+ * Usage: node worker/scripts/probe-auto-batch.mjs [sinceIso] [--env=.env.test]
  */
 import { CosmosClient } from "@azure/cosmos";
-import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadStackedEnv, resolveCosmos } from "../../scripts/lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function loadEnvProd() {
-  const envPath = resolve(__dirname, "../../.env.prod");
-  const env = {};
-  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i <= 0) continue;
-    env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
-  }
-  return env;
-}
+const root = resolve(__dirname, "../..");
 
 const AUTO = "TsFrontend-Auto";
 const since =
-  process.argv[2]?.trim() ||
+  process.argv.slice(2).find((a) => !a.startsWith("--"))?.trim() ||
   new Date().toISOString().slice(0, 10) + "T12:00:00.000Z";
 
-const env = loadEnvProd();
-const endpoint = env.COSMOS_ENDPOINT?.trim();
-const key = env.COSMOS_KEY?.trim();
-const db = env.COSMOS_TRANSLATION_DATABASE_ID?.trim() || "translation";
-const containerId =
-  env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER?.trim() || "translation_v4_jobs";
-
-if (!endpoint || !key) {
-  console.error("COSMOS env missing in .env.prod");
+const { env } = loadStackedEnv({ root });
+const cosmos = resolveCosmos(env);
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("COSMOS env missing");
   process.exit(1);
 }
 
-const client = new CosmosClient({ endpoint, key });
-const container = client.database(db).container(containerId);
+const client = new CosmosClient({
+  endpoint: cosmos.endpoint,
+  key: cosmos.key,
+});
+const container = client
+  .database(cosmos.databaseId)
+  .container(cosmos.containerId);
 
 const { resources: jobs } = await container.items
   .query({

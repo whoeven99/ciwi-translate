@@ -1,50 +1,41 @@
 // 手动恢复一个卡住的 v4 任务（处理中状态但 worker 已死）。
-// 把它重新入队（claimedBy=null）并推 Redis hint，让 live worker 立即接着跑。
-//
-// ⚠️ 针对生产任务：用生产的 COSMOS/REDIS 凭据运行（本地 .env 默认是 test）。
-// 用法：
-//   COSMOS_ENDPOINT=https://<prod>.documents.azure.com:443/ COSMOS_KEY=<prod-key> \
-//   REDIS_URL=rediss://:<pwd>@<host>:6380/0 \
-//   node scripts/resume-job.mjs 07d265f7
-//
-// 也可把生产凭据放进项目根 .env 后直接 `node scripts/resume-job.mjs 07d265f7`。
+// 默认测环境。写生产：--env=.env.prod --confirm-prod
 
-import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CosmosClient } from "@azure/cosmos";
 import IORedis from "ioredis";
+import {
+  assertProdWriteAllowed,
+  loadStackedEnv,
+  resolveCosmos,
+  resolveRedisUrl,
+} from "../../scripts/lib/loadEnv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-function loadEnv(p) {
-  if (!existsSync(p)) return;
-  for (const raw of readFileSync(p, "utf8").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const k = line.slice(0, eq).trim();
-    let v = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
-    if (!process.env[k]) process.env[k] = v;
-  }
-}
-loadEnv(resolve(__dirname, "../../.env"));
+const root = resolve(__dirname, "../..");
+const argv = process.argv.slice(2);
+const { env, overlay } = loadStackedEnv({ root });
+// resume 会改 Cosmos + Redis：产环境必须 --confirm-prod
+assertProdWriteAllowed(argv, overlay);
 
-const prefix = process.argv[2];
+const prefix = process.argv.slice(2).find((a) => !a.startsWith("--"));
 if (!prefix) {
-  console.error("用法: node scripts/resume-job.mjs <jobId 或前缀>");
+  console.error(
+    "用法: node worker/scripts/resume-job.mjs <jobId 或前缀> [--env=.env.test]",
+  );
   process.exit(1);
 }
 
-const endpoint = process.env.COSMOS_ENDPOINT?.trim();
-const key = process.env.COSMOS_KEY?.trim();
-if (!endpoint || !key) {
-  console.error("缺少 COSMOS_ENDPOINT / COSMOS_KEY");
+const cosmos = resolveCosmos(env);
+if (!cosmos.endpoint || !cosmos.key) {
+  console.error("缺少 Cosmos 凭据");
   process.exit(1);
 }
-const db = process.env.COSMOS_TRANSLATION_DATABASE_ID?.trim() || "translation";
-const containerId =
-  process.env.COSMOS_TRANSLATION_V4_JOBS_CONTAINER?.trim() || "translation_v4_jobs";
+const db = cosmos.databaseId;
+const containerId = cosmos.containerId;
+const endpoint = cosmos.endpoint;
+const key = cosmos.key;
 
 const PROC_TO_QUEUED = {
   INITIALIZING: ["INIT_QUEUED", "init"],
@@ -181,22 +172,11 @@ await container.item(job.id, job.shopName).replace({
 console.log(`已重置 ${job.status} → ${resetStatus}, claimedBy=null`);
 
 // 推 hint 让 worker 立即拾取（best-effort）
-const url = process.env.REDIS_URL?.trim();
-const host =
-  process.env.REDIS_HOSTNAME?.trim() || process.env.REDIS_HOST?.trim();
-const password =
-  process.env.REDIS_PASSWORD?.trim() || process.env.REDISCACHEKEY?.trim();
+const { url: redisUrl } = resolveRedisUrl(env);
 let redis = null;
-if (url) redis = new IORedis(url, { maxRetriesPerRequest: 1, lazyConnect: true });
-else if (host && password)
-  redis = new IORedis({
-    host,
-    port: Number(process.env.REDIS_PORT?.trim() || "6380"),
-    password,
-    tls: process.env.REDIS_TLS !== "false" ? {} : undefined,
-    maxRetriesPerRequest: 1,
-    lazyConnect: true,
-  });
+if (redisUrl) {
+  redis = new IORedis(redisUrl, { maxRetriesPerRequest: 1, lazyConnect: true });
+}
 
 if (redis && hintStage) {
   try {

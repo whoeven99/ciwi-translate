@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { Button } from "@shopify/polaris";
 import { useFetcher, useNavigate } from "@remix-run/react";
 import { useTranslation } from "react-i18next";
+import { AppSModal } from "~/ui/components/AppSModal";
 import { v4Colors } from "../v4Styles";
 import {
   AI_MODEL_OPTIONS,
@@ -13,17 +13,24 @@ import { getV4AiModelLabel, getV4ModuleLabel } from "../v4I18n";
 import type { CreateTaskEstimateView } from "../useCreateTaskEstimate";
 import { useDetailedCreateTaskEstimate } from "../useDetailedCreateTaskEstimate";
 import type { ShopLocaleOption } from "~/lib/createTranslateV4Tasks";
+import { shouldBlockCreateTaskByCredits } from "~/lib/createTranslateQuotaGuard";
 import { buildBillingReturnPath } from "~/utils/billingReturn";
-
-type CreateTaskConfirmScenario =
-  | "ready"
-  | "insufficient_paid"
-  | "insufficient_trial"
-  | "insufficient_pricing";
+import { reportClientLog } from "~/utils/clientLog";
+import {
+  ConfirmInfoCard,
+  CreditsEstimatePanel,
+  QuotaOfferPanel,
+  formatConfirmCredits,
+  getConfirmScenarioTitle,
+  resolveScenarioFromOfferMode,
+  type CreateTaskConfirmScenario,
+  type CreateTaskQuotaOfferMode,
+} from "./CreditsConfirmPanel";
 
 type Props = {
   open: boolean;
   creating: boolean;
+  planType?: string | null;
   targetOptions: ShopLocaleOption[];
   targets: string[];
   modules: string[];
@@ -31,15 +38,14 @@ type Props = {
   isCover: boolean;
   isHandle: boolean;
   includeLiquid: boolean;
-  /** 源语言（TM key）；缺省由服务端 primary 兜底 */
   sourceLocale?: string;
   estimate: CreateTaskEstimateView | null;
   scenario: CreateTaskConfirmScenario;
+  quotaOfferMode: CreateTaskQuotaOfferMode;
   previousTotalChars?: number;
   onClose: () => void;
   onConfirmCreate: () => void;
   onBuyCredits: (estimatedCredits?: number | null) => void;
-  /** Persist create-task selections before Shopify billing redirect. */
   onBeforeBilling?: () => void;
 };
 
@@ -48,9 +54,55 @@ type TranslateFn = (
   options?: Record<string, unknown>,
 ) => string;
 
+type PlanTier = "basic" | "pro" | "premium";
+
+type PlanOption = {
+  title: string;
+  tier: PlanTier;
+  monthlyCredits: number;
+  monthlyPrice: number;
+  yearlyPrice: number;
+  fitLabelKey: string;
+  fitLabelDefault: string;
+};
+
+const PLAN_OPTIONS: readonly PlanOption[] = [
+  {
+    title: "Basic",
+    tier: "basic",
+    monthlyCredits: 1500000,
+    monthlyPrice: 7.99,
+    yearlyPrice: 6.39,
+    fitLabelKey: "pricing.fit_basic",
+    fitLabelDefault:
+      "Good for smaller stores that need core product and page translation.",
+  },
+  {
+    title: "Pro",
+    tier: "pro",
+    monthlyCredits: 3000000,
+    monthlyPrice: 19.99,
+    yearlyPrice: 15.99,
+    fitLabelKey: "pricing.fit_pro",
+    fitLabelDefault:
+      "Good for stores expanding into multiple markets with regular content updates.",
+  },
+  {
+    title: "Premium",
+    tier: "premium",
+    monthlyCredits: 8000000,
+    monthlyPrice: 39.99,
+    yearlyPrice: 31.99,
+    fitLabelKey: "pricing.fit_premium",
+    fitLabelDefault:
+      "Good for high-volume teams managing multiple markets and frequent launches.",
+  },
+] as const;
+
 export function CreateTaskConfirmModal({
   open,
   creating,
+  planType,
   targetOptions,
   targets,
   modules,
@@ -61,6 +113,7 @@ export function CreateTaskConfirmModal({
   sourceLocale,
   estimate,
   scenario: parentScenario,
+  quotaOfferMode,
   previousTotalChars,
   onClose,
   onConfirmCreate,
@@ -69,37 +122,34 @@ export function CreateTaskConfirmModal({
 }: Props) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [narrowViewport, setNarrowViewport] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 768px)").matches,
+  );
+  const [selectedPlanTitle, setSelectedPlanTitle] = useState<string>("Pro");
   const planFetcher = useFetcher<{
     success?: boolean;
     response?: { confirmationUrl?: string };
   }>();
   const detailed = useDetailedCreateTaskEstimate();
-  const [selectedPlanTitle, setSelectedPlanTitle] = useState<string>("Pro");
 
   const detailedRunning = detailed.progress.status === "running";
   const { reset: resetDetailed } = detailed;
 
   useEffect(() => {
+    const media = window.matchMedia("(max-width: 768px)");
+    const sync = () => setNarrowViewport(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
     if (!open) {
       resetDetailed();
-      return;
     }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !creating && !detailedRunning) {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open, creating, onClose, resetDetailed, detailedRunning]);
+  }, [open, resetDetailed]);
 
   useEffect(() => {
     if (!open) return;
@@ -152,9 +202,14 @@ export function CreateTaskConfirmModal({
     : aiModel;
 
   const detailedDone = detailed.progress.status === "done";
+  const hasEstimateInputs =
+    targets.length > 0 && (modules.length > 0 || includeLiquid);
+  const coarseEstimatedCredits = estimate?.estimatedCredits ?? null;
+  const coarseEstimatePending =
+    !detailedDone && hasEstimateInputs && (!estimate?.loaded || !!estimate?.loading);
   const estimatedCredits = detailedDone
     ? detailed.progress.estimatedCredits
-    : (estimate?.estimatedCredits ?? null);
+    : coarseEstimatedCredits;
   const remainingCredits = detailedDone
     ? (detailed.progress.remainingCredits ?? estimate?.remainingCredits ?? null)
     : (estimate?.remainingCredits ?? null);
@@ -162,24 +217,14 @@ export function CreateTaskConfirmModal({
     estimatedCredits != null && remainingCredits != null
       ? Math.max(estimatedCredits - remainingCredits, 0)
       : 0;
-  const needsMoreCredits =
-    estimatedCredits != null &&
-    remainingCredits != null &&
-    estimatedCredits > remainingCredits;
+  const createTaskBlockedByCredits = shouldBlockCreateTaskByCredits({
+    remainingCredits,
+  });
   const scenario: CreateTaskConfirmScenario = detailedDone
-    ? needsMoreCredits
-      ? parentScenario === "ready"
-        ? "insufficient_paid"
-        : parentScenario
+    ? createTaskBlockedByCredits
+      ? resolveScenarioFromOfferMode(quotaOfferMode)
       : "ready"
     : parentScenario;
-  const progressPercent =
-    estimatedCredits != null && estimatedCredits > 0 && remainingCredits != null
-      ? Math.max(0, Math.min(100, (remainingCredits / estimatedCredits) * 100))
-      : scenario === "ready"
-        ? 100
-        : 0;
-  const coveragePercent = Math.round(progressPercent);
 
   const detailItems = [
     {
@@ -215,40 +260,35 @@ export function CreateTaskConfirmModal({
   ];
 
   const estimatedCreditsLabel =
-    estimatedCredits != null ? formatCreditsFull(estimatedCredits) : "--";
+    estimatedCredits != null ? formatConfirmCredits(estimatedCredits) : "--";
   const remainingCreditsLabel =
-    remainingCredits != null ? formatCreditsFull(remainingCredits) : "--";
-  const shortfallCreditsLabel =
-    shortfallCredits > 0 ? formatCreditsFull(shortfallCredits) : "0";
-  const coverageLabel = `${coveragePercent}%`;
-  const estimateSummaryItems = [
-    {
-      label: t("v4.createTask.confirmCreditsRequired"),
-      value: detailedRunning
-        ? t("v4.createTask.detailedEstimateRunning", {
-            current: detailed.progress.doneCount,
-            total: detailed.progress.totalCount,
-            label: detailed.progress.currentLabel,
-          })
-        : estimate?.loading && !detailedDone
-          ? t("v4.createTask.estimateLoading")
-          : estimatedCreditsLabel,
-    },
-    {
-      label: t("v4.createTask.confirmCreditsAvailable"),
-      value: estimate?.loading && !detailedDone && !detailedRunning
-        ? t("v4.createTask.estimateLoading")
-        : remainingCreditsLabel,
-    },
-  ];
+    remainingCredits != null ? formatConfirmCredits(remainingCredits) : "--";
+  const estimateComputingLabel = t("v4.createTask.confirmEstimateComputing", {
+    defaultValue: "Calculating...",
+  });
+  const requiredCreditsValue =
+    detailedRunning || coarseEstimatePending
+      ? estimateComputingLabel
+      : estimatedCreditsLabel;
+  const availableCreditsValue = coarseEstimatePending && !detailedRunning
+    ? estimateComputingLabel
+    : remainingCreditsLabel;
 
   const isReady = scenario === "ready";
   const isInsufficientPaid = scenario === "insufficient_paid";
   const isTrialOffer = scenario === "insufficient_trial";
-  const isPlanSelectionVisible =
-    scenario === "insufficient_trial" || scenario === "insufficient_pricing";
-  const canStartPartial = isInsufficientPaid && (remainingCredits ?? 0) > 0;
-  const scenarioMeta = getScenarioMeta(t, scenario, canStartPartial);
+  const isInsufficientPricing = scenario === "insufficient_pricing";
+  const isPlanSelectionVisible = isTrialOffer || isInsufficientPricing;
+  const hasPositiveCredits = remainingCredits != null && remainingCredits > 0;
+  const hasNonPositiveCredits = remainingCredits != null && remainingCredits <= 0;
+  const canStartPartial = isInsufficientPaid && !hasNonPositiveCredits && hasPositiveCredits;
+  const scenarioTitle = getConfirmScenarioTitle(t, scenario, canStartPartial);
+  const estimateHint = detailedDone
+    ? t("v4.createTask.detailedEstimateDoneHint")
+    : detailed.progress.status === "error"
+      ? t("v4.createTask.detailedEstimateErrorHint")
+      : t("v4.createTask.confirmEstimateExactHint");
+
   const planOptions = useMemo(
     () => buildPlanOptions(t),
     [t],
@@ -264,6 +304,15 @@ export function CreateTaskConfirmModal({
     planOptions[0];
   const selectedPlanStartsWithTrial =
     isTrialOffer && selectedPlan?.title === "Basic";
+  const recommendedPaidUpgradePlan =
+    isInsufficientPaid && !canStartPartial
+      ? recommendPaidUpgradePlan({
+          currentPlanType: planType ?? null,
+          estimatedCredits,
+        })
+      : null;
+  const showPaidUpgradeAction =
+    isInsufficientPaid && !canStartPartial && recommendedPaidUpgradePlan != null;
   const planPickerDescription = isTrialOffer
     ? t("v4.createTask.planPickerTrialDescription", {
         defaultValue:
@@ -281,24 +330,31 @@ export function CreateTaskConfirmModal({
 
   const primaryActionLabel = isReady
     ? t("v4.createTask.confirmStartNow")
-    : isInsufficientPaid
-      ? t("v4.createTask.confirmBuyCreditsAndStart")
-      : selectedPlanStartsWithTrial
+    : isPlanSelectionVisible
+      ? selectedPlanStartsWithTrial
         ? t("v4.createTask.confirmBasicTrialAndStart", {
             defaultValue: "Start Basic trial",
           })
-      : t("v4.createTask.confirmSelectedPlanAndStart", {
-          defaultValue: "Continue with selected plan",
-        });
+        : t("v4.createTask.confirmSelectedPlanAndStart", {
+            defaultValue: "Continue with selected plan",
+          })
+      : canStartPartial
+        ? t("v4.createTask.confirmStartPartial")
+        : isInsufficientPaid
+          ? t("v4.createTask.confirmBuyCreditsAndStart")
+          : t("v4.createTask.confirmBuyCreditsOnly");
+
   const secondaryActionLabel = isReady
     ? null
-    : isInsufficientPaid
+    : isPlanSelectionVisible
       ? canStartPartial
         ? t("v4.createTask.confirmStartPartial")
-        : null
-      : isTrialOffer
+        : t("v4.createTask.confirmBuyCreditsOnly")
+      : canStartPartial
         ? t("v4.createTask.confirmBuyCreditsOnly")
-        : t("v4.createTask.confirmBuyCreditsOnly");
+        : isInsufficientPaid && showPaidUpgradeAction
+          ? t("v4.createTask.confirmViewPlans")
+          : null;
 
   const buildReturnPathForPlan = () => {
     if (typeof window === "undefined") return undefined;
@@ -328,8 +384,44 @@ export function CreateTaskConfirmModal({
     planFetcher.submit(payload, { method: "POST", action: "/app/pricing" });
   };
 
+  const logConfirmStart = (action: "start_translation" | "start_partial") => {
+    void reportClientLog({
+      event: "translate_v4_confirm_start",
+      action,
+      kind: "action",
+      level: "info",
+      status: "start",
+      context: {
+        estimatedCredits: coarseEstimatedCredits,
+        usedDetailedEstimate: detailedDone,
+        detailedEstimateStatus: detailed.progress.status,
+        detailedEstimatedCredits: detailedDone
+          ? detailed.progress.estimatedCredits
+          : null,
+        remainingCredits,
+        scenario,
+        targets,
+        modules,
+        aiModel,
+        isCover,
+        isHandle,
+        includeLiquid,
+      },
+    });
+  };
+
   const handlePrimaryAction = () => {
     if (isReady) {
+      logConfirmStart("start_translation");
+      onConfirmCreate();
+      return;
+    }
+    if (isPlanSelectionVisible) {
+      handleSelectedPlanAction();
+      return;
+    }
+    if (canStartPartial) {
+      logConfirmStart("start_partial");
       onConfirmCreate();
       return;
     }
@@ -338,32 +430,37 @@ export function CreateTaskConfirmModal({
       onBuyCredits(estimatedCredits);
       return;
     }
-    if (isTrialOffer) {
-      handleSelectedPlanAction();
-      return;
-    }
-
-    if (scenario === "insufficient_pricing") {
-      handleSelectedPlanAction();
-      return;
-    }
-
     onBeforeBilling?.();
-    const returnPath = buildReturnPathForPlan();
-    onClose();
-    navigate(
-      returnPath ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}` : "/app/pricing",
-    );
+    onBuyCredits(estimatedCredits);
   };
 
   const handleSecondaryAction = () => {
-    if (isInsufficientPaid) {
-      if (!canStartPartial) return;
-      onConfirmCreate();
+    if (isPlanSelectionVisible) {
+      if (canStartPartial) {
+        logConfirmStart("start_partial");
+        onConfirmCreate();
+        return;
+      }
+      onBeforeBilling?.();
+      onBuyCredits(estimatedCredits);
       return;
     }
-    onBeforeBilling?.();
-    onBuyCredits(estimatedCredits);
+    if (canStartPartial) {
+      onBeforeBilling?.();
+      onBuyCredits(estimatedCredits);
+      return;
+    }
+    if (isInsufficientPaid) {
+      if (!showPaidUpgradeAction) return;
+      onBeforeBilling?.();
+      const returnPath = buildReturnPathForPlan();
+      onClose();
+      navigate(
+        returnPath
+          ? `/app/pricing?returnPath=${encodeURIComponent(returnPath)}`
+          : "/app/pricing",
+      );
+    }
   };
 
   const handleDetailedEstimate = () => {
@@ -379,259 +476,133 @@ export function CreateTaskConfirmModal({
     });
   };
 
-  if (!open) return null;
+  const actionsBusy = creating || planFetcher.state === "submitting";
 
   return (
-    <div
-      aria-modal="true"
-      role="dialog"
-      style={overlayStyle}
-      onClick={() => {
-        if (!creating && !detailedRunning) onClose();
+    <AppSModal
+      open={open}
+      heading={scenarioTitle}
+      onClose={onClose}
+      size={narrowViewport ? "base" : "large"}
+      primaryAction={{
+        content: primaryActionLabel,
+        onAction: handlePrimaryAction,
+        loading: actionsBusy,
+        disabled: detailedRunning,
       }}
+      secondaryActions={
+        secondaryActionLabel
+          ? [
+              {
+                content: secondaryActionLabel,
+                onAction: handleSecondaryAction,
+                disabled: creating,
+              },
+            ]
+          : []
+      }
     >
-      <div style={panelStyle} onClick={(event) => event.stopPropagation()}>
-        <div style={headerStyle}>
-          <div style={headerCopyStyle}>
-            <div style={titleStyle}>{scenarioMeta.title}</div>
-            {shortfallCredits > 0 ? (
-              <div
-                style={{
-                  ...headlineStyle,
-                  color: scenarioMeta.accent,
-                  background: scenarioMeta.headlineBg,
-                }}
-              >
-                {t("v4.createTask.confirmShortfallHeadline", {
-                  credits: shortfallCreditsLabel,
-                })}
-              </div>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            aria-label={t("Close")}
-            onClick={onClose}
-            disabled={creating || detailedRunning}
-            style={closeButtonStyle}
-          >
-            ×
-          </button>
-        </div>
-
-        <div style={bodyStyle}>
-          <InfoCard title={t("v4.createTask.confirmTaskDetailTitle")}>
-            <div style={detailListStyle}>
-              {detailItems.map((item) => (
-                <DetailLine
-                  key={item.label}
-                  label={item.label}
-                  value={item.value}
-                />
-              ))}
-            </div>
-          </InfoCard>
-
-          <section style={estimateSectionStyle}>
-            <div style={estimateSectionTitleStyle}>
-              {t("v4.createTask.confirmEstimatePanelTitle")}
-            </div>
-            <div style={summaryStatsRowStyle}>
-              {estimateSummaryItems.map((item) => (
-                <div key={item.label} style={summaryStatStyle}>
-                  <div style={summaryStatLabelStyle}>{item.label}</div>
-                  <div style={summaryStatValueStyle}>{item.value}</div>
-                </div>
-              ))}
-            </div>
-            <div style={progressSectionStyle}>
-              <div style={progressHeaderStyle}>
-                <span style={progressLabelStyle}>
-                  {t("v4.createTask.confirmCoverageLabel")}
-                </span>
-                <span
-                  style={{
-                    ...progressValueStyle,
-                    color: scenarioMeta.accent,
-                  }}
-                >
-                  {coverageLabel}
-                </span>
-              </div>
-              <div style={progressTrackStyle}>
-                <div
-                  style={{
-                    ...progressFillStyle,
-                    width: `${progressPercent}%`,
-                    background: scenarioMeta.progressBar,
-                  }}
-                />
-              </div>
-              <div style={estimateHintStyle}>
-                {detailedDone
-                  ? t("v4.createTask.detailedEstimateDoneHint")
-                  : detailed.progress.status === "error"
-                    ? t("v4.createTask.detailedEstimateErrorHint")
-                    : t("v4.createTask.confirmEstimateExactHint")}
-              </div>
-              <div style={detailedEstimateRowStyle}>
-                <Button
-                  size="slim"
-                  onClick={handleDetailedEstimate}
-                  loading={detailedRunning}
-                  disabled={creating || detailedRunning || targets.length === 0}
-                >
-                  {detailedDone
-                    ? t("v4.createTask.detailedEstimateRerun")
-                    : t("v4.createTask.detailedEstimateAction")}
-                </Button>
-                {detailedRunning ? (
-                  <span style={detailedEstimateProgressStyle}>
-                    {t("v4.createTask.detailedEstimateProgress", {
-                      current: detailed.progress.doneCount,
-                      total: detailed.progress.totalCount,
-                      label: detailed.progress.currentLabel,
-                    })}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </section>
-
-          {!isReady && scenario !== "insufficient_paid" ? (
-            <InfoCard title={offerTitle(t, scenario)} highlighted>
-              <div style={offerFeatureGridStyle}>
-                {offerFeatures(t, scenario).map((feature) => (
-                  <div key={feature} style={offerFeatureItemStyle}>
-                    {feature}
-                  </div>
-                ))}
-              </div>
-            </InfoCard>
-          ) : null}
-
-          {isPlanSelectionVisible ? (
-            <InfoCard
-              title={t("v4.createTask.planPickerTitle", {
-                defaultValue: "Choose a plan for this task",
-              })}
-            >
-              <div style={planPickerDescriptionStyle}>
-                {planPickerDescription}
-              </div>
-              <div style={planGridStyle}>
-                {planOptions.map((plan) => {
-                  const selected = plan.title === selectedPlan?.title;
-                  const recommended = plan.title === recommendedPlanTitle;
-                  const includesTrial = isTrialOffer && plan.title === "Basic";
-                  return (
-                    <button
-                      key={plan.title}
-                      type="button"
-                      onClick={() => setSelectedPlanTitle(plan.title)}
-                      style={{
-                        ...planCardStyle,
-                        ...(selected ? planCardSelectedStyle : null),
-                      }}
-                    >
-                      <div style={planCardHeaderStyle}>
-                        <div>
-                          <div style={planCardTitleStyle}>{plan.title}</div>
-                          <div style={planCardPriceStyle}>
-                            ${plan.monthlyPrice.toFixed(2)}
-                            <span style={planCardPriceUnitStyle}>
-                              {t("/month")}
-                            </span>
-                          </div>
-                        </div>
-                        {recommended ? (
-                          <div style={planCardBadgeStyle}>
-                            {t("Recommended")}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div style={planCardCreditsStyle}>
-                        {t("{{credits}} credits/month", {
-                          credits: Number(plan.monthlyCredits).toLocaleString("en-US"),
-                        })}
-                      </div>
-                      {includesTrial ? (
-                        <div style={planCardTrialBoxStyle}>
-                          <div style={planCardTrialTitleStyle}>
-                            {t("v4.createTask.planBasicTrialTitle", {
-                              defaultValue: "5-day free trial included",
-                            })}
-                          </div>
-                          <div style={planCardTrialDescStyle}>
-                            {t("v4.createTask.planBasicTrialDesc", {
-                              defaultValue:
-                                "Start now. Then $7.99/month after 5 days unless you cancel before billing.",
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
-                      <div style={planCardFitStyle}>{plan.fitLabel}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </InfoCard>
-          ) : null}
-        </div>
-
-        <div style={footerStyle}>
-          <div style={primaryButtonStyle}>
+      <div style={bodyStyle}>
+        <CreditsEstimatePanel
+          requiredValue={requiredCreditsValue}
+          availableValue={availableCreditsValue}
+          hint={estimateHint}
+          requiredAction={
             <Button
-              fullWidth
-              size="large"
-              variant="primary"
-              onClick={handlePrimaryAction}
-              loading={creating || planFetcher.state === "submitting"}
+              size="slim"
+              variant="secondary"
+              onClick={handleDetailedEstimate}
+              loading={detailedRunning}
+              disabled={creating || detailedRunning || targets.length === 0}
             >
-              {primaryActionLabel}
+              {detailedDone
+                ? t("v4.createTask.detailedEstimateRerun")
+                : t("v4.createTask.detailedEstimateAction")}
             </Button>
-          </div>
-          {secondaryActionLabel ? (
-            <div style={secondaryButtonStyle}>
-              <Button
-                fullWidth
-                size="large"
-                variant="secondary"
-                onClick={handleSecondaryAction}
-                disabled={creating}
-              >
-                {secondaryActionLabel}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
+          }
+        />
 
-function InfoCard({
-  title,
-  highlighted = false,
-  children,
-}: {
-  title: string;
-  highlighted?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        ...cardStyle,
-        borderColor: highlighted
-          ? "rgba(33, 128, 255, 0.22)"
-          : v4Colors.cardBorder,
-        boxShadow: highlighted ? "0 8px 30px rgba(33, 128, 255, 0.08)" : "none",
-      }}
-    >
-      <div style={cardTitleStyle}>{title}</div>
-      {children}
-    </div>
+        <ConfirmInfoCard title={t("v4.createTask.confirmTaskDetailTitle")}>
+          <div style={detailListStyle}>
+            {detailItems.map((item) => (
+              <DetailLine
+                key={item.label}
+                label={item.label}
+                value={item.value}
+              />
+            ))}
+          </div>
+        </ConfirmInfoCard>
+
+        <QuotaOfferPanel
+          scenario={scenario}
+          subscriptionBenefitValue={null}
+          subscriptionBenefitCaption={null}
+        />
+
+        {isPlanSelectionVisible ? (
+          <ConfirmInfoCard
+            title={t("v4.createTask.planPickerTitle", {
+              defaultValue: "Choose a plan for this task",
+            })}
+          >
+            <div style={planPickerDescriptionStyle}>{planPickerDescription}</div>
+            <div style={planGridStyle}>
+              {planOptions.map((plan) => {
+                const selected = plan.title === selectedPlan?.title;
+                const recommended = plan.title === recommendedPlanTitle;
+                const includesTrial = isTrialOffer && plan.title === "Basic";
+                return (
+                  <button
+                    key={plan.title}
+                    type="button"
+                    onClick={() => setSelectedPlanTitle(plan.title)}
+                    style={{
+                      ...planCardStyle,
+                      ...(selected ? planCardSelectedStyle : null),
+                    }}
+                  >
+                    <div style={planCardHeaderStyle}>
+                      <div>
+                        <div style={planCardTitleStyle}>{plan.title}</div>
+                        <div style={planCardPriceStyle}>
+                          ${plan.monthlyPrice.toFixed(2)}
+                          <span style={planCardPriceUnitStyle}>{t("/month")}</span>
+                        </div>
+                      </div>
+                      {recommended ? (
+                        <div style={planCardBadgeStyle}>{t("Recommended")}</div>
+                      ) : null}
+                    </div>
+                    <div style={planCardCreditsStyle}>
+                      {t("{{credits}} credits/month", {
+                        credits: Number(plan.monthlyCredits).toLocaleString("en-US"),
+                      })}
+                    </div>
+                    {includesTrial ? (
+                      <div style={planCardTrialBoxStyle}>
+                        <div style={planCardTrialTitleStyle}>
+                          {t("v4.createTask.planBasicTrialTitle", {
+                            defaultValue: "5-day free trial included",
+                          })}
+                        </div>
+                        <div style={planCardTrialDescStyle}>
+                          {t("v4.createTask.planBasicTrialDesc", {
+                            defaultValue:
+                              "Start now. Then $7.99/month after 5 days unless you cancel before billing.",
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div style={planCardFitStyle}>{plan.fitLabel}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </ConfirmInfoCard>
+        ) : null}
+      </div>
+    </AppSModal>
   );
 }
 
@@ -643,104 +614,6 @@ function DetailLine({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
-function getScenarioMeta(
-  t: TranslateFn,
-  scenario: CreateTaskConfirmScenario,
-  canStartPartial: boolean,
-) {
-  if (scenario === "ready") {
-    return {
-      title: t("v4.createTask.confirmReadyTitle"),
-      accent: "#0a934c",
-      headlineBg: "rgba(10, 147, 76, 0.1)",
-      progressBar: "linear-gradient(90deg, #0a934c 0%, #2180ff 100%)",
-    };
-  }
-
-  if (scenario === "insufficient_paid") {
-    return {
-      title: canStartPartial
-        ? t("v4.createTask.confirmPartialTitle")
-        : t("v4.createTask.confirmNoCreditsTitle"),
-      accent: "#df5a00",
-      headlineBg: "rgba(223, 90, 0, 0.1)",
-      progressBar: "linear-gradient(90deg, #ffb84d 0%, #df5a00 100%)",
-    };
-  }
-
-  if (scenario === "insufficient_trial") {
-    return {
-      title: t("v4.createTask.confirmTrialTitle"),
-      accent: "#2180ff",
-      headlineBg: "rgba(33, 128, 255, 0.1)",
-      progressBar: "linear-gradient(90deg, #8dc5ff 0%, #2180ff 100%)",
-    };
-  }
-
-  return {
-    title: t("v4.createTask.confirmPricingTitle"),
-    accent: "#7a3cff",
-    headlineBg: "rgba(122, 60, 255, 0.1)",
-    progressBar: "linear-gradient(90deg, #c6a4ff 0%, #7a3cff 100%)",
-  };
-}
-
-function offerTitle(t: TranslateFn, scenario: CreateTaskConfirmScenario): string {
-  if (scenario === "insufficient_paid") {
-    return t("v4.createTask.confirmPaidOfferTitle");
-  }
-  return scenario === "insufficient_trial"
-    ? t("v4.createTask.confirmTrialOfferTitle")
-    : t("v4.createTask.confirmPricingOfferTitle");
-}
-
-function offerFeatures(
-  t: TranslateFn,
-  scenario: CreateTaskConfirmScenario,
-): string[] {
-  return scenario === "insufficient_trial"
-    ? [
-        t("v4.createTask.confirmTrialFeatureCredits"),
-        t("v4.createTask.confirmTrialFeatureModel"),
-        t("v4.createTask.confirmTrialFeatureSpeed"),
-      ]
-    : [
-        t("v4.createTask.confirmPricingFeatureCredits"),
-        t("v4.createTask.confirmPricingFeatureModel"),
-        t("v4.createTask.confirmPricingFeatureSpeed"),
-      ];
-}
-
-const PLAN_OPTIONS = [
-  {
-    title: "Basic",
-    monthlyPrice: 7.99,
-    yearlyPrice: 6.39,
-    monthlyCredits: 1500000,
-    fitLabelKey: "pricing.fit_basic",
-    fitLabelDefault:
-      "Good for smaller stores that need core product and page translation.",
-  },
-  {
-    title: "Pro",
-    monthlyPrice: 19.99,
-    yearlyPrice: 15.99,
-    monthlyCredits: 3000000,
-    fitLabelKey: "pricing.fit_pro",
-    fitLabelDefault:
-      "Good for stores expanding into multiple markets with regular content updates.",
-  },
-  {
-    title: "Premium",
-    monthlyPrice: 39.99,
-    yearlyPrice: 31.99,
-    monthlyCredits: 8000000,
-    fitLabelKey: "pricing.fit_premium",
-    fitLabelDefault:
-      "Good for high-volume teams managing multiple markets and frequent launches.",
-  },
-] as const;
 
 function buildPlanOptions(t: TranslateFn) {
   return PLAN_OPTIONS.map((plan) => ({
@@ -759,10 +632,42 @@ function recommendPlanForShortfall(shortfallCredits: number) {
   );
 }
 
-function formatCreditsFull(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 0,
-  }).format(value);
+function normalizePaidPlanTier(planType: string | null): PlanTier | null {
+  if (!planType) return null;
+
+  const normalized = planType.trim().toLowerCase();
+  if (normalized.startsWith("basic")) return "basic";
+  if (normalized === "pro" || normalized === "professional" || normalized.startsWith("pro-")) {
+    return "pro";
+  }
+  if (
+    normalized.startsWith("premium") ||
+    normalized === "enterprise" ||
+    normalized === "unlimited"
+  ) {
+    return "premium";
+  }
+  return null;
+}
+
+function recommendPaidUpgradePlan(params: {
+  currentPlanType: string | null;
+  estimatedCredits: number | null;
+}) {
+  const { currentPlanType, estimatedCredits } = params;
+  if (estimatedCredits == null || estimatedCredits <= 0) return null;
+
+  const currentTier = normalizePaidPlanTier(currentPlanType);
+  if (!currentTier) return null;
+
+  const currentIndex = PLAN_OPTIONS.findIndex((plan) => plan.tier === currentTier);
+  if (currentIndex < 0) return null;
+
+  return (
+    PLAN_OPTIONS.slice(currentIndex + 1).find(
+      (plan) => plan.monthlyCredits >= estimatedCredits,
+    ) ?? null
+  );
 }
 
 function summarizeCompactLine(items: string[], t: TranslateFn): string {
@@ -787,114 +692,10 @@ function summarizeCompactLine(items: string[], t: TranslateFn): string {
   });
 }
 
-const overlayStyle = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 2147483100,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 28,
-  background: "rgba(15, 23, 42, 0.36)",
-  backdropFilter: "blur(8px)",
-} as const;
-
-const panelStyle = {
-  width: "min(520px, calc(100vw - 32px))",
-  maxHeight: "min(820px, calc(100vh - 32px))",
-  overflow: "hidden",
-  borderRadius: 28,
-  border: `1px solid ${v4Colors.cardBorder}`,
-  background: v4Colors.cardBg,
-  boxShadow: "0 24px 80px rgba(15, 23, 42, 0.18)",
-  display: "flex",
-  flexDirection: "column",
-} as const;
-
-const headerStyle = {
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: 16,
-  padding: "28px 28px 10px",
-} as const;
-
-const headerCopyStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 10,
-  minWidth: 0,
-} as const;
-
 const bodyStyle = {
   display: "flex",
   flexDirection: "column",
   gap: 16,
-  padding: "0 28px",
-  overflowY: "auto",
-} as const;
-
-const footerStyle = {
-  display: "flex",
-  justifyContent: "center",
-  gap: 0,
-  padding: "22px 28px 28px",
-  background: v4Colors.cardBg,
-  flexWrap: "wrap",
-} as const;
-
-const titleStyle = {
-  margin: 0,
-  fontSize: 28,
-  fontWeight: 700,
-  lineHeight: 1.15,
-  color: v4Colors.text,
-} as const;
-
-const headlineStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  width: "fit-content",
-  margin: 10,
-  padding: "8px 12px",
-  borderRadius: 12,
-  background: "rgba(223, 90, 0, 0.1)",
-  color: "#df5a00",
-  fontSize: 13,
-  fontWeight: 700,
-  lineHeight: "22px",
-} as const;
-
-const closeButtonStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 36,
-  height: 36,
-  padding: 0,
-  border: "none",
-  borderRadius: 999,
-  background: "rgba(15, 23, 42, 0.04)",
-  color: v4Colors.textMuted,
-  fontSize: 22,
-  lineHeight: 1,
-  cursor: "pointer",
-  flexShrink: 0,
-} as const;
-
-const cardStyle = {
-  borderRadius: 20,
-  background: v4Colors.summaryBg,
-  border: `1px solid ${v4Colors.cardBorder}`,
-  padding: "20px 18px",
-} as const;
-
-const cardTitleStyle = {
-  fontSize: 13,
-  fontWeight: 700,
-  lineHeight: "20px",
-  color: v4Colors.text,
-  marginBottom: 14,
 } as const;
 
 const detailListStyle = {
@@ -914,139 +715,13 @@ const detailLineStyle = {
 
 const detailLabelStyle = {
   color: v4Colors.textMuted,
-  fontWeight: 600,
+  fontWeight: 500,
 } as const;
 
 const detailValueStyle = {
   color: v4Colors.text,
-  fontWeight: 600,
+  fontWeight: 400,
   wordBreak: "break-word",
-} as const;
-
-const estimateSectionStyle = {
-  padding: "2px 0 4px",
-} as const;
-
-const estimateSectionTitleStyle = {
-  fontSize: 13,
-  fontWeight: 700,
-  lineHeight: "20px",
-  color: v4Colors.text,
-  marginBottom: 14,
-} as const;
-
-const summaryStatsRowStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 20,
-} as const;
-
-const summaryStatStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-} as const;
-
-const summaryStatLabelStyle = {
-  color: v4Colors.textMuted,
-  fontSize: 12,
-  fontWeight: 700,
-  lineHeight: "18px",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-} as const;
-
-const summaryStatValueStyle = {
-  color: v4Colors.text,
-  fontSize: 30,
-  fontWeight: 700,
-  lineHeight: "34px",
-  wordBreak: "break-word",
-} as const;
-
-const progressSectionStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 10,
-  marginTop: 18,
-} as const;
-
-const progressHeaderStyle = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-} as const;
-
-const progressLabelStyle = {
-  color: v4Colors.text,
-  fontSize: 14,
-  fontWeight: 600,
-  lineHeight: "22px",
-} as const;
-
-const progressValueStyle = {
-  fontSize: 16,
-  fontWeight: 700,
-  lineHeight: "24px",
-} as const;
-
-const progressTrackStyle = {
-  width: "100%",
-  height: 12,
-  borderRadius: 999,
-  overflow: "hidden",
-  background: "rgba(15, 23, 42, 0.08)",
-} as const;
-
-const progressFillStyle = {
-  height: "100%",
-  borderRadius: 999,
-} as const;
-
-const estimateHintStyle = {
-  color: v4Colors.textMuted,
-  fontSize: 12,
-  fontWeight: 500,
-  lineHeight: "18px",
-} as const;
-
-const detailedEstimateRowStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  marginTop: 10,
-  flexWrap: "wrap",
-} as const;
-
-const detailedEstimateProgressStyle = {
-  color: v4Colors.textMuted,
-  fontSize: 12,
-  fontWeight: 500,
-  lineHeight: "18px",
-} as const;
-
-const offerFeatureGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-  gap: 12,
-} as const;
-
-const offerFeatureItemStyle = {
-  minHeight: 88,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  textAlign: "center",
-  padding: "14px 12px",
-  borderRadius: 16,
-  border: `1px solid ${v4Colors.cardBorder}`,
-  background: v4Colors.cardBg,
-  color: v4Colors.text,
-  fontSize: 15,
-  fontWeight: 600,
-  lineHeight: "24px",
-  whiteSpace: "pre-line",
 } as const;
 
 const planPickerDescriptionStyle = {
@@ -1161,16 +836,4 @@ const planCardFitStyle = {
   fontSize: 12,
   fontWeight: 500,
   lineHeight: "18px",
-} as const;
-
-const primaryButtonStyle = {
-  minWidth: 184,
-  minHeight: 48,
-  paddingInline: 18,
-} as const;
-
-const secondaryButtonStyle = {
-  minWidth: 184,
-  minHeight: 48,
-  paddingInline: 18,
 } as const;

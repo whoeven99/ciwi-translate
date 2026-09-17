@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Modal, Input, Table, Space, Typography } from "antd";
-import Button from "~/ui/components/AppButton";
+import { Input, Table, Space, Typography } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
+import { AppSModal } from "~/ui/components/AppSModal";
 import SelectedTag from "../../../components/selectedTag";
 import { useDispatch, useSelector } from "react-redux";
 import type { CurrencyDataType, CurrencyType } from "../route";
@@ -296,40 +296,22 @@ const AddCurrencyModal: React.FC<AddCurrencyModalProps> = ({
   ];
 
   return (
-    <Modal
-      width={800}
-      title={t("Select Currencies")}
+    <AppSModal
       open={isVisible}
-      onCancel={handleCloseModal}
-      footer={[
-        <div
-          key={"footer_buttons"}
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            width: "100%",
-            marginTop: "-12px",
-            gap: "12px", // 使用 gap 替代 marginRight
-          }}
-        >
-          <Button
-            key={"manage_cancel_button"}
-            onClick={handleCloseModal}
-            style={{ marginRight: "10px" }}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            key={"manage_confirm_button"}
-            type="primary"
-            disabled={allSelectedKeys.length === 0}
-            loading={addLoading}
-          >
-            {t("Add")}
-          </Button>
-        </div>,
+      heading={t("Select Currencies")}
+      onClose={handleCloseModal}
+      size="large"
+      primaryAction={{
+        content: t("Add"),
+        onAction: () => void handleConfirm(),
+        disabled: allSelectedKeys.length === 0,
+        loading: addLoading,
+      }}
+      secondaryActions={[
+        {
+          content: t("Cancel"),
+          onAction: handleCloseModal,
+        },
       ]}
     >
       <Input
@@ -366,7 +348,7 @@ const AddCurrencyModal: React.FC<AddCurrencyModalProps> = ({
           showSizeChanger: false,
         }}
       />
-    </Modal>
+    </AppSModal>
   );
 };
 

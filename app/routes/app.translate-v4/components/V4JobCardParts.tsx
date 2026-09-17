@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { TranslationJobProgressSummary } from "~/server/translateV4/progress.server";
-import { v4Colors } from "../v4Styles";
+import { v4Colors, v4ToneChip } from "../v4Styles";
 import {
   miniStageSegmentState,
   type VisibleStageIndex,
@@ -162,20 +162,20 @@ export function StatusTag({
   status: TranslationJobProgressSummary["status"];
   label: string;
 }) {
-  let bg: string = v4Colors.primarySoft;
-  let color: string = v4Colors.primary;
+  let bg: string = v4ToneChip.info.background;
+  let color: string = v4ToneChip.info.color;
   if (status === "COMPLETED") {
-    bg = v4Colors.successBg;
-    color = v4Colors.success;
+    bg = v4ToneChip.success.background;
+    color = v4ToneChip.success.color;
   } else if (status === "PAUSED") {
-    bg = v4Colors.warningBg;
-    color = v4Colors.warning;
+    bg = v4ToneChip.caution.background;
+    color = v4ToneChip.caution.color;
   } else if (status === "CANCELLED") {
     bg = v4Colors.cardSubdued;
-    color = v4Colors.textMuted;
+    color = v4Colors.text;
   } else if (status === "FAILED") {
-    bg = v4Colors.dangerBg;
-    color = v4Colors.danger;
+    bg = v4ToneChip.critical.background;
+    color = v4ToneChip.critical.color;
   }
 
   return (
@@ -195,15 +195,9 @@ export function StatusTag({
         lineHeight: 1.35,
         whiteSpace: "normal",
         overflowWrap: "anywhere",
-        border: `1px solid ${status === "COMPLETED"
-          ? "#d9f7be"
-          : status === "PAUSED"
-            ? "#ffe58f"
-            : status === "FAILED"
-              ? "#ffccc7"
-              : status === "CANCELLED"
-                ? v4Colors.cardBorder
-                : "#bae0ff"}`,
+        border: `1px solid ${
+          status === "CANCELLED" ? v4Colors.cardBorder : "transparent"
+        }`,
       }}
     >
       {label}

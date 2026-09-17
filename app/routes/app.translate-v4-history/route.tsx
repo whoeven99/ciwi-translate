@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { TitleBar } from "@shopify/app-bridge-react";
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
-import { Button, Page, Text } from "@shopify/polaris";
+import { useLoaderData, useSearchParams } from "@remix-run/react";
+import { BlockStack, Page, Text } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import AppPageHeader from "~/ui/components/AppPageHeader";
+import AppSubpageTitleBar, {
+  useAppHomeBackAction,
+} from "~/ui/components/AppSubpageTitleBar";
 import { message } from "~/ui/message";
 import { authenticate } from "~/shopify.server";
 import {
@@ -24,6 +26,7 @@ import { openCreditsPurchaseModal } from "~/utils/creditsPurchaseModal";
 import type { ShopQuota } from "~/lib/translationQuota";
 import { normalizeShopQuota } from "~/lib/translationQuota";
 import { buildTranslateV4TaskCreditsPurchaseContext } from "~/utils/creditsPurchaseTaskContext";
+import { useV4BillingTaskResumeRefresh } from "~/hooks/useV4BillingTaskResumeRefresh";
 
 async function readJsonResponse<T = any>(res: Response): Promise<T> {
   const text = await res.text();
@@ -44,7 +47,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function AppTranslateV4History() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { shop, jobs: initialJobs } = useLoaderData<typeof loader>();
   const [jobs, setJobs] = useState<TranslationJobProgressSummary[]>(initialJobs);
   const [quota, setQuota] = useState<ShopQuota | null>(null);
@@ -52,6 +55,14 @@ export default function AppTranslateV4History() {
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
 
   const historyJobs = useMemo(() => jobs.filter(isHistoryV4Job), [jobs]);
+  const returnTo = useMemo(() => {
+    const value = searchParams.get("returnTo");
+    if (!value || !value.startsWith("/app/")) {
+      return "/app/translate-v4-mvp?tab=queue";
+    }
+    return value;
+  }, [searchParams]);
+  const historyBackAction = useAppHomeBackAction(returnTo);
 
   const refreshList = useCallback(async () => {
     const res = await fetch(
@@ -62,6 +73,8 @@ export default function AppTranslateV4History() {
       setJobs(data.jobs as TranslationJobProgressSummary[]);
     }
   }, [shop]);
+
+  useV4BillingTaskResumeRefresh(refreshList);
 
   const refreshQuota = useCallback(async () => {
     const res = await fetch(
@@ -146,24 +159,20 @@ export default function AppTranslateV4History() {
 
   return (
     <div style={v4PageStyle}>
-      <TitleBar
+      <AppSubpageTitleBar
         title={t("v4.tasks.historyPageTitle", { count: historyJobs.length })}
+        parentUrl={returnTo}
       />
       <Page>
         <div style={v4ContentStyle}>
-          <AppPageHeader
-            style={{ marginBottom: 18 }}
-            title={t("v4.tasks.historyPageTitle", { count: historyJobs.length })}
-            description={t("v4.tasks.historyHelper")}
-            extra={
-              <Button
-                variant="plain"
-                onClick={() => navigate("/app/translate-v4")}
-              >
-                {t("v4.tasks.backToCurrent")}
-              </Button>
-            }
-          />
+          <BlockStack gap="200">
+            <AppPageHeader
+              style={{ marginBottom: 18 }}
+              title={t("v4.tasks.historyPageTitle", { count: historyJobs.length })}
+              description={t("v4.tasks.historyHelper")}
+              backAction={historyBackAction}
+            />
+          </BlockStack>
 
           <div style={{ ...v4CardStyle, padding: "16px" }}>
             {historyJobs.length === 0 ? (
