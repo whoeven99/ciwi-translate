@@ -4,6 +4,7 @@ import {
   earliestTrialLotExpiresAt,
   getMigratablePurchasedCredits,
   getPurchasedCreditsConsumedByUsage,
+  settleAccountAtRenewal,
   settleExpiredInstallTrialCredits,
 } from "./accountBalance.server";
 
@@ -360,5 +361,73 @@ describe("earliestTrialLotExpiresAt", () => {
       bonusAt.toISOString(),
     );
     assert.equal(earliestTrialLotExpiresAt(0, null, 0, null), null);
+  });
+});
+
+describe("settleAccountAtRenewal", () => {
+  const installAt = new Date("2026-09-20T00:00:00.000Z");
+  const bonusAt = new Date("2026-10-15T00:00:00.000Z");
+
+  function renewalAccount(
+    partial: Partial<Parameters<typeof settleAccountAtRenewal>[0]>,
+  ): Parameters<typeof settleAccountAtRenewal>[0] {
+    return {
+      subscriptionCredits: 1_500_000,
+      purchasedCredits: 0,
+      trialCredits: 200_000,
+      usedCredits: 0,
+      trialInstallCredits: 200_000,
+      trialInstallExpiresAt: installAt,
+      trialBonusCredits: 0,
+      trialBonusExpiresAt: null,
+      ...partial,
+    };
+  }
+
+  it("keeps unused install lot when used is 0, then leftover is 200k", () => {
+    const settled = settleAccountAtRenewal(renewalAccount({}));
+    assert.equal(settled.trialCredits, 200_000);
+    assert.equal(settled.trialInstallCredits, 200_000);
+    assert.equal(settled.trialInstallExpiresAt?.toISOString(), installAt.toISOString());
+    assert.equal(settled.trialBonusCredits, 0);
+    assert.equal(settled.trialCreditsExpiresAt?.toISOString(), installAt.toISOString());
+  });
+
+  it("peels partial usage from install lot and keeps leftover 20万", () => {
+    const settled = settleAccountAtRenewal(
+      renewalAccount({ usedCredits: 50_000 }),
+    );
+    assert.equal(settled.trialCredits, 150_000);
+    assert.equal(settled.trialInstallCredits, 150_000);
+    assert.equal(settled.trialInstallExpiresAt?.toISOString(), installAt.toISOString());
+    assert.equal(settled.subscriptionCredits, 1_500_000);
+  });
+
+  it("zeros install lot when usage consumed the whole 20万 trial", () => {
+    const settled = settleAccountAtRenewal(
+      renewalAccount({ usedCredits: 300_000 }),
+    );
+    assert.equal(settled.trialCredits, 0);
+    assert.equal(settled.trialInstallCredits, 0);
+    assert.equal(settled.trialInstallExpiresAt, null);
+    assert.equal(settled.subscriptionCredits, 1_400_000);
+    assert.equal(settled.trialCreditsExpiresAt, null);
+  });
+
+  it("FIFO peels install then bonus and keeps leftover 100万", () => {
+    const settled = settleAccountAtRenewal(
+      renewalAccount({
+        trialCredits: 1_200_000,
+        trialBonusCredits: 1_000_000,
+        trialBonusExpiresAt: bonusAt,
+        usedCredits: 250_000,
+      }),
+    );
+    assert.equal(settled.trialCredits, 950_000);
+    assert.equal(settled.trialInstallCredits, 0);
+    assert.equal(settled.trialInstallExpiresAt, null);
+    assert.equal(settled.trialBonusCredits, 950_000);
+    assert.equal(settled.trialBonusExpiresAt?.toISOString(), bonusAt.toISOString());
+    assert.equal(settled.trialCreditsExpiresAt?.toISOString(), bonusAt.toISOString());
   });
 });

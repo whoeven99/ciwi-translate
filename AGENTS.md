@@ -873,7 +873,11 @@ Turso. TSF account initialization is now keyed by `Account`; the old
   delay 2min + 0–60s jitter; max 200 shops/run, 50ms inter-shop delay).
   Deduct and subscription renewal still settle first so expired gift is not
   spent. FIFO：先安装笔后首订笔；只清到期那一笔 leftover，并从 `usedCredits`
-  剥该笔已用量（试用先耗；订阅/加量包不因过期被扣）。
+  剥该笔已用量（试用先耗；订阅/加量包不因过期被扣）。续费/试用转正
+  `settleAccountAtRenewal` 按 used 扣试用汇总后 FIFO 同步
+  `trialInstallCredits` / `trialBonusCredits`（余额 0 清到期时间）；App
+  `renewal.server.ts` 与 Worker `billingSubscriptionReconcile`（月续费 / 年付
+  30 天周期）同口径，再发 Basic 100 万。
 - 安装赠送：终身首次建 `Account` 写入 `trialCredits+=200000`、
   `trialInstallCredits+=200000`，`trialInstallExpiresAt = now+30d`；
   `trialCreditsExpiresAt` = 仍有效笔最早到期。`BillingLog` `TRIAL_GRANTED` +

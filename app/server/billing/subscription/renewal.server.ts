@@ -1,9 +1,6 @@
 import type { Account, AppSubscription } from "../../../generated/prisma";
 import prisma from "../../../db.server";
-import {
-  canSettleAtRenewal,
-  settlePoolsAtRenewal,
-} from "../accountBalance.server";
+import { settleAccountAtRenewal } from "../accountBalance.server";
 import { expireInstallTrialCreditsIfDue } from "../grant/grantInstallCredits.server";
 import { appendBillingLog } from "../billingLog.server";
 import {
@@ -80,13 +77,7 @@ export async function archivePeriodAndRenew(params: {
     },
   });
 
-  const settled = canSettleAtRenewal(account)
-    ? settlePoolsAtRenewal(account)
-    : {
-        subscriptionCredits: account.subscriptionCredits,
-        purchasedCredits: account.purchasedCredits,
-        trialCredits: account.trialCredits,
-      };
+  const settled = settleAccountAtRenewal(account);
 
   await prisma.$transaction([
     prisma.appSubscription.update({
@@ -106,6 +97,11 @@ export async function archivePeriodAndRenew(params: {
         subscriptionCredits: next.creditsPerPeriod,
         purchasedCredits: settled.purchasedCredits,
         trialCredits: settled.trialCredits,
+        trialInstallCredits: settled.trialInstallCredits,
+        trialInstallExpiresAt: settled.trialInstallExpiresAt,
+        trialBonusCredits: settled.trialBonusCredits,
+        trialBonusExpiresAt: settled.trialBonusExpiresAt,
+        trialCreditsExpiresAt: settled.trialCreditsExpiresAt,
       },
     }),
   ]);

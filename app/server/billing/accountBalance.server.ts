@@ -288,3 +288,72 @@ export function settlePoolsAtRenewal(
     account.usedCredits,
   );
 }
+
+export type TrialLotBalances = {
+  trialInstallCredits: number;
+  trialInstallExpiresAt: Date | null;
+  trialBonusCredits: number;
+  trialBonusExpiresAt: Date | null;
+};
+
+export type RenewalAccountFields = AccountBalanceFields & TrialLotBalances;
+
+export type RenewalSettlement = CreditPoolBalances &
+  TrialLotBalances & {
+    trialCreditsExpiresAt: Date | null;
+  };
+
+/** 试用汇总扣掉的部分，FIFO 从安装笔再首订笔剥掉；余额为 0 则清到期时间。 */
+function peelTrialLots(
+  lots: TrialLotBalances,
+  trialConsumed: number,
+): TrialLotBalances {
+  let remaining = Math.max(0, Math.floor(trialConsumed));
+  let install = Math.max(0, Math.floor(lots.trialInstallCredits));
+  let bonus = Math.max(0, Math.floor(lots.trialBonusCredits));
+  const takeInstall = Math.min(remaining, install);
+  install -= takeInstall;
+  remaining -= takeInstall;
+  bonus -= Math.min(remaining, bonus);
+  return {
+    trialInstallCredits: install,
+    trialInstallExpiresAt: install > 0 ? lots.trialInstallExpiresAt : null,
+    trialBonusCredits: bonus,
+    trialBonusExpiresAt: bonus > 0 ? lots.trialBonusExpiresAt : null,
+  };
+}
+
+/**
+ * 续费结算：三池 leftover + 试用分笔 FIFO。
+ * used=0 或超额未结算时分笔原样结转；订阅池由调用方替换为下期额度。
+ */
+export function settleAccountAtRenewal(
+  account: RenewalAccountFields,
+): RenewalSettlement {
+  const originalLots: TrialLotBalances = {
+    trialInstallCredits: Math.max(0, Math.floor(account.trialInstallCredits)),
+    trialInstallExpiresAt: account.trialInstallExpiresAt,
+    trialBonusCredits: Math.max(0, Math.floor(account.trialBonusCredits)),
+    trialBonusExpiresAt: account.trialBonusExpiresAt,
+  };
+  const pools = canSettleAtRenewal(account)
+    ? settlePoolsAtRenewal(account)
+    : {
+        subscriptionCredits: account.subscriptionCredits,
+        purchasedCredits: account.purchasedCredits,
+        trialCredits: account.trialCredits,
+      };
+  const originalTrial = Math.max(0, Math.floor(account.trialCredits));
+  const leftoverTrial = Math.max(0, Math.floor(pools.trialCredits));
+  const lots = peelTrialLots(originalLots, originalTrial - leftoverTrial);
+  return {
+    ...pools,
+    ...lots,
+    trialCreditsExpiresAt: earliestTrialLotExpiresAt(
+      lots.trialInstallCredits,
+      lots.trialInstallExpiresAt,
+      lots.trialBonusCredits,
+      lots.trialBonusExpiresAt,
+    ),
+  };
+}

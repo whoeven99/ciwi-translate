@@ -7,10 +7,7 @@
  * ACTIVE Shopify subscription but no local AppSubscription row.
  */
 import { randomUUID } from "node:crypto";
-import {
-  canSettleAtRenewal,
-  settlePoolsAtRenewal,
-} from "./accountBalance.js";
+import { settleAccountAtRenewal } from "./accountBalance.js";
 import {
   collectGrantedAnnualCreditCycleIndexes,
   decideAnnualCreditGrant,
@@ -112,6 +109,20 @@ function parseDate(value: unknown): Date | null {
 
 function toSqlDate(d: Date | null): string | null {
   return d ? d.toISOString() : null;
+}
+
+function accountForRenewal(acc: object) {
+  const row = acc as Record<string, unknown>;
+  return {
+    subscriptionCredits: Number(row.subscriptionCredits ?? 0),
+    purchasedCredits: Number(row.purchasedCredits ?? 0),
+    trialCredits: Number(row.trialCredits ?? 0),
+    usedCredits: Number(row.usedCredits ?? 0),
+    trialInstallCredits: Number(row.trialInstallCredits ?? 0),
+    trialInstallExpiresAt: parseDate(row.trialInstallExpiresAt),
+    trialBonusCredits: Number(row.trialBonusCredits ?? 0),
+    trialBonusExpiresAt: parseDate(row.trialBonusExpiresAt),
+  };
 }
 
 function mapInterval(raw?: string | null): string {
@@ -352,12 +363,7 @@ async function ensureAccount(shop: string): Promise<void> {
 async function archivePeriodAndRenew(params: {
   shop: string;
   local: LocalSubscription;
-  account: {
-    subscriptionCredits: number;
-    purchasedCredits: number;
-    trialCredits: number;
-    usedCredits: number;
-  };
+  account: ReturnType<typeof accountForRenewal>;
   next: {
     planKey: string;
     creditsPerPeriod: number;
@@ -414,13 +420,7 @@ async function archivePeriodAndRenew(params: {
     ],
   });
 
-  const settled = canSettleAtRenewal(account)
-    ? settlePoolsAtRenewal(account)
-    : {
-        subscriptionCredits: account.subscriptionCredits,
-        purchasedCredits: account.purchasedCredits,
-        trialCredits: account.trialCredits,
-      };
+  const settled = settleAccountAtRenewal(account);
 
   await db.execute({
     sql: `UPDATE AppSubscription SET
@@ -444,12 +444,22 @@ async function archivePeriodAndRenew(params: {
             subscriptionCredits = ?,
             purchasedCredits = ?,
             trialCredits = ?,
+            trialInstallCredits = ?,
+            trialInstallExpiresAt = ?,
+            trialBonusCredits = ?,
+            trialBonusExpiresAt = ?,
+            trialCreditsExpiresAt = ?,
             updatedAt = ?
           WHERE shop = ?`,
     args: [
       next.creditsPerPeriod,
       settled.purchasedCredits,
       settled.trialCredits,
+      settled.trialInstallCredits,
+      toSqlDate(settled.trialInstallExpiresAt),
+      settled.trialBonusCredits,
+      toSqlDate(settled.trialBonusExpiresAt),
+      toSqlDate(settled.trialCreditsExpiresAt),
       now,
       shop,
     ],
@@ -656,12 +666,7 @@ async function syncLocalPeriodFields(params: {
 async function grantAnnualCreditCycle(params: {
   shop: string;
   local: LocalSubscription;
-  account: {
-    subscriptionCredits: number;
-    purchasedCredits: number;
-    trialCredits: number;
-    usedCredits: number;
-  };
+  account: ReturnType<typeof accountForRenewal>;
   planKey: string;
   creditsPerPeriod: number;
   billingPeriodEnd: Date;
@@ -732,13 +737,7 @@ async function grantAnnualCreditCycle(params: {
     ],
   });
 
-  const settled = canSettleAtRenewal(account)
-    ? settlePoolsAtRenewal(account)
-    : {
-        subscriptionCredits: account.subscriptionCredits,
-        purchasedCredits: account.purchasedCredits,
-        trialCredits: account.trialCredits,
-      };
+  const settled = settleAccountAtRenewal(account);
 
   await db.execute({
     sql: `UPDATE Account SET
@@ -746,12 +745,22 @@ async function grantAnnualCreditCycle(params: {
             subscriptionCredits = ?,
             purchasedCredits = ?,
             trialCredits = ?,
+            trialInstallCredits = ?,
+            trialInstallExpiresAt = ?,
+            trialBonusCredits = ?,
+            trialBonusExpiresAt = ?,
+            trialCreditsExpiresAt = ?,
             updatedAt = ?
           WHERE shop = ?`,
     args: [
       creditsPerPeriod,
       settled.purchasedCredits,
       settled.trialCredits,
+      settled.trialInstallCredits,
+      toSqlDate(settled.trialInstallExpiresAt),
+      settled.trialBonusCredits,
+      toSqlDate(settled.trialBonusExpiresAt),
+      toSqlDate(settled.trialCreditsExpiresAt),
       now,
       shop,
     ],
@@ -920,7 +929,9 @@ async function reconcileOneShop(
   if (periodEndAdvanced) {
     await expireTrialLotsForPlan(shop, plan.planKey);
     const accRs = await getTsfDb().execute({
-      sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits
+      sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits,
+                   trialInstallCredits, trialInstallExpiresAt,
+                   trialBonusCredits, trialBonusExpiresAt
             FROM Account WHERE shop = ? LIMIT 1`,
       args: [shop],
     });
@@ -936,12 +947,7 @@ async function reconcileOneShop(
       await archivePeriodAndRenew({
         shop,
         local,
-        account: {
-          subscriptionCredits: Number(acc.subscriptionCredits ?? 0),
-          purchasedCredits: Number(acc.purchasedCredits ?? 0),
-          trialCredits: Number(acc.trialCredits ?? 0),
-          usedCredits: Number(acc.usedCredits ?? 0),
-        },
+        account: accountForRenewal(acc),
         next: {
           planKey: plan.planKey,
           creditsPerPeriod: plan.credits,
@@ -1017,7 +1023,9 @@ async function reconcileOneShop(
     if (decision.action === "grant") {
       await expireTrialLotsForPlan(shop, plan.planKey);
       const accRs = await getTsfDb().execute({
-        sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits
+        sql: `SELECT subscriptionCredits, purchasedCredits, trialCredits, usedCredits,
+                     trialInstallCredits, trialInstallExpiresAt,
+                     trialBonusCredits, trialBonusExpiresAt
               FROM Account WHERE shop = ? LIMIT 1`,
         args: [shop],
       });
@@ -1033,12 +1041,7 @@ async function reconcileOneShop(
         await grantAnnualCreditCycle({
           shop,
           local,
-          account: {
-            subscriptionCredits: Number(acc.subscriptionCredits ?? 0),
-            purchasedCredits: Number(acc.purchasedCredits ?? 0),
-            trialCredits: Number(acc.trialCredits ?? 0),
-            usedCredits: Number(acc.usedCredits ?? 0),
-          },
+          account: accountForRenewal(acc),
           planKey: plan.planKey,
           creditsPerPeriod: plan.credits,
           billingPeriodEnd: currentPeriodEnd,
