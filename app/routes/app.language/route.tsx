@@ -8,6 +8,7 @@ import {
   Switch,
   Skeleton,
   Checkbox,
+  Select,
 } from "antd";
 import Button from "~/ui/components/AppButton";
 import { AppSModal } from "~/ui/components/AppSModal";
@@ -240,6 +241,11 @@ function applyCoverageToLanguageRows(
 
 /** UI 用 UTC 展示；API/Worker 存 Asia/Shanghai（UTC+8）小时。 */
 const AUTO_TRANSLATE_SHANGHAI_UTC_OFFSET = 8;
+const AUTO_TRANSLATE_SPEED_OPTIONS = [
+  { value: 1, requiredTier: "premium" },
+  { value: 12, requiredTier: "pro" },
+  { value: 24, requiredTier: null },
+] as const;
 
 function shanghaiHourToUtcDisplay(hour: number): number {
   return (((hour - AUTO_TRANSLATE_SHANGHAI_UTC_OFFSET) % 24) + 24) % 24;
@@ -577,8 +583,12 @@ const Index = () => {
   const [draftAutoHour, setDraftAutoHour] = useState(0);
   const [draftAutoIntervalHours, setDraftAutoIntervalHours] = useState(24);
   const [draftAutoModules, setDraftAutoModules] = useState<string[]>([]);
-  const [editAutoLocale, setEditAutoLocale] = useState<string | null>(null);
-  const [draftLocaleAuto, setDraftLocaleAuto] = useState(false);
+  const [draftBulkEnableLocales, setDraftBulkEnableLocales] = useState<string[]>(
+    [],
+  );
+  const [autoSettingsUpgradeTarget, setAutoSettingsUpgradeTarget] = useState<
+    "pro" | "premium" | null
+  >(null);
   const [translateModalOpen, setTranslateModalOpen] = useState(false);
   const [translateTargets, setTranslateTargets] = useState<string[]>([]);
   const [translateModuleKeys, setTranslateModuleKeys] =
@@ -591,7 +601,6 @@ const Index = () => {
   const [translateCreating, setTranslateCreating] = useState(false);
   const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
   const [quota, setQuota] = useState<ShopQuota | null>(null);
-  const [strictQuotaGate, setStrictQuotaGate] = useState(false);
   const normalizedQuota = useMemo(() => normalizeShopQuota(quota), [quota]);
   const createDisabledMessage =
     normalizedQuota == null ? t("v4.create.quotaUnavailable") : null;
@@ -655,6 +664,25 @@ const Index = () => {
           ? "insufficient_trial"
           : "insufficient_pricing"
       : "ready";
+  const autoSettingsPlanLabel = useCallback(
+    (tier: "free" | "basic" | "pro" | "premium") => {
+      switch (tier) {
+        case "free":
+          return t("v4.plan.free");
+        case "basic":
+          return t("v4.plan.basic");
+        case "pro":
+          return t("v4.plan.pro");
+        case "premium":
+          return t("pricing.plan.premium");
+      }
+    },
+    [t],
+  );
+  const currentAutoSettingsPlanLabel = useMemo(
+    () => autoSettingsPlanLabel(planEntitlements.tier),
+    [autoSettingsPlanLabel, planEntitlements.tier],
+  );
 
   const persistCreateTaskDraft = useCallback(() => {
     saveCreateTaskDraft(shop, {
@@ -695,7 +723,6 @@ const Index = () => {
         const nextQuota = normalizeShopQuota(data.quota as ShopQuota | null);
         const nextStrict = Boolean(data.strictQuotaGate);
         setQuota(nextQuota);
-        setStrictQuotaGate(nextStrict);
         return {
           remainingCredits: nextQuota?.remaining ?? null,
           strictQuotaGate: nextStrict,
@@ -1126,17 +1153,18 @@ const Index = () => {
       width: "18%",
       render: (_: any, record: any) => (
         <Flex align="center" gap="small" wrap="wrap">
-          <Text
-            style={{
-              color: record.autoTranslate
-                ? "var(--p-color-text-success)"
-                : "var(--app-color-text-secondary)",
-            }}
+          <span
+            className={[
+              styles.autoStatusBadge,
+              record.autoTranslate
+                ? styles.autoStatusBadgeOn
+                : styles.autoStatusBadgeOff,
+            ].join(" ")}
           >
             {record.autoTranslate
               ? t("v4.autoSettings.statusOn")
               : t("v4.autoSettings.statusOff")}
-          </Text>
+          </span>
           <Button
             size="small"
             loading={record.autoTranslateLoading}
@@ -1440,6 +1468,9 @@ const Index = () => {
   const handleAutoUpdateTranslationChange = async (
     locale: string,
     checked: boolean,
+    options?: {
+      silent?: boolean;
+    },
   ) => {
     const trace = startClientLogTrace({
       event: "language_toggle_auto_translate",
@@ -1450,17 +1481,43 @@ const Index = () => {
       },
     });
     if (!plan) {
+      if (!options?.silent) {
+        report(
+          {
+            status: checked ? 1 : 0,
+          },
+          {
+            action: "/app",
+            method: "post",
+            eventType: "click",
+          },
+          "language_list_auto_translate",
+        );
+      }
       finishClientLogTrace(trace, {
         level: "warn",
         status: "failure",
         message: "Plan not loaded",
       });
-      return;
+      return false;
     }
     dispatch(setAutoTranslateLoadingState({ locale, loading: true }));
     const row = dataSource.find((item: any) => item.locale === locale);
     if (!row) {
       dispatch(setAutoTranslateLoadingState({ locale, loading: false }));
+      if (!options?.silent) {
+        report(
+          {
+            status: checked ? 1 : 0,
+          },
+          {
+            action: "/app",
+            method: "post",
+            eventType: "click",
+          },
+          "language_list_auto_translate",
+        );
+      }
       finishClientLogTrace(trace, {
         level: "warn",
         status: "failure",
@@ -1469,10 +1526,12 @@ const Index = () => {
           locale,
         },
       });
-      return;
+      return false;
     }
     try {
-      setAutoTranslateAlert("");
+      if (!options?.silent) {
+        setAutoTranslateAlert("");
+      }
       const data = await setAutoTranslateCompat({
         target: row.locale,
         autoTranslate: checked,
@@ -1487,16 +1546,30 @@ const Index = () => {
             autoTranslate: checked,
           },
         });
-        shopify.toast.show(t("Auto translate updated successfully"));
-        fetcher.submit(
-          {
-            log: `${shop} 自动翻译${checked ? "开启" : "关闭"}${row?.locale}`,
-          },
-          {
-            method: "POST",
-            action: "/log",
-          },
-        );
+        if (!options?.silent) {
+          shopify.toast.show(t("Auto translate updated successfully"));
+          fetcher.submit(
+            {
+              log: `${shop} 自动翻译${checked ? "开启" : "关闭"}${row?.locale}`,
+            },
+            {
+              method: "POST",
+              action: "/log",
+            },
+          );
+          report(
+            {
+              status: checked ? 1 : 0,
+            },
+            {
+              action: "/app",
+              method: "post",
+              eventType: "click",
+            },
+            "language_list_auto_translate",
+          );
+        }
+        return true;
       } else {
         const errorMsg = getTranslateV4ErrorMessage(
           t,
@@ -1512,16 +1585,43 @@ const Index = () => {
             autoTranslate: checked,
           },
         });
-        setAutoTranslateAlert(errorMsg);
+        if (!options?.silent) {
+          setAutoTranslateAlert(errorMsg);
+          report(
+            {
+              status: checked ? 1 : 0,
+            },
+            {
+              action: "/app",
+              method: "post",
+              eventType: "click",
+            },
+            "language_list_auto_translate",
+          );
+        }
+        return false;
       }
     } catch (error) {
       dispatch(setAutoTranslateLoadingState({ locale, loading: false }));
-      setAutoTranslateAlert(
-        getTranslateV4ErrorMessage(
-          t,
-          TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_SAVE_FAILED,
-        ),
-      );
+      if (!options?.silent) {
+        setAutoTranslateAlert(
+          getTranslateV4ErrorMessage(
+            t,
+            TRANSLATE_V4_ERROR_KEYS.TARGET_LOCALE_SAVE_FAILED,
+          ),
+        );
+        report(
+          {
+            status: checked ? 1 : 0,
+          },
+          {
+            action: "/app",
+            method: "post",
+            eventType: "click",
+          },
+          "language_list_auto_translate",
+        );
+      }
       finishClientLogTrace(trace, {
         level: "error",
         status: "failure",
@@ -1531,18 +1631,8 @@ const Index = () => {
           autoTranslate: checked,
         },
       });
+      return false;
     }
-    report(
-      {
-        status: checked ? 1 : 0,
-      },
-      {
-        action: "/app",
-        method: "post",
-        eventType: "click",
-      },
-      "language_list_auto_translate",
-    );
   };
 
   const autoHourOptions = useMemo(
@@ -1554,23 +1644,39 @@ const Index = () => {
     [],
   );
 
-  const autoIntervalOptions = useMemo(() => {
-    const allowed =
-      planEntitlements.allowedAutoTranslateIntervalHours ?? [24];
-    return allowed.map((hours) => ({
-      value: String(hours),
-      label: t("v4.autoSettings.intervalOption", { hours }),
-    }));
-  }, [planEntitlements.allowedAutoTranslateIntervalHours, t]);
+  const autoIntervalOptions = useMemo(
+    () =>
+      AUTO_TRANSLATE_SPEED_OPTIONS.map((option) => {
+        const allowed = planEntitlements.allowedAutoTranslateIntervalHours.includes(
+          option.value as (typeof planEntitlements.allowedAutoTranslateIntervalHours)[number],
+        );
+        const baseLabel = t("v4.autoSettings.intervalOption", {
+          hours: option.value,
+        });
+        return {
+          ...option,
+          label:
+            allowed || !option.requiredTier
+              ? baseLabel
+              : t("v4.autoSettings.intervalOptionLocked", {
+                  label: baseLabel,
+                  plan: autoSettingsPlanLabel(option.requiredTier),
+                }),
+          allowed,
+        };
+      }),
+    [autoSettingsPlanLabel, planEntitlements, t],
+  );
 
   const autoModuleChips = useMemo(
     () =>
       AUTO_TRANSLATE_V2_MODULE_KEYS.map((mod) => ({
         value: mod,
-        label: isV2ModuleAllowedForPlan(mod, planEntitlements)
-          ? getV4ModuleLabel(mod, t)
-          : `${getV4ModuleLabel(mod, t)} 🔒`,
+        label: getV4ModuleLabel(mod, t),
         allowed: isV2ModuleAllowedForPlan(mod, planEntitlements),
+        requiredTier: isV2ModuleAllowedForPlan(mod, planEntitlements)
+          ? null
+          : "pro",
       })),
     [planEntitlements, t],
   );
@@ -1582,14 +1688,71 @@ const Index = () => {
         .map((mod) => String(mod.value)),
     [autoModuleChips],
   );
+  const allowedAutoModuleChips = useMemo(
+    () => autoModuleChips.filter((mod) => mod.allowed),
+    [autoModuleChips],
+  );
+  const lockedAutoModuleChips = useMemo(
+    () => autoModuleChips.filter((mod) => !mod.allowed),
+    [autoModuleChips],
+  );
 
-  const editAutoLocaleLabel = useMemo(() => {
-    if (!editAutoLocale) return "";
-    const row = dataSource.find((item: any) => item.locale === editAutoLocale);
-    if (!row) return editAutoLocale;
-    const name = row.name || row.localeName || "";
-    return name ? `${name} (${editAutoLocale})` : editAutoLocale;
-  }, [dataSource, editAutoLocale]);
+  const bulkEnableCandidates = useMemo(
+    () =>
+      dataSource
+        .filter((item: any) => Boolean(item.locale))
+        .map((item: any) => ({
+          value: item.locale,
+          label: item.localeName ? `${item.name} (${item.localeName})` : item.name,
+        })),
+    [dataSource],
+  );
+  const bulkEnableSelectedCount = draftBulkEnableLocales.length;
+  const allDraftBulkLocalesSelected =
+    bulkEnableCandidates.length > 0 &&
+    bulkEnableCandidates.every((item) =>
+      draftBulkEnableLocales.includes(item.value),
+    );
+  const someDraftBulkLocalesSelected =
+    draftBulkEnableLocales.length > 0 && !allDraftBulkLocalesSelected;
+
+  const toggleAllDraftBulkEnableLocales = () => {
+    setDraftBulkEnableLocales(
+      allDraftBulkLocalesSelected
+        ? []
+        : bulkEnableCandidates.map((item) => item.value),
+    );
+  };
+
+  useEffect(() => {
+    setDraftBulkEnableLocales((prev) =>
+      prev.filter((locale) =>
+        bulkEnableCandidates.some((item) => item.value === locale),
+      ),
+    );
+  }, [bulkEnableCandidates]);
+
+  const autoSettingsSummary = useMemo(
+    () =>
+      t(
+        bulkEnableSelectedCount > 0
+          ? "v4.autoSettings.summaryOn"
+          : "v4.autoSettings.summaryOff",
+        {
+          count: bulkEnableSelectedCount,
+          interval: draftAutoIntervalHours,
+          hour: `${String(draftAutoHour).padStart(2, "0")}:00`,
+          modules: draftAutoModules.length,
+        },
+      ),
+    [
+      bulkEnableSelectedCount,
+      draftAutoHour,
+      draftAutoIntervalHours,
+      draftAutoModules.length,
+      t,
+    ],
+  );
 
   const allDraftModulesSelected =
     selectableAutoModuleValues.length > 0 &&
@@ -1609,24 +1772,52 @@ const Index = () => {
     setDraftAutoModules(
       filterV2ModulesForPlan(autoModules, planEntitlements),
     );
-    const row = dataSource.find((item: any) => item.locale === locale);
-    setEditAutoLocale(locale);
-    setDraftLocaleAuto(Boolean(row?.autoTranslate));
+    const selectedLocales = new Set(
+      dataSource
+        .filter((item: any) => item.autoTranslate)
+        .map((item: any) => item.locale),
+    );
+    selectedLocales.add(locale);
+    setDraftBulkEnableLocales([
+      locale,
+      ...Array.from(selectedLocales).filter((item) => item !== locale),
+    ]);
     setAutoSettingsModalOpen(true);
   };
 
   const closeAutoSettingsModal = () => {
     if (autoSettingsSaving) return;
     setAutoSettingsModalOpen(false);
-    setEditAutoLocale(null);
+    setDraftBulkEnableLocales([]);
+  };
+
+  const openAutoSettingsUpgradeModal = useCallback(
+    (requiredTier: "pro" | "premium") => {
+      setAutoSettingsUpgradeTarget(requiredTier);
+      reportClick("language_auto_settings_upgrade");
+    },
+    [reportClick],
+  );
+
+  const handleDraftAutoIntervalChange = (
+    hours: number,
+    allowed: boolean,
+    requiredTier: "pro" | "premium" | null,
+  ) => {
+    if (!allowed) {
+      if (requiredTier) {
+        openAutoSettingsUpgradeModal(requiredTier);
+      }
+      return;
+    }
+    setDraftAutoIntervalHours(hours);
   };
 
   const toggleDraftAutoModule = (value: string) => {
+    const module = autoModuleChips.find((item) => item.value === value);
     if (!isV2ModuleAllowedForPlan(value, planEntitlements)) {
-      message.warning(
-        value === "metadata"
-          ? t("v4.plan.metafieldRequiresPro")
-          : t("v4.plan.moduleNotAllowed"),
+      openAutoSettingsUpgradeModal(
+        (module?.requiredTier ?? "pro") as "pro" | "premium",
       );
       return;
     }
@@ -1642,7 +1833,7 @@ const Index = () => {
   };
 
   const handleSaveAutoSettings = async () => {
-    if (draftAutoModules.length === 0) {
+    if (draftBulkEnableLocales.length > 0 && draftAutoModules.length === 0) {
       message.warning(t("v4.autoSettings.selectModule"));
       return;
     }
@@ -1674,21 +1865,24 @@ const Index = () => {
       setAutoHour(nextHour);
       setAutoIntervalHours(nextInterval);
       setAutoModules(nextModules);
-
-      if (editAutoLocale) {
-        const row = dataSource.find(
-          (item: any) => item.locale === editAutoLocale,
-        );
-        if (row && Boolean(row.autoTranslate) !== draftLocaleAuto) {
-          await handleAutoUpdateTranslationChange(
-            editAutoLocale,
-            draftLocaleAuto,
-          );
-        }
-      }
+      const selectedLocales = new Set(draftBulkEnableLocales);
+      await Promise.all(
+        dataSource
+          .filter(
+            (item: any) =>
+              Boolean(item.autoTranslate) !== selectedLocales.has(item.locale),
+          )
+          .map((item: any) =>
+            handleAutoUpdateTranslationChange(
+              item.locale,
+              selectedLocales.has(item.locale),
+              { silent: true },
+            ),
+          ),
+      );
 
       setAutoSettingsModalOpen(false);
-      setEditAutoLocale(null);
+      setDraftBulkEnableLocales([]);
       message.success(t("v4.autoSettings.saved"));
       reportClick("language_auto_settings_save");
     } catch {
@@ -1877,17 +2071,18 @@ const Index = () => {
                             label: t("Auto translation"),
                             value: (
                               <Flex align="center" gap="small" wrap="wrap">
-                                <Text
-                                  style={{
-                                    color: item.autoTranslate
-                                      ? "var(--p-color-text-success)"
-                                      : "var(--app-color-text-secondary)",
-                                  }}
+                                <span
+                                  className={[
+                                    styles.autoStatusBadge,
+                                    item.autoTranslate
+                                      ? styles.autoStatusBadgeOn
+                                      : styles.autoStatusBadgeOff,
+                                  ].join(" ")}
                                 >
                                   {item.autoTranslate
                                     ? t("v4.autoSettings.statusOn")
                                     : t("v4.autoSettings.statusOff")}
-                                </Text>
+                                </span>
                                 <Button
                                   size="small"
                                   onClick={() =>
@@ -1951,7 +2146,10 @@ const Index = () => {
         primaryAction={{
           content: t("v4.autoSettings.save"),
           loading: autoSettingsSaving,
-          disabled: draftAutoModules.length === 0 || autoSettingsSaving,
+          disabled:
+            (draftBulkEnableLocales.length > 0 &&
+              draftAutoModules.length === 0) ||
+            autoSettingsSaving,
           onAction: () => {
             void handleSaveAutoSettings();
           },
@@ -1965,84 +2163,262 @@ const Index = () => {
         ]}
       >
         <div className={styles.autoSettingsModalBody}>
-          <p className={styles.autoSettingsModalHint}>
-            {t("v4.autoSettings.help")}
-          </p>
-
-          <div className={styles.autoSettingsModalRow}>
-            <div className={styles.autoSettingsModalRowLabel}>
-              <div className={styles.autoSettingsModalLabel}>
-                {t("v4.autoSettings.localeToggle")}
-              </div>
-              <div className={styles.autoSettingsModalMeta}>
-                {editAutoLocaleLabel}
+          <div className={styles.autoSettingsHero}>
+            <div className={styles.autoSettingsHeroHeader}>
+              <div className={styles.autoSettingsHeroText}>
+                <div className={styles.autoSettingsEyebrow}>
+                  {t("v4.autoSettings.localeSectionEyebrow")}
+                </div>
+                <div className={styles.autoSettingsHeroTitle}>
+                  {t("v4.autoSettings.localeToggle")}
+                </div>
+                <p className={styles.autoSettingsSectionDescription}>
+                  {autoSettingsSummary}
+                </p>
               </div>
             </div>
-            <Switch
-              checked={draftLocaleAuto}
-              onChange={setDraftLocaleAuto}
-            />
           </div>
 
-          <div className={styles.autoSettingsModalSchedule}>
-            <div className={styles.autoSettingsModalField}>
-              <InFlowSelect
-                label={t("v4.autoSettings.interval")}
-                options={autoIntervalOptions}
-                value={String(draftAutoIntervalHours)}
-                onChange={(value) => setDraftAutoIntervalHours(Number(value))}
-                active={autoSettingsModalOpen}
-              />
-            </div>
-            <div className={styles.autoSettingsModalField}>
-              <InFlowSelect
-                label={`${t("v4.autoSettings.hour")} · ${t("v4.autoSettings.timezone")}`}
-                options={autoHourOptions}
-                value={String(draftAutoHour)}
-                onChange={(value) => setDraftAutoHour(Number(value))}
-                active={autoSettingsModalOpen}
-              />
-            </div>
-          </div>
-          <p className={styles.autoSettingsModalHint}>
-            {t("v4.autoSettings.hourHelp", {
-              timezone: t("v4.autoSettings.timezone"),
-            })}
-          </p>
-
-          <div className={styles.autoSettingsModalModules}>
-            <div className={styles.autoSettingsModalModulesHead}>
-              <span className={styles.autoSettingsModalLabel}>
-                {t("v4.autoSettings.modules")}
-              </span>
-              <Checkbox
-                checked={allDraftModulesSelected}
-                indeterminate={someDraftModulesSelected}
-                onChange={() => toggleAllDraftAutoModules()}
-              >
-                {t("Check all")}
-              </Checkbox>
-            </div>
-            <div className={styles.autoModuleGrid}>
-              {autoModuleChips.map((mod) => {
-                const selected = draftAutoModules.includes(mod.value);
-                return (
-                  <button
-                    key={mod.value}
-                    type="button"
-                    className={
-                      selected
-                        ? styles.autoModuleChipSelected
-                        : styles.autoModuleChip
-                    }
-                    onClick={() => toggleDraftAutoModule(mod.value)}
+          <>
+            {bulkEnableCandidates.length > 0 ? (
+              <section className={styles.autoSettingsSection}>
+                <div className={styles.autoSettingsSectionHeader}>
+                  <div className={styles.autoSettingsSectionText}>
+                    <div className={styles.autoSettingsSectionTitle}>
+                      {t("v4.autoSettings.bulkEnableTitle")}
+                    </div>
+                  </div>
+                  <Checkbox
+                    checked={allDraftBulkLocalesSelected}
+                    indeterminate={someDraftBulkLocalesSelected}
+                    disabled={autoSettingsSaving}
+                    onChange={() => toggleAllDraftBulkEnableLocales()}
                   >
-                    {mod.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                    {bulkEnableSelectedCount > 0
+                      ? t("v4.autoSettings.bulkEnableSelectedCount", {
+                          count: bulkEnableSelectedCount,
+                        })
+                      : t("Check all")}
+                  </Checkbox>
+                </div>
+
+                <div className={styles.autoSettingsSelectField}>
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    disabled={autoSettingsSaving}
+                    getPopupContainer={(trigger) =>
+                      trigger.parentElement ?? document.body
+                    }
+                    className={styles.autoSettingsMultiSelect}
+                    placeholder={t("v4.autoSettings.bulkEnableSearch")}
+                    value={draftBulkEnableLocales}
+                    options={bulkEnableCandidates}
+                    onChange={(value) =>
+                      setDraftBulkEnableLocales(value as string[])
+                    }
+                    filterOption={(input, option) =>
+                      String(option?.label ?? "")
+                        .toLowerCase()
+                        .includes(input.toLowerCase()) ||
+                      String(option?.value ?? "")
+                        .toLowerCase()
+                        .includes(input.toLowerCase())
+                    }
+                    notFoundContent={t("v4.autoSettings.bulkEnableEmpty")}
+                  />
+                </div>
+              </section>
+            ) : null}
+
+            <section className={styles.autoSettingsSection}>
+              <div className={styles.autoSettingsSectionHeader}>
+                <div className={styles.autoSettingsSectionTitle}>
+                  {t("v4.autoSettings.scheduleTitle")}
+                </div>
+                <span className={styles.autoSettingsPlanBadge}>
+                  {t("v4.autoSettings.currentPlan", {
+                    plan: currentAutoSettingsPlanLabel,
+                  })}
+                </span>
+              </div>
+
+              <div className={styles.autoSettingsFieldsGrid}>
+                <div className={styles.autoSettingsModalField}>
+                  <InFlowSelect
+                    label={t("v4.autoSettings.interval")}
+                    options={autoIntervalOptions.map((option) => ({
+                      label: option.label,
+                      value: String(option.value),
+                    }))}
+                    value={String(draftAutoIntervalHours)}
+                    onChange={(value) => {
+                      const nextOption = autoIntervalOptions.find(
+                        (option) => String(option.value) === value,
+                      );
+                      if (!nextOption) return;
+                      handleDraftAutoIntervalChange(
+                        nextOption.value,
+                        nextOption.allowed,
+                        nextOption.requiredTier,
+                      );
+                    }}
+                    active={autoSettingsModalOpen}
+                  />
+                </div>
+                <div className={styles.autoSettingsModalField}>
+                  <InFlowSelect
+                    label={t("v4.autoSettings.hour")}
+                    options={autoHourOptions}
+                    value={String(draftAutoHour)}
+                    onChange={(value) => setDraftAutoHour(Number(value))}
+                    active={autoSettingsModalOpen}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className={styles.autoSettingsSection}>
+              <div className={styles.autoSettingsSectionHeader}>
+                <div className={styles.autoSettingsSectionText}>
+                  <div className={styles.autoSettingsSectionTitle}>
+                    {t("v4.autoSettings.modules")}
+                  </div>
+                  <p className={styles.autoSettingsSectionDescription}>
+                    {t("v4.autoSettings.modulesHelp")}
+                  </p>
+                </div>
+                <Checkbox
+                  checked={allDraftModulesSelected}
+                  indeterminate={someDraftModulesSelected}
+                  onChange={() => toggleAllDraftAutoModules()}
+                >
+                  {t("Check all")}
+                </Checkbox>
+              </div>
+
+              {allowedAutoModuleChips.length > 0 ? (
+                <div className={styles.autoModuleGroup}>
+                  <div className={styles.autoModuleGroupTitle}>
+                    {t("v4.autoSettings.modulesAvailable")}
+                  </div>
+                  <div className={styles.autoModuleGrid}>
+                    {allowedAutoModuleChips.map((mod) => {
+                      const selected = draftAutoModules.includes(mod.value);
+                      const className = [
+                        styles.autoModuleChip,
+                        selected ? styles.autoModuleChipSelected : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <button
+                          key={mod.value}
+                          type="button"
+                          className={className}
+                          onClick={() => toggleDraftAutoModule(mod.value)}
+                        >
+                          <span className={styles.autoModuleTopRow}>
+                            <span className={styles.autoModuleName}>
+                              {mod.label}
+                            </span>
+                            <span
+                              className={[
+                                styles.autoModuleCheckbox,
+                                selected
+                                  ? styles.autoModuleCheckboxChecked
+                                  : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              aria-hidden="true"
+                            />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {lockedAutoModuleChips.length > 0 ? (
+                <div className={styles.autoModuleGroup}>
+                  <div className={styles.autoModuleGroupTitle}>
+                    {t("v4.autoSettings.modulesUpgrade")}
+                  </div>
+                  <div className={styles.autoModuleGrid}>
+                    {lockedAutoModuleChips.map((mod) => {
+                      const className = [
+                        styles.autoModuleChip,
+                        styles.autoModuleChipLocked,
+                      ]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <button
+                          key={mod.value}
+                          type="button"
+                          className={className}
+                          onClick={() => toggleDraftAutoModule(mod.value)}
+                        >
+                          <span className={styles.autoModuleTopRow}>
+                            <span className={styles.autoModuleName}>
+                              {mod.label}
+                            </span>
+                            <span
+                              className={[
+                                styles.autoModuleCheckbox,
+                                styles.autoModuleCheckboxDisabled,
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              aria-hidden="true"
+                            />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          </>
+        </div>
+      </AppSModal>
+      <AppSModal
+        open={autoSettingsUpgradeTarget != null}
+        heading={t("v4.autoSettings.upgradeTitle", {
+          plan: autoSettingsUpgradeTarget
+            ? autoSettingsPlanLabel(autoSettingsUpgradeTarget)
+            : "",
+        })}
+        onClose={() => setAutoSettingsUpgradeTarget(null)}
+        size="small"
+        primaryAction={{
+          content: t("Upgrade"),
+          onAction: () => {
+            setAutoSettingsUpgradeTarget(null);
+            navigate(
+              `/app/pricing?returnPath=${encodeURIComponent(
+                `${location.pathname}${location.search}`,
+              )}`,
+            );
+          },
+        }}
+        secondaryActions={[
+          {
+            content: t("Cancel"),
+            onAction: () => setAutoSettingsUpgradeTarget(null),
+          },
+        ]}
+      >
+        <div className={styles.autoSettingsUpgradeBody}>
+          {t("v4.autoSettings.upgradeBody", {
+            plan: autoSettingsUpgradeTarget
+              ? autoSettingsPlanLabel(autoSettingsUpgradeTarget)
+              : "",
+          })}
         </div>
       </AppSModal>
       <AppSModal
