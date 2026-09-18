@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   InputNumber,
   Skeleton,
@@ -139,6 +139,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   const [usageItems, setUsageItems] = useState<CreditUsageRow[]>([]);
   const [usageNextCursor, setUsageNextCursor] = useState<string | null>(null);
   const [usageHasMore, setUsageHasMore] = useState(false);
+  const usageHistoryRef = useRef<HTMLDivElement | null>(null);
 
   const purchased = Math.max(0, Math.floor(purchasedCredits));
   const migratable = Math.max(0, Math.floor(migratablePurchasedCredits));
@@ -280,9 +281,41 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
     setUsageOpen(false);
   };
 
-  const loadMoreUsage = () => {
-    void loadUsage("append");
-  };
+  useEffect(() => {
+    if (!usageOpen || usageLoading || usageError) return;
+    const tableBody = usageHistoryRef.current?.querySelector(".ant-table-body");
+    if (!(tableBody instanceof HTMLElement)) return;
+
+    const maybeLoadMore = () => {
+      if (!usageHasMore || usageLoadingMore) return;
+      const remaining = tableBody.scrollHeight - tableBody.scrollTop - tableBody.clientHeight;
+      if (remaining <= 48) {
+        void loadUsage("append");
+      }
+    };
+
+    const ensureScrollable = () => {
+      if (!usageHasMore || usageLoadingMore) return;
+      if (tableBody.scrollHeight <= tableBody.clientHeight + 24) {
+        void loadUsage("append");
+      }
+    };
+
+    tableBody.addEventListener("scroll", maybeLoadMore);
+    const frameId = window.requestAnimationFrame(ensureScrollable);
+    return () => {
+      tableBody.removeEventListener("scroll", maybeLoadMore);
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [
+    loadUsage,
+    usageError,
+    usageHasMore,
+    usageItems.length,
+    usageLoading,
+    usageLoadingMore,
+    usageOpen,
+  ]);
 
   const usageColumns: ColumnsType<CreditUsageRow> = [
     {
@@ -458,7 +491,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
         {usageError ? (
           <Text type="secondary">{t("pricing.usage.error")}</Text>
         ) : (
-          <div className="pricing-usage-history">
+          <div className="pricing-usage-history" ref={usageHistoryRef}>
             <Table<CreditUsageRow>
               size="small"
               rowKey="id"
@@ -477,14 +510,8 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
                     max: USAGE_HISTORY_MAX_ITEMS,
                   })}
                 </Text>
-                {usageHasMore ? (
-                  <Button
-                    onClick={loadMoreUsage}
-                    loading={usageLoadingMore}
-                    disabled={usageLoadingMore}
-                  >
-                    {t("pricing.usage.loadMore")}
-                  </Button>
+                {usageLoadingMore ? (
+                  <Text type="secondary">{t("pricing.usage.loadingMore")}</Text>
                 ) : null}
               </div>
             ) : null}

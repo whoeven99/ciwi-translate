@@ -1545,6 +1545,7 @@
   "pricing.usage.title": "使用记录",
   "pricing.usage.close": "关闭",
   "pricing.usage.loadMore": "加载更多",
+  "pricing.usage.loadingMore": "正在加载更多...",
   "pricing.usage.count": "当前显示 {{count}} / {{max}} 条",
   "pricing.usage.empty": "暂无使用记录",
   "pricing.usage.error": "无法加载使用记录，请稍后再试。",

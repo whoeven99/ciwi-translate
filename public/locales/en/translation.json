@@ -1545,6 +1545,7 @@
   "pricing.usage.title": "Usage history",
   "pricing.usage.close": "Close",
   "pricing.usage.loadMore": "Load more",
+  "pricing.usage.loadingMore": "Loading more...",
   "pricing.usage.count": "Showing {{count}} / {{max}} records",
   "pricing.usage.empty": "No usage records yet.",
   "pricing.usage.error": "Could not load usage history. Try again later.",
