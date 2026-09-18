@@ -250,12 +250,12 @@
   color: #0f8a5f;
 }
 
-.pricing-usage-credits--in {
-  color: var(--app-color-text-success);
-}
-
-.pricing-usage-credits--out {
-  color: var(--app-color-text-critical);
+.pricing-usage-history__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
 }
 
 .pricing-migrate-breakdown {
