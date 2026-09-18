@@ -22,28 +22,38 @@ export type GlossaryTerm = {
   note?: string;
 };
 
+/** A prompt line plus the source term it constrains, so callers can filter by relevance. */
+export type GlossaryEntry = {
+  term: string;
+  line: string;
+};
+
 type CacheEntry = {
-  lines: string[];
+  entries: GlossaryEntry[];
   expiresAt: number;
 };
 const cache = new Map<string, CacheEntry>();
 const TTL_MS = 5 * 60_000;
 
 /**
- * 返回某店 + target 语言的术语表指令行（从 TSF Turso 读）。
+ * 返回某店 + target 语言的术语表条目（从 TSF Turso 读）。
  * 无术语表或 TSF 未配置时返回空数组。进程内缓存 5 分钟。永不抛错。
  */
-export async function loadGlossaryLines(shopName: string, target: string): Promise<string[]> {
+export async function loadGlossaryEntries(
+  shopName: string,
+  target: string,
+): Promise<GlossaryEntry[]> {
   const cacheKey = `${shopName}::${target}`;
   const now = Date.now();
   const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.lines;
+  if (cached && cached.expiresAt > now) return cached.entries;
 
-  let lines: string[] = [];
+  let entries: GlossaryEntry[] = [];
   try {
     if (hasTranslationCoreGlossaryLoader()) {
       const rows = await loadTranslationCoreGlossaryRows(shopName, target);
-      lines = rows
+      const seen = new Set<string>();
+      entries = rows
         .filter((r) => r.sourceText && r.targetText)
         .filter((r) =>
           glossaryTargetMatchesLocale(
@@ -53,18 +63,54 @@ export async function loadGlossaryLines(shopName: string, target: string): Promi
             r.rangeCode,
           ),
         )
-        .map((r) => `- Translate "${r.sourceText}" as "${r.targetText}".`)
-        // 去重 + 确定性排序，保持系统提示词前缀字节稳定（利于 prompt 缓存）。
-        .filter((line, i, arr) => arr.indexOf(line) === i)
-        .sort();
+        .map((r) => ({
+          term: r.sourceText!,
+          line: `- Translate "${r.sourceText}" as "${r.targetText}".`,
+        }))
+        .filter((entry) => {
+          if (seen.has(entry.line)) return false;
+          seen.add(entry.line);
+          return true;
+        })
+        // 确定性排序，保持系统提示词字节稳定（利于 prompt 缓存）。
+        .sort((a, b) => (a.line < b.line ? -1 : a.line > b.line ? 1 : 0));
     }
   } catch (err) {
     console.error(`[glossary] 读取 TSF 术语表失败 shop=${shopName}:`, err);
-    lines = [];
+    entries = [];
   }
 
-  cache.set(cacheKey, { lines, expiresAt: now + TTL_MS });
-  return lines;
+  cache.set(cacheKey, { entries, expiresAt: now + TTL_MS });
+  return entries;
+}
+
+/** 整表指令行。预估等「不看具体文本」的场景用。 */
+export async function loadGlossaryLines(shopName: string, target: string): Promise<string[]> {
+  return (await loadGlossaryEntries(shopName, target)).map((e) => e.line);
+}
+
+/**
+ * 只保留这批文本里真的出现过的术语。
+ *
+ * 术语表是整表塞进**每一个**批次的 system prompt 的，而一批通常只有一两千字符
+ * 正文——术语一多，商户就在为一堆跟本批毫不相干的指令付 token。源文本里不含该
+ * 术语时，这行指令不可能影响输出，删掉是语义无损的。
+ *
+ * 匹配用大小写不敏感的子串（宁可多留不可漏留），所以 "shoe" 仍能覆盖 "Shoes"。
+ */
+export function selectGlossaryLinesForTexts(
+  entries: GlossaryEntry[],
+  texts: string[],
+): string[] {
+  if (entries.length === 0) return [];
+  const haystack = texts.join("\n").toLowerCase();
+  if (!haystack) return [];
+  return entries
+    .filter((entry) => {
+      const term = entry.term.trim().toLowerCase();
+      return term.length > 0 && haystack.includes(term);
+    })
+    .map((entry) => entry.line);
 }
 
 /** @internal test helper to reset the in-memory cache. */

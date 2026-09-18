@@ -1565,6 +1565,7 @@
   "pricing.usage.event.SUBSCRIPTION_RENEWED": "订阅续费发放",
   "pricing.usage.event.SUBSCRIPTION_CANCELLED": "订阅积分调整",
   "pricing.usage.event.TOKEN_PACK_PURCHASED": "购买积分入账",
+  "pricing.usage.event.ADMIN_PURCHASED_CREDITS_ADJUSTED": "积分调整",
   "pricing.usage.event.CREDITS_MIGRATED_OUT": "积分迁出",
   "pricing.usage.event.CREDITS_MIGRATION_FAILED": "迁移失败",
   "pricing.migrate.button": "迁移积分到 Spark",

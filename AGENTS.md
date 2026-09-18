@@ -434,8 +434,37 @@ then `api.translate-v4.tasks.ts`. Remaining ≤ 0：客户端 `notifyIfCreateTas
  `MigratingRedis` / pipeline / multi 代理里实现**（单一来源
  `packages/translation-core/src/redisDualClient.ts`，App/Worker 经
  `@ciwi/translation-core/redis-dual-client` 引用，不再有两份副本）：正常路径只连
- `RENDER_KV`（原生 ioredis）。若仍走历史双写代理 `MigratingRedis`，缺方法会让
- TM 静默整批 miss（只烧钱不报错）。
+`RENDER_KV`（原生 ioredis）。若仍走历史双写代理 `MigratingRedis`，缺方法会让
+TM 静默整批 miss（只烧钱不报错）。
+- TM 命中率埋点：`tmStats.ts`（纯计数，无 IO）由 `translateResources` 在三处读点
+ `noteTmLookup`、miss 文本进引擎前 `noteTmEngineChars` / `noteTmEngineRequests`，
+ 收尾打一行 `[tm] {json}`。**看两个数**：`charHitRate`（缓存字符 ÷ 总字符，成本
+ 口径；`hitRate` 只是按次数对照）与 `charsPerRequest`（每次 LLM 请求携带的正文
+ 字符）。聚合见 `scripts/tm-hit-rate.mjs`。改 TM key 规则或批次上限前先取基线。
+- **批次上限直接决定 prompt 重发开销**：system prompt 实测约 2.0k chars（裸）/
+ 2.6k chars（20 术语 + 店铺画像），**每个批次都要重发一遍**，而同一波批次是
+ `Promise.all` 并行发的、互相蹭不到 provider prompt cache。所以真正的成本杠杆是
+ 「每次请求携带多少正文」。rich 池的**条数**上限（`RICH_MAX_ITEMS_PER_BATCH`，
+ 默认 25）比字符上限（`RICH_MAX_CHARS_PER_BATCH`，默认 1500）宽得多是**有意的**：
+ HTML 会拆成大量短叶子，条数卡太死会让一批只装几百字正文却背 2.6k 的 prompt。
+ 条数放宽不会让请求超过字符上限，**不要为了「稳」把它调回个位数**——实测短叶子
+ 场景下 8 条/批时 prompt 占计费 token 的 67–85%。
+- **prompt cache 预热**：一波批次里先串行跑第一个，其余再并行
+ （`TRANSLATE_PROMPT_CACHE_WARMUP=false` 可关）。provider 的 prompt cache 要等
+ 某个请求先把前缀写进去才有命中，整波并行发等于谁都没热到、人人付全价；命中的
+ token 不计入 `billableLlmTokens`。代价是每个池多一次串行往返。
+- **术语表按批过滤**：`selectGlossaryLinesForTexts`（`glossary.ts`）只注入本批
+ 文本命中的术语。术语表原本整表进**每个**批次且无上限——500 条术语约 1 万字符，
+ 会把一个千字批次的成本翻好几倍。源文本不含该术语时这行指令不可能影响输出，
+ 删掉语义无损。`loadGlossaryEntries` 返回 `{term, line}`，`loadGlossaryLines`
+ 仍返回整表（预估等不看具体文本的场景）。单字段预估也走同一过滤，避免虚高。
+- **system prompt 分块顺序 = provider prompt cache 的命中前提**：
+ `buildSystemPrompt` / `buildHandleSystemPrompt` 先输出只依赖 `target` 的规则
+ （开场白 + Rules + `targetLangBlock`），再输出按店变化的
+ `shopContextBlock`（店铺画像）/ `glossaryBlock` / `userInstructionBlock`。
+ 前半段在所有翻同一目标语的店之间逐字节相同，能被 DeepSeek
+ `prompt_cache_hit_tokens` 复用；**不要把画像或术语表挪回最前面**，那会让每家店
+ 都击穿整段 Rules 的缓存。
 - **新增 core 子路径导出要改四处**，漏一处就会掉到 `.d.ts` 上（esbuild 剥掉类型 →
  运行时空模块 → rollup 报 `"x" is not exported by ...d.ts`）：
  `packages/translation-core/package.json` 的 `exports`、根 `tsconfig.json` paths、
@@ -1536,7 +1565,11 @@ recent 72-hour window.
 - `scripts/lcp-trend.mjs`: 首屏 LCP 归因趋势（只读）。从 Render 运行日志抓
  `[perf][lcp]` 单行，聚合 LCP / FCP / TTFB 的 p50/p75/p90，并按冷热缓存、LCP 元素、
  路由、网络档位分组。`--hours=` / `--route=/app` / `--service=srv-xxx` /
- `--env=.env.prod` / `--json`；需要 `RENDER_API_KEY`。
+  `--env=.env.prod` / `--json`；需要 `RENDER_API_KEY`。
+- `scripts/tm-hit-rate.mjs`: 翻译记忆命中率趋势（只读）。从 Render **Worker**
+  日志抓 `[tm]` 单行，汇总字符命中率（成本口径）/ 次数命中率 / 三层分层命中，
+  并按目标语言、店铺、AI 模型分组。`--hours=` / `--shop=` / `--target=` /
+  `--service=srv-xxx` / `--env=.env.prod` / `--json`；需要 `RENDER_API_KEY`。
 - `scripts/backfill-locale-coverage-from-redis.mjs`: Redis `items_count` →
   Turso `ShopTargetLocale.coverage*`（默认 dry-run；`--write` 写线上；
   支持 `--shop=` / `--only-missing`；MOVED 重连重试；Redis 源用 `RENDER_KV`）。
@@ -1949,6 +1982,7 @@ const { logs } = await res.json();
 | App 500 / worker crash               | Render deploy logs → check for missing env vars                |
 | Auto-translate not running           | `probe-hint-queues.mjs` auto queues + `auto_scan:last_at`      |
 | 首屏 LCP 慢                          | `scripts/lcp-trend.mjs` → `[perf][lcp]` 归因（见上一节）        |
+| 翻译太烧钱 / TM 命中率               | `scripts/tm-hit-rate.mjs` → 先看 `charsPerRequest`（prompt 重发开销）再看 `charHitRate`；批次上限在 `llmTranslate.ts` `resolveBatchLimits` |
 
 
 

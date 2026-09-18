@@ -1565,6 +1565,7 @@
   "pricing.usage.event.SUBSCRIPTION_RENEWED": "Subscription renewal",
   "pricing.usage.event.SUBSCRIPTION_CANCELLED": "Subscription adjustment",
   "pricing.usage.event.TOKEN_PACK_PURCHASED": "Purchased credits",
+  "pricing.usage.event.ADMIN_PURCHASED_CREDITS_ADJUSTED": "Credits adjustment",
   "pricing.usage.event.CREDITS_MIGRATED_OUT": "Credits migrated out",
   "pricing.usage.event.CREDITS_MIGRATION_FAILED": "Migration failed",
   "pricing.migrate.button": "Migrate credits to Spark",

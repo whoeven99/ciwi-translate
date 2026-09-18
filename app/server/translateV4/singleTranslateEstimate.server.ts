@@ -5,7 +5,8 @@
 import "./translationCoreRuntime.server";
 import {
   estimateSingleTranslateLlmTokens,
-  loadGlossaryLines,
+  loadGlossaryEntries,
+  selectGlossaryLinesForTexts,
 } from "@ciwi/translation-core";
 import { loadShopProfilePromptBlock } from "./shopProfileContext.server";
 import { llmTokensToQuotaCredits } from "./quotaMultiplier.server";
@@ -40,10 +41,12 @@ export async function estimateSingleTranslateCredits(args: {
     };
   }
 
-  const [profileBlock, glossaryLines] = await Promise.all([
+  const [profileBlock, glossaryEntries] = await Promise.all([
     loadShopProfilePromptBlock(args.shop),
-    loadGlossaryLines(args.shop, target),
+    loadGlossaryEntries(args.shop, target),
   ]);
+  // 与线上一致：只有文本命中的术语才进 prompt，否则预估会虚高。
+  const glossaryLines = selectGlossaryLinesForTexts(glossaryEntries, [sourceText]);
 
   const tokenEst = estimateSingleTranslateLlmTokens({
     sourceText,

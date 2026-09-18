@@ -1,5 +1,12 @@
 import { tmMGet, tmMGetByValue, tmSet, tmSetByValue } from "./translationMemory.js";
-import { loadGlossaryLines } from "./glossary.js";
+import {
+  createTmChunkStats,
+  formatTmStatsLine,
+  noteTmEngineChars,
+  noteTmEngineRequests,
+  noteTmLookup,
+} from "./tmStats.js";
+import { loadGlossaryEntries, selectGlossaryLinesForTexts } from "./glossary.js";
 import {
   applyJsonSlotTranslations,
   extractJsonTextSlots,
@@ -787,15 +794,33 @@ const MAX_ITEMS_PER_BATCH = Math.max(
   1,
   Number(process.env.TRANSLATE_MAX_ITEMS_PER_BATCH) || 25,
 );
-/** Rich (HTML/JSON/LLM-first) pools use smaller batches — fewer keys per request, less idle-timeout tail. */
+/**
+ * Rich (HTML/JSON/LLM-first) pools keep a small char budget so one request never
+ * grows into an idle-timeout tail.
+ *
+ * The item cap is deliberately much looser than the char cap. HTML fields split
+ * into many short leaves (headings, list items, table cells), so a tight item cap
+ * ends up shipping a few hundred chars of content under a ~2.6k-char system
+ * prompt — the merchant then pays far more for the prompt than for their own
+ * text. Raising the item cap cannot make a request bigger than the char cap
+ * already allows; it only stops tiny leaves from each dragging a full prompt.
+ */
 const RICH_MAX_CHARS_PER_BATCH = Math.max(
   500,
   Number(process.env.TRANSLATE_RICH_MAX_CHARS_PER_BATCH) || 1_500,
 );
 const RICH_MAX_ITEMS_PER_BATCH = Math.max(
   1,
-  Number(process.env.TRANSLATE_RICH_MAX_ITEMS_PER_BATCH) || 8,
+  Number(process.env.TRANSLATE_RICH_MAX_ITEMS_PER_BATCH) || 25,
 );
+
+/**
+ * Run the first batch of a wave alone so its system prompt lands in the
+ * provider's prompt cache before the rest fan out. Costs one serialized
+ * round-trip per pool; set `false` to trade the savings back for that latency.
+ */
+const PROMPT_CACHE_WARMUP =
+  (process.env.TRANSLATE_PROMPT_CACHE_WARMUP ?? "").toLowerCase() !== "false";
 /** Short plain JSON-pack pools: more items per request (many tiny titles/labels). */
 const SHORT_JSON_MAX_CHARS_PER_BATCH = Math.max(
   500,
@@ -1114,7 +1139,11 @@ async function translateItemsRouted(
       if (!useGpt && !useDeepSeek) continue;
       llmAttempted = true;
       if (systemPrompt === null) {
-        const glossary = await loadGlossaryLines(shopName, target);
+        // 只注入本批文本命中的术语；整表注入会让小批次为无关指令付钱。
+        const glossary = selectGlossaryLinesForTexts(
+          await loadGlossaryEntries(shopName, target),
+          masked.map((i) => i.value),
+        );
         systemPrompt =
           promptKind === "handle"
             ? buildHandleSystemPrompt(target, glossary, profileBlock, customPrompt)
@@ -1477,10 +1506,15 @@ function sanitizeJsonSlotTranslation(original: string, translated: string): stri
 }
 
 /**
- * Build the static system prompt. Everything here is stable for a given
- * (source, target, glossary) → it forms a byte-identical prefix across batches
- * so OpenAI automatic prompt caching applies. The variable payload goes in the
- * user message instead.
+ * Build the static system prompt. The variable payload goes in the user message
+ * instead, so this text is byte-identical across batches and provider prompt
+ * caching applies.
+ *
+ * Block order matters: the rules only depend on `target`, so they are emitted
+ * first and stay identical across every shop translating into that language —
+ * that shared prefix is what the provider can cache. Per-shop blocks (profile,
+ * glossary, custom instruction) come after, where they only invalidate the
+ * cached suffix rather than the whole prompt.
  */
 function buildSystemPrompt(
   target: string,
@@ -1496,7 +1530,7 @@ function buildSystemPrompt(
     ? `\nAdditional user instructions for this translation (apply to tone, style, and word choice; they MUST NOT override any of the output-format, JSON structure, sentinel, or placeholder rules above):\n${userInstruction.trim()}\n`
     : "";
   const targetLangBlock = buildTargetLanguageBlock(target);
-  return `You are a professional e-commerce translator.${shopContextBlock}
+  return `You are a professional e-commerce translator.
 Detect the input language automatically and translate the content into "${target}".
 Rules:
 - Be accurate and natural for e-commerce
@@ -1513,7 +1547,7 @@ ${buildScriptConstraintLine(target)}
 - If a field key is "title", translatedValue MUST be at most 255 characters; shorten naturally while preserving the core meaning
 - You MUST return an entry for every key in the input
 ${targetLangBlock}
-${glossaryBlock}${userInstructionBlock}
+${shopContextBlock}${glossaryBlock}${userInstructionBlock}
 The user message is a JSON array of {"key","value"} objects to translate.
 Return ONLY a JSON object {"translations":[{"key":"<key>","translatedValue":"<text>"}]}, no markdown.`;
 }
@@ -1533,7 +1567,7 @@ function buildHandleSystemPrompt(
     ? `\nAdditional user instructions for this translation (apply to tone, style, and word choice; they MUST NOT override any of the output-format, JSON structure, sentinel, or placeholder rules above):\n${userInstruction.trim()}\n`
     : "";
   const targetLangBlock = buildTargetLanguageBlock(target);
-  return `You are a professional e-commerce translator.${shopContextBlock}
+  return `You are a professional e-commerce translator.
 Detect the input language automatically and translate product URL handle/slug text into "${target}".
 Rules:
 - Be accurate and natural for e-commerce URL slugs
@@ -1546,7 +1580,7 @@ Rules:
 - Do NOT add or remove leading or trailing whitespace
 - You MUST return an entry for every key in the input
 ${targetLangBlock}
-${glossaryBlock}${userInstructionBlock}
+${shopContextBlock}${glossaryBlock}${userInstructionBlock}
 The user message is a JSON array of {"key","value"} objects to translate (hyphens may appear as spaces).
 Return ONLY a JSON object {"translations":[{"key":"<key>","translatedValue":"<text>"}]}, no markdown.`;
 }
@@ -2584,6 +2618,9 @@ export async function translateResources(
   // Units resolved without hitting an engine (cache hits) — credited immediately.
   let cacheUnits = 0;
 
+  // TM hit accounting for this chunk; emitted as one `[tm]` line before returning.
+  const tmStats = createTmChunkStats();
+
   // Opt-in: skip fields that contain none of the source-language script.
   const skipNonSourceScript = /^(1|true|yes)$/i.test(
     process.env.TRANSLATE_SKIP_NON_SOURCE_SCRIPT ?? "",
@@ -2702,6 +2739,9 @@ export async function translateResources(
       continue;
     }
     const cached = cacheHits[wi];
+    if (!skipCacheRead && klass === "plain" && f.digest) {
+      noteTmLookup(tmStats, "fieldDigest", cached !== null, f.value.length);
+    }
     if (cached !== null) {
       logSingleTranslatePath(logSingleTranslate, "cache", {
         kind: "field_digest",
@@ -2724,6 +2764,7 @@ export async function translateResources(
     // Plain secondary: value TM (Shopify digest if present, else CRC-32).
     if (!skipCacheRead && klass === "plain") {
       const cachedByValue = valueCacheHits[wi] ?? null;
+      noteTmLookup(tmStats, "fieldValue", cachedByValue !== null, f.value.length);
       if (cachedByValue !== null) {
         logSingleTranslatePath(logSingleTranslate, "cache", {
           kind: "field_value",
@@ -3016,6 +3057,7 @@ export async function translateResources(
       let leafCacheUnits = 0;
       for (let i = 0; i < allTexts.length; i++) {
         const hit = leafHits[i];
+        noteTmLookup(tmStats, "leafValue", hit != null, allTexts[i]?.length ?? 0);
         if (hit === null) continue;
         const text = allTexts[i]!;
         logSingleTranslatePath(logSingleTranslate, "cache", {
@@ -3044,6 +3086,10 @@ export async function translateResources(
 
     // Cache misses only: deduped unique texts → size-capped JSON packs.
     const texts = allTexts.filter((t) => !tmap.has(t));
+    noteTmEngineChars(
+      tmStats,
+      texts.reduce((n, t) => n + t.length, 0),
+    );
     if (texts.length === 0) {
       translated.set(sig, tmap);
       continue;
@@ -3052,8 +3098,8 @@ export async function translateResources(
     const items: TranslateItem[] = texts.map((t, i) => ({ key: String(i), value: t, digest: "" }));
     const { maxChars, maxItems } = resolveBatchLimits(order, { isShort });
     const batches = batchByChars(items, maxChars, maxItems);
-    // Wait for the whole batch wave (incl. in-flight LLM) before moving on.
-    await Promise.all(batches.map(async (batch) => {
+    noteTmEngineRequests(tmStats, batches.length);
+    const runBatch = async (batch: TranslateItem[]): Promise<void> => {
       if (await abortRequested()) return;
       const routed = await translateItemsRouted(
         batch,
@@ -3090,7 +3136,20 @@ export async function translateResources(
       if (onProgress) await onProgress(batchUnits, routed.llmTokens, routed.googleCredits);
       const lookup: LookupFn = (poolSig, text) => translated.get(poolSig)?.get(text);
       await finishReadyResources(lookup);
-    }));
+    };
+
+    // Every batch re-sends the same system prompt, and providers only serve a
+    // prompt-cache hit once some earlier request has written that prefix. Firing
+    // the whole wave at once means nobody warms it and everybody pays full price,
+    // so run one batch alone first and let the rest ride its cached prefix
+    // (cache-hit tokens are excluded from what the merchant is charged).
+    if (PROMPT_CACHE_WARMUP && batches.length > 1) {
+      await runBatch(batches[0]);
+      await Promise.all(batches.slice(1).map(runBatch));
+    } else {
+      // Wait for the whole batch wave (incl. in-flight LLM) before moving on.
+      await Promise.all(batches.map(runBatch));
+    }
     translated.set(sig, tmap);
   }
 
@@ -3143,6 +3202,16 @@ export async function translateResources(
       ),
     };
   });
+
+  const tmLine = formatTmStatsLine(tmStats, {
+    shopName,
+    source,
+    target,
+    aiModel,
+    cacheDisabled: skipCacheRead,
+  });
+  if (tmLine) console.log(tmLine);
+
   return { resources: out, usage, quotaStopped: quotaStopped || undefined };
 }
 
