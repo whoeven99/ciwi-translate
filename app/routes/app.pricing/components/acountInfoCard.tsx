@@ -1,9 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   InputNumber,
   Skeleton,
   Space,
-  Statistic,
   Table,
   Typography,
   message,
@@ -16,9 +15,12 @@ import {
   formatLocaleRoute,
   localeRegionCode,
 } from "~/routes/app.translate-v4/localeDisplay";
+import { isAutoV4TaskSource } from "~/server/translateV4/types";
 import "../style.css";
 
 const { Title, Text } = Typography;
+const USAGE_HISTORY_PAGE_SIZE = 10;
+const USAGE_HISTORY_MAX_ITEMS = 100;
 
 type CreditUsageMetadata = {
   target?: unknown;
@@ -27,13 +29,16 @@ type CreditUsageMetadata = {
   targetCode?: unknown;
   fieldKey?: unknown;
   shopifyType?: unknown;
+  taskSource?: unknown;
 };
 
 type CreditUsageRow = {
   id: string;
-  direction?: "in" | "out";
+  kind: "usage" | "billing";
   source: string;
-  credits: number;
+  eventType?: string | null;
+  planKey?: string | null;
+  creditsDelta: number;
   createdAt: string;
   metadata?: CreditUsageMetadata | null;
 };
@@ -129,8 +134,12 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
 
   const [usageOpen, setUsageOpen] = useState(false);
   const [usageLoading, setUsageLoading] = useState(false);
+  const [usageLoadingMore, setUsageLoadingMore] = useState(false);
   const [usageError, setUsageError] = useState(false);
   const [usageItems, setUsageItems] = useState<CreditUsageRow[]>([]);
+  const [usageNextCursor, setUsageNextCursor] = useState<string | null>(null);
+  const [usageHasMore, setUsageHasMore] = useState(false);
+  const usageHistoryRef = useRef<HTMLDivElement | null>(null);
 
   const purchased = Math.max(0, Math.floor(purchasedCredits));
   const migratable = Math.max(0, Math.floor(migratablePurchasedCredits));
@@ -138,12 +147,35 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
   const canMigrate = migratable >= 1;
 
   const sourceLabel = useCallback(
-    (source: string, metadata?: CreditUsageRow["metadata"]) => {
-      const key = `pricing.usage.source.${source}`;
+    (row: CreditUsageRow) => {
+      if (row.kind === "billing") {
+        const key = `pricing.usage.event.${row.eventType}`;
+        const translated = row.eventType ? t(key) : key;
+        return translated === key ? row.eventType || row.source : translated;
+      }
+      const key = `pricing.usage.source.${row.source}`;
       const translated = t(key);
-      const base = translated === key ? source : translated;
-      const detail = formatUsageSourceDetail(source, metadata);
-      return detail ? `${base} · ${detail}` : base;
+      return translated === key ? row.source : translated;
+    },
+    [t],
+  );
+
+  const usageTypeLabel = useCallback(
+    (row: CreditUsageRow) => {
+      if (row.kind === "billing") {
+        const key = `pricing.usage.kind.${row.creditsDelta >= 0 ? "increase" : "decrease"}`;
+        const translated = t(key);
+        return translated === key ? null : translated;
+      }
+      // v4 批量任务严格按 Cosmos 任务文档里的 taskSource 判定；
+      // TsFrontend-Auto 为自动，其余（TsFrontend / 缺省旧任务）都归为手动。
+      if (
+        row.source === "v4_job" &&
+        isAutoV4TaskSource(asNonEmptyString(row.metadata?.taskSource))
+      ) {
+        return t("Auto translation");
+      }
+      return t("pricing.usage.type.manual");
     },
     [t],
   );
@@ -167,68 +199,174 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
     [i18n.language],
   );
 
-  const loadUsage = useCallback(async () => {
-    setUsageLoading(true);
-    setUsageError(false);
+  const loadUsage = useCallback(async (mode: "reset" | "append" = "reset") => {
+    const isReset = mode === "reset";
+    if (!isReset) {
+      if (!usageNextCursor || usageLoadingMore || usageItems.length >= USAGE_HISTORY_MAX_ITEMS) {
+        return;
+      }
+      setUsageLoadingMore(true);
+    } else {
+      setUsageLoading(true);
+      setUsageLoadingMore(false);
+      setUsageError(false);
+      setUsageNextCursor(null);
+      setUsageHasMore(false);
+    }
+
     try {
-      const res = await fetch("/api/billing/credit-usage?take=20");
+      const search = new URLSearchParams({
+        take: String(USAGE_HISTORY_PAGE_SIZE),
+      });
+      if (!isReset && usageNextCursor) {
+        search.set("cursor", usageNextCursor);
+      }
+
+      const res = await fetch(`/api/billing/credit-usage?${search.toString()}`);
       const data = (await res.json()) as {
         ok?: boolean;
         items?: CreditUsageRow[];
+        nextCursor?: string | null;
       };
       if (!res.ok || !data.ok || !Array.isArray(data.items)) {
-        setUsageError(true);
-        setUsageItems([]);
+        if (isReset) {
+          setUsageError(true);
+          setUsageItems([]);
+          setUsageNextCursor(null);
+          setUsageHasMore(false);
+        } else {
+          message.error(t("pricing.usage.error"));
+        }
         return;
       }
-      setUsageItems(data.items);
+
+      const currentCount = isReset ? 0 : usageItems.length;
+      const nextItems = isReset
+        ? data.items.slice(0, USAGE_HISTORY_MAX_ITEMS)
+        : [...usageItems, ...data.items].slice(0, USAGE_HISTORY_MAX_ITEMS);
+      const hasMore =
+        Boolean(data.nextCursor) && nextItems.length < USAGE_HISTORY_MAX_ITEMS;
+
+      setUsageItems(nextItems);
+      setUsageNextCursor(hasMore ? data.nextCursor ?? null : null);
+      setUsageHasMore(hasMore);
+
+      if (isReset && currentCount === 0 && nextItems.length === 0) {
+        setUsageHasMore(false);
+      }
     } catch {
-      setUsageError(true);
-      setUsageItems([]);
+      if (mode === "reset") {
+        setUsageError(true);
+        setUsageItems([]);
+        setUsageNextCursor(null);
+        setUsageHasMore(false);
+      } else {
+        message.error(t("pricing.usage.error"));
+      }
     } finally {
-      setUsageLoading(false);
+      if (isReset) {
+        setUsageLoading(false);
+      } else {
+        setUsageLoadingMore(false);
+      }
     }
-  }, []);
+  }, [t, usageItems, usageLoadingMore, usageNextCursor]);
 
   const openUsage = () => {
     setUsageOpen(true);
-    void loadUsage();
+    void loadUsage("reset");
   };
 
   const closeUsage = () => {
     setUsageOpen(false);
   };
 
+  useEffect(() => {
+    if (!usageOpen || usageLoading || usageError) return;
+    const tableBody = usageHistoryRef.current?.querySelector(".ant-table-body");
+    if (!(tableBody instanceof HTMLElement)) return;
+
+    const maybeLoadMore = () => {
+      if (!usageHasMore || usageLoadingMore) return;
+      const remaining = tableBody.scrollHeight - tableBody.scrollTop - tableBody.clientHeight;
+      if (remaining <= 48) {
+        void loadUsage("append");
+      }
+    };
+
+    const ensureScrollable = () => {
+      if (!usageHasMore || usageLoadingMore) return;
+      if (tableBody.scrollHeight <= tableBody.clientHeight + 24) {
+        void loadUsage("append");
+      }
+    };
+
+    tableBody.addEventListener("scroll", maybeLoadMore);
+    const frameId = window.requestAnimationFrame(ensureScrollable);
+    return () => {
+      tableBody.removeEventListener("scroll", maybeLoadMore);
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [
+    loadUsage,
+    usageError,
+    usageHasMore,
+    usageItems.length,
+    usageLoading,
+    usageLoadingMore,
+    usageOpen,
+  ]);
+
   const usageColumns: ColumnsType<CreditUsageRow> = [
-    {
-      title: t("pricing.usage.col.time"),
-      dataIndex: "createdAt",
-      key: "createdAt",
-      render: (value: string) => formatUsageTime(value),
-    },
     {
       title: t("pricing.usage.col.source"),
       dataIndex: "source",
       key: "source",
-      render: (_value: string, row: CreditUsageRow) =>
-        sourceLabel(row.source, row.metadata),
+      render: (_value: string, row: CreditUsageRow) => {
+        const detail =
+          row.kind === "usage"
+            ? formatUsageSourceDetail(row.source, row.metadata)
+            : null;
+        const typeLabel = usageTypeLabel(row);
+        return (
+          <div className="pricing-usage-history__source-cell">
+            <div className="pricing-usage-history__source-title">
+              {sourceLabel(row)}
+            </div>
+            {detail ? (
+              <div className="pricing-usage-history__source-detail">{detail}</div>
+            ) : null}
+            <div className="pricing-usage-history__meta">
+              {typeLabel ? <span>{typeLabel}</span> : null}
+              <span>{formatUsageTime(row.createdAt)}</span>
+            </div>
+          </div>
+        );
+      },
     },
     {
-      title: t("pricing.usage.col.credits"),
-      dataIndex: "credits",
-      key: "credits",
+      title: t("pricing.usage.col.change"),
+      dataIndex: "creditsDelta",
+      key: "creditsDelta",
       align: "right",
-      render: (value: number, row: CreditUsageRow) => {
-        const amount = formatCredits(value);
-        const isIn = row.direction === "in";
+      width: 132,
+      render: (value: number) => {
+        const normalized = Math.floor(value);
+        const isIncrease = normalized > 0;
+        const displayValue = `${isIncrease ? "+" : "-"}${formatCredits(
+          Math.abs(normalized),
+        )}`;
         return (
-          <span
-            className={
-              isIn ? "pricing-usage-credits--in" : "pricing-usage-credits--out"
-            }
+          <div
+            className={[
+              "pricing-usage-history__change",
+              isIncrease
+                ? "pricing-usage-history__change--increase"
+                : "pricing-usage-history__change--decrease",
+            ].join(" ")}
           >
-            {isIn ? `+${amount}` : `-${amount}`}
-          </span>
+            {displayValue}
+          </div>
         );
       },
     },
@@ -353,7 +491,7 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
         {usageError ? (
           <Text type="secondary">{t("pricing.usage.error")}</Text>
         ) : (
-          <div className="pricing-usage-history">
+          <div className="pricing-usage-history" ref={usageHistoryRef}>
             <Table<CreditUsageRow>
               size="small"
               rowKey="id"
@@ -364,6 +502,19 @@ const AcountInfoCard: React.FC<AcountInfoCardProps> = ({
               scroll={{ y: 420 }}
               locale={{ emptyText: t("pricing.usage.empty") }}
             />
+            {usageItems.length > 0 ? (
+              <div className="pricing-usage-history__footer">
+                <Text type="secondary">
+                  {t("pricing.usage.count", {
+                    count: usageItems.length,
+                    max: USAGE_HISTORY_MAX_ITEMS,
+                  })}
+                </Text>
+                {usageLoadingMore ? (
+                  <Text type="secondary">{t("pricing.usage.loadingMore")}</Text>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )}
       </AppSModal>
