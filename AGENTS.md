@@ -218,7 +218,8 @@ logic use TSF billing exclusively. `APP_UNINSTALLED` / `SHOP_REDACT` call
 best-effort Shopify cancel when token present) before Account soft-delete and
 Session delete.
 `APP_UNINSTALLED` snapshots subscription/quota/size via
-`uninstallSnapshot.server.ts` before cleanup, then fire-and-forgets
+`uninstallSnapshot.server.ts` before cleanup（无 `AppSubscription` 行时回查 **15 分钟内**
+`SUBSCRIPTION_*` BillingLog，避免 `APP_SUBSCRIPTIONS_UPDATE` CANCELLED 抢先删行后飞书写成 Free；更早的取消流水不补，仍显示 Free）, then fire-and-forgets
 `uninstallEmail.server.ts`: uninstall Feishu (same billing snapshot text;
 title is `emoji 店铺卸载 · 分群：shop`; if winback is skipped, last line is
 `挽回邮件：未发（原因）`) plus optional winback SES + Feishu metadata (no email
@@ -789,7 +790,8 @@ outbound cancel). Reinstall path in `ensureAccount.server.ts` also clears
 leftover `AppSubscription` when restoring a soft-deleted Account.
 - `app/server/billing/uninstallSnapshot.server.ts`: shop billing snapshot +
  Feishu text for uninstall / first-install / first-subscribe (plan, interval,
- quota, size tier via `shopScan/shopSizeProfile.server.ts`).
+ quota, size tier via `shopScan/shopSizeProfile.server.ts`)。无订阅行时只用 **15 分钟内**
+ `SUBSCRIPTION_ACTIVATED|RENEWED|CANCELLED` 流水补套餐/周期（挡 webhook 乱序，不拿上个月停订）；额度仍读取消后 Account。
 - `app/server/billing/lifecycleFeishuNotify.server.ts`: lifetime-first install
  (`bound: true`) and lifetime-first `SUBSCRIPTION_ACTIVATED` (Turso count === 1)
  to `FEISHU_WEBHOOK_URL_SUPPORT`; same group as uninstall.

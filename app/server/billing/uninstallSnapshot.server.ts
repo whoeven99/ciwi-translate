@@ -1,6 +1,10 @@
 import prisma from "../../db.server";
 import { getAccountQuota } from "./quota/getAccountQuota.server";
-import { APP_SUBSCRIPTION_STATUS, BILLING_INTERVAL } from "./types.server";
+import {
+  APP_SUBSCRIPTION_STATUS,
+  BILLING_INTERVAL,
+  BILLING_LOG_EVENT,
+} from "./types.server";
 import { readShopSizeProfile } from "../shopScan/shopSizeProfile.server";
 
 export type UninstallShopSnapshot = {
@@ -32,9 +36,85 @@ function formatNumber(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+const SUBSCRIPTION_LOG_EVENTS = [
+  BILLING_LOG_EVENT.SUBSCRIPTION_ACTIVATED,
+  BILLING_LOG_EVENT.SUBSCRIPTION_RENEWED,
+  BILLING_LOG_EVENT.SUBSCRIPTION_CANCELLED,
+] as const;
+
+/** 只认卸载前后 webhook 乱序窗口，避免把上个月已取消的套餐当成当前计划。 */
+const SUBSCRIPTION_LOG_FALLBACK_MAX_AGE_MS = 15 * 60 * 1000;
+
+async function resolvePlanDisplay(planKey: string): Promise<{
+  planName: string;
+  billingInterval: string | null;
+}> {
+  try {
+    const catalog = await prisma.planCatalog.findUnique({ where: { planKey } });
+    return {
+      planName:
+        catalog?.shopifyPlanName?.trim() ||
+        catalog?.displayName?.trim() ||
+        planKey ||
+        "Unknown",
+      billingInterval: catalog?.billingInterval ?? null,
+    };
+  } catch (err) {
+    console.warn(`[uninstall snapshot] PlanCatalog failed planKey=${planKey}`, err);
+    return { planName: planKey || "Unknown", billingInterval: null };
+  }
+}
+
+function terminalStatusFromLog(
+  eventType: string,
+  metadata: unknown,
+): string {
+  if (eventType === BILLING_LOG_EVENT.SUBSCRIPTION_CANCELLED) {
+    const meta =
+      metadata && typeof metadata === "object"
+        ? (metadata as Record<string, unknown>)
+        : null;
+    const raw = typeof meta?.status === "string" ? meta.status.trim() : "";
+    if (raw) return raw;
+  }
+  return APP_SUBSCRIPTION_STATUS.CANCELLED;
+}
+
+/** 订阅行已被 cancel 删掉时，用 15 分钟内的订阅流水补套餐（卸载 webhook 常晚于 CANCELLED）。 */
+async function resolvePlanFromBillingLog(shop: string): Promise<{
+  planName: string;
+  status: string;
+  billingInterval: string | null;
+} | null> {
+  try {
+    const since = new Date(Date.now() - SUBSCRIPTION_LOG_FALLBACK_MAX_AGE_MS);
+    const log = await prisma.billingLog.findFirst({
+      where: {
+        shop,
+        eventType: { in: [...SUBSCRIPTION_LOG_EVENTS] },
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { eventType: true, planKey: true, metadata: true },
+    });
+    if (!log?.planKey) return null;
+    const display = await resolvePlanDisplay(log.planKey);
+    const status = terminalStatusFromLog(log.eventType, log.metadata);
+    return {
+      planName: `${display.planName}（${status}）`,
+      status,
+      billingInterval: display.billingInterval,
+    };
+  } catch (err) {
+    console.warn(`[uninstall snapshot] BillingLog fallback failed shop=${shop}`, err);
+    return null;
+  }
+}
+
 /**
  * 卸载清理前快照：订阅/套餐、计费周期、额度、店铺大小档位。
  * 任一部分失败不影响其它字段（best-effort）。
+ * 无 AppSubscription 时回查 15 分钟内 BillingLog，避免 CANCELLED webhook 抢先删行后显示 Free。
  */
 export async function snapshotShopForUninstall(
   shop: string,
@@ -60,21 +140,17 @@ export async function snapshotShopForUninstall(
     status = sub.status;
     billingInterval = sub.billingInterval;
     subscribed = sub.status === APP_SUBSCRIPTION_STATUS.ACTIVE;
-    try {
-      const catalog = await prisma.planCatalog.findUnique({
-        where: { planKey: sub.planKey },
-      });
-      planName =
-        catalog?.shopifyPlanName?.trim() ||
-        catalog?.displayName?.trim() ||
-        sub.planKey ||
-        "Unknown";
-    } catch (err) {
-      console.warn(`[uninstall snapshot] PlanCatalog failed shop=${shop}`, err);
-      planName = sub.planKey || "Unknown";
-    }
+    const display = await resolvePlanDisplay(sub.planKey);
+    planName = display.planName;
     if (!subscribed) {
       planName = `${planName}（${sub.status}）`;
+    }
+  } else {
+    const fromLog = await resolvePlanFromBillingLog(shop);
+    if (fromLog) {
+      planName = fromLog.planName;
+      status = fromLog.status;
+      billingInterval = fromLog.billingInterval;
     }
   }
 
